@@ -1,0 +1,13 @@
+
+.vs
+.vscode
+.idea
+*.log
+*.vcxproj.user
+intermediate/
+lib/
+tidy/
+**/__pycache__/
+
+imgui.ini
+inspector.json
