@@ -9,6 +9,8 @@ using namespace Constants;
 #include "rendering/debug_render.hpp"
 using namespace bee;
 
+#include "meteoformulas.h"
+
 #include <sstream>
 #include <iostream>
 
@@ -88,8 +90,8 @@ void readTable::readKNMIFile(const char* _file)
 				{
 					word = &word[10];
 					word.pop_back();
-					int dropping = std::stoi(word);
-					if (dropping) continue; //We discard when the balloon pops
+					//int dropping = std::stoi(word);
+					if (false/*dropping*/) continue; //We discard when the balloon pops
 					else //TODO: possibly discard reading further
 					{
 						STInfo.data.push_back(RSP);
@@ -123,6 +125,7 @@ void readTable::readDWDFile(const char* _file)
 
 	std::string stationNumber;
 	std::vector<std::string> AllDates;
+	std::vector<float> groundTempsAtDates;
 	std::string targetDate;
 
 	//Get stationNumber
@@ -172,6 +175,10 @@ void readTable::readDWDFile(const char* _file)
 					word.pop_back(); //Remove time
 					word.pop_back();
 					AllDates.push_back(word);
+				}
+				else if (count == 8) //Ground temps
+				{
+					groundTempsAtDates.push_back(std::stof(word));
 					break;
 				}
 				count++;
@@ -181,7 +188,7 @@ void readTable::readDWDFile(const char* _file)
 	}
 
 	//TODO: Could do something with the dates, i.e. select a date, but for now we will grab the latest.
-	targetDate = AllDates[AllDates.size() - 1] + "00";
+	targetDate = AllDates[2] + "12";
 	
 	printf("Reading file %s\n", targetDate.c_str());
 
@@ -231,72 +238,67 @@ void readTable::readDWDFile(const char* _file)
 	}
 	reachedDate = false;
 
+
+	skewTInfo STInfo;
+	bool quit = false;
+
 	//Move getline until we find our exact position
-	while (std::getline(s, line) && !reachedDate)
+	while (std::getline(s, line) && !quit)
 	{
 		std::string word;
 		std::stringstream ss(line);
+		radioScondePart RSP;
 		int count = 0;
 		while (std::getline(ss, word, ';'))
 		{
-			if (count == 1) //date
+			if (!reachedDate)
 			{
-				if (word == targetDate)
+				if (count == 1) //date
 				{
-					reachedDate = true;
+					if (word == targetDate)
+					{
+						reachedDate = true;
+						count--;
+					}
+				}
+				count++;
+			}
+
+			if (reachedDate)
+			{
+				switch (count)
+				{
+				case 1:
+					if (word != targetDate) //Done with this date
+					{
+						reachedDate = false;
+						quit = true;
+					}
+					break;
+				case 6://Altitude
+					RSP.altitude = std::stof(word);
+					break;
+				case 7://Pressure
+					RSP.pressure = std::stof(word);
+					break;
+				case 8://Temperature in C
+					RSP.temperature = std::stof(word);
+					break;
+				case 10://Dew point in C
+					RSP.dewPoint = std::stof(word);
+					break;
+				case 11://WindSpeed  TODO: Not sure if km.h or knots
+					RSP.windSpeed = std::stof(word);
+					break;
+				case 12://Wind Direction
+					RSP.windDir = std::stof(word);
+					STInfo.data.push_back(RSP);
+					break;
+				default:
 					break;
 				}
+				count++;
 			}
-			count++;
-		}
-	}
-
-
-	skewTInfo STInfo;
-	std::string word;
-	int row = 0;
-
-	while (std::getline(s, line) && reachedDate)
-	{
-		row++;
-		std::stringstream ss(line);
-		radioScondePart RSP;
-		int count = 0;
-		while (std::getline(ss, word, ';') && reachedDate)
-		{
-
-			switch (count)
-			{
-			case 1:
-				if (word != targetDate) //Done with this date
-				{
-					reachedDate = false;
-				}
-				break;
-			case 6://Altitude
-				RSP.altitude = std::stof(word);
-				break;
-			case 7://Pressure
-				RSP.pressure = std::stof(word);
-				break;
-			case 8://Temperature in C
-				RSP.temperature = std::stof(word);
-				break;
-			case 10://Dew point in C
-				RSP.dewPoint = std::stof(word);
-				break;
-			case 11://WindSpeed  TODO: Not sure if km.h or knots
-				RSP.windSpeed = std::stof(word);
-				break;
-			case 12://Wind Direction
-				RSP.windDir = std::stof(word);
-				STInfo.data.push_back(RSP);
-				break;
-			default:
-				break;
-			}
-
-			count++;
 
 		}
 	}
@@ -351,78 +353,12 @@ float readTable::getHeightAtPressure(float pressure)
 	return P1 + (P2 - P1) * (pressure - H1) / (H2 - H1);
 }
 
-float readTable::se(const float T)
-{
-	return 6.112f * float(exp( (17.67f * T) / (T + 243.5f)));
-}
-
-float readTable::RS(const float T, const float P)
-{
-	float es = se(T);
-	return (E * es) / (P - es);
-}
-
-float readTable::MLR(const float T, const float P)
-{
-	float TCelsius = T - 273.15f;
-	float ws = RS(TCelsius, P);
-
-	float Tw = (Rsd * T + Hv * ws) / (Cpd + (Hv * Hv * ws * E) / (Rsd * T * T));
-	return Tw / P;
-
-	//return ((Rsd * T + Hv * ws) / (Cpd + (Hv * Hv * ws * E) / (Rsd * T * T))) * (1 / P);
-}
-
-
-std::vector<float> readTable::getMoistTemp(float T0, float Pref, const std::vector<float>& pressures)
-{
-	std::vector<float> temps;
-
-	float T = T0;
-	float P = Pref;
-	float h = 1.0f;
-
-	for (float Pnext : pressures)
-	{
-		float dP = Pnext - P;
-		// Runge-Kutta 4th Order Method to solve the ODE
-		float k1 = h * MLR(T, P);
-		float k2 = h * MLR(T + 0.5f * k1, P + 0.5f * dP * h);
-		float k3 = h * MLR(T + 0.5f * k2, P + 0.5f * dP * h);
-		float k4 = h * MLR(T + k3, P + dP + h);
-		//T = T + (1.0f / 6.0f) * (k1 + 2 * k2 + 2 * k3 + k4);
-
-		//float dT = MLR(T, P);
-		T = (1.0f / 6.0f) * (k1 + 2 * k2 + 2 * k3 + k4) * dP +T;
-		temps.push_back(T - 273.15f);
-		P = Pnext;
-	}
-
-	return temps;
-}
-
 glm::vec2 readTable::convertToPlottingCoordinates(float x, float y)
 {
-
-	glm::vec2 output{};
-	output.y = log(1000 / y);
-	output.x = x + angle * output.y;
-	return output;
+	
 
 
-	//const float Xmax = 80.0f;
-	////const float Xmin = -40.0f;
 
-	//const float Tmax = 40.0f;
-	//const float Tmin = -40.0f;
-
-	////Formula from https://www.researchgate.net/publication/303686619_Realistic_Simulation_and_Animation_of_Clouds_using_SkewTLogP_Diagrams
-	//glm::vec2 output{};
-
-	//output.y = Ymax - (Ymax * (log10(y)-log10(Pmin))) / (log10(Pmax) - log10(Pmin));
-	//output.x = ((Xmax * (x - Tmin)) / (Tmax - Tmin)) + output.y * 0.5f;
-	//output.x -= Tmax;
-	//return output;
 }
 
 
@@ -430,15 +366,16 @@ glm::vec2 readTable::convertToPlottingCoordinates(float x, float y)
 
 void readTable::debugDrawData()
 {
-	const float divV = 0.005f;
+	const float divV = plotHeight;
 	const float pi = 3.14159265359f;
-	const glm::vec2 hodoOffset(70, 50);
+	const glm::vec2 hodoOffset(90, 100);
 	const float tanTheta = glm::tan(glm::radians(45.0f));
 
 
 	for (float h = 0; h < 1000; h += 100) 
 	{
-		float newH = convertToPlottingCoordinates(0, h).y * 50;
+		float newH = meteoformulas::getStandardHeightAtPressure(0, h, 1000) * divV;
+		//float newH = convertToPlottingCoordinates(0, h).y * 50;
 		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40, newH, 0), glm::vec3(40, newH, 0), bee::Colors::Grey);
 	}
 	for (float i = -100; i < 40; i += 10)
@@ -451,135 +388,83 @@ void readTable::debugDrawData()
 	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40, 0, 0), glm::vec3(-40, 30000 * divV, 0), bee::Colors::Black);
 
 
+	//Debuggin MLR
+	std::vector<float> press = { 925, 850, 700,500, 300,200 };
+	meteoformulas::getMoistTemp(5, 925, press);
+
+
+
 	//Dry and moist adiabatic 
-	float prevTw = -9999.0f;
+	std::vector<float> pressures = {};
 	for (float i = -40; i <= 40; i += 5)
 	{
-		for (float y = testInfo.data[0].altitude + 300; y < 30000; y += 300)
+		std::vector<float> heights = {};
+		pressures.clear();
+		for (float p = 1000.0f; p > 100; p -= 25.0f)
 		{
-			float value = (i + 273.15f) * glm::pow((getPressureAtHeight(y) / 1000), Rsd /Cpd);
-			float prevValue = (i + 273.15f) * glm::pow((getPressureAtHeight(y - 300) / 1000), Rsd / Cpd);
-
-			value -= 273.15f;
-			prevValue -= 273.15f;
-			value = value + tanTheta * y * divV;
-			prevValue = prevValue + tanTheta * (y - 300) * divV;
-
-
-			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(value, y * divV, 0), glm::vec3(prevValue, (y - 300) * divV, 0), bee::Colors::Grey);
+			//const float Pressure = meteoformulas::getStandardPressureAtHeight(i, y, 0 , 1013.25f);
+			float i2 = 0;
+			if (useI) i2 = i;
+			pressures.push_back(p);
+			heights.push_back(meteoformulas::getStandardHeightAtPressure(i2, p, 1013.25f));
 		}
-		for (float y = 300; y < 30000; y += 30000)
+		
+
+		//Dry adiabatic (potential temps)
 		{
-			float iKelvin = i + 273.15f;
+			std::vector<float> potTemps = meteoformulas::getPotentialTemp(i, 1000.0f, pressures);
 
-			//Vapor pressure https://www.weather.gov/media/epz/wxcalc/vaporPressure.pdf
-			float es = 6.11f * float(glm::pow(10, (7.5f * i) / (237.3f + i)));
-			es *= 100; //hPa to Pa			
-
-
-			//float rs = (es * E) / (getPressureAtHeight(y) - es);
-
-			//float rs = getPressureAtHeight(0) * exp((17.67f * i) / (i - 29.65f));
-
-			float ws = (E * es) / (getPressureAtHeight(y) * 100 - es);
-			//float ws = E * (es / (getPressureAtHeight(y) * 100));
-
-
-			//https://badpets.net/Documents/Atmos_Thermodynamics.pdf
-			//float a0 = 23.832241f - 5.02808f * log10(iKelvin);
-			//float a1 = 0.00000013816f * (float)pow(10, 11.344f - 0.0303998f * iKelvin);
-			//float a2 = 0.0081328f * (float)pow(10, 3.49149f - 1302.8844f / iKelvin);
-			//
-			//float ESAT = float(glm::pow(10, a0 - a1 + a2 - 2949.076f / iKelvin));
-			//float W = 622 * ESAT / (getPressureAtHeight(y) * 100 - ESAT);
-			//
-			//float OS = iKelvin * pow(1000 / (getPressureAtHeight(y) * 100), 0.288f) / exp(-2.6518986f * W / iKelvin);
-			//
-			//float TSA = OS * exp(-2.6518986f * W / iKelvin) - iKelvin * glm::pow(1000 / (getPressureAtHeight(y) * 100), 0.288f);
-
-
-
-			//float DV = (i + 273.15f) * glm::pow((getPressureAtHeight(y) / 1000), Rsd / Cpd);
-			//float DVPrev = (i + 273.15f) * glm::pow((getPressureAtHeight(y - 300) / 1000), Rsd / Cpd);
-
-			//float r = E * e * (getPressureAtHeight(y) * e);
-
-			//float Tw = g * ((1.0f + (Hv * r) / (Rsd * iKelvin)) / 
-			//		   (Cpd + ((Hv * Hv) * r) / (Rsw * (iKelvin * iKelvin))));
-
-			//Tw *= 1000; //Convert from K/m to C/km
-
-			//float LvT = (-6.14342e-5f * float(glm::pow(iKelvin, 3))
-			//		+ ((1.58927e-3f) * float(glm::pow(iKelvin, 2)))
-			//		+ (-2.36418f * iKelvin) 
-			//		+ 2500.79f) 
-			//		* 1000;
-
-			//float Tw = (1 / getPressureAtHeight(y)) * ((Rsd * iKelvin + Hv * rs) / (Cpd + ((Hv * Hv) * rs * E) / (Rsd * (iKelvin * iKelvin))));
-			//Tw *= 100;
-			float Tw = (Rsd * iKelvin + Hv * ws) / (Cpd + (Hv * Hv * ws * E) / (Rsd * iKelvin * iKelvin));
-			Tw = Tw / getPressureAtHeight(y);
-			Tw *= 100;
-			//Tw = Tw * (getPressureAtHeight(y) - 1000);
-
-			//float Tw = glm::pow((getPressureAtHeight(y) / 1000), Rsd / Cpd) * ((1 + (Hv * ws) / (Rsd * iKelvin)) / (1 + (E * (Hv * Hv) * ws) / (Cpd * Rsd * (iKelvin * iKelvin))));
-
-			//float Tw = (Constants::g / Constants::Cpd) *
-			//	((1 + (Constants::Hv / Constants::Rsd) * (ws / iKelvin))
-			//	/ (1 + ((Constants::E * (Constants::Hv * Constants::Hv)) / (Constants::Cpd * Constants::Rsd)) * (ws / (iKelvin * iKelvin))));
-			//Tw *= 1000;
-
-
-			//float Tw = g * ((1 + ws) * ((1 + (Hv * ws) / Rsd * iKelvin)) / (Cpd + ws * Cpv + (Hv * ws * (E * ws)) / (Rsd * iKelvin * iKelvin)));
-			//float value = iKelvin + (Tw / (p * g)) * (getPressureAtHeight(y) - 1000);
-			//float prevValue = iKelvin + (prevTw / (pPrev * g)) * (getPressureAtHeight(y - 300) - 1000);
-			//value -= 273.15f;
-			//prevValue -= 273.15f;
-
-			if (prevTw == -9999.0f) prevTw = 9.54f;
-
-
-			std::vector<float> pressures = { /*925, 850, 700, 500, 300, 200, 100, 99, 88*/ }; // Target pressure levels
-			for (float p = 1000; p > 100; p -= 25)
+			for (int j = 1; j < int(potTemps.size()); j++)
 			{
-				pressures.push_back(p);
+				float skewedValue = potTemps[j] + tanTheta * heights[j] * divV;
+				float prevSkewedValue = potTemps[j - 1] + tanTheta * heights[j - 1] * divV;
+
+				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(skewedValue, heights[j] * divV, 0), glm::vec3(prevSkewedValue, heights[j - 1] * divV, 0), bee::Colors::Grey);
 			}
+		}
 
-
-
-			std::vector<float> temperatures = getMoistTemp(iKelvin, getPressureAtHeight(0), pressures);
-			temperatures;
+		//Moist adiabatic
+		{
+			std::vector<float> temperatures = meteoformulas::getMoistTemp(i, 1000.0f, pressures);
 
 			for (int j = 1; j < int(temperatures.size()); j++)
 			{
-				float skewedValue = temperatures[j] + tanTheta * (getHeightAtPressure(pressures[j])) * divV;
-				float prevSkewedValue = temperatures[j - 1] + tanTheta * (getHeightAtPressure(pressures[j - 1])) * divV;
-				//float newH = convertToPlottingCoordinates(0, pressures[j]).y * 50;
-				//float newHPrev = convertToPlottingCoordinates(0, pressures[j - 1]).y * 50;
+				float skewedValue = temperatures[j] + tanTheta * heights[j] * divV;
+				float prevSkewedValue = temperatures[j - 1] + tanTheta * heights[j - 1] * divV;
 
-				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(skewedValue, getHeightAtPressure(pressures[j])* divV, 0), glm::vec3(prevSkewedValue, getHeightAtPressure(pressures[j - 1])* divV, 0), bee::Colors::Red);
+				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(skewedValue, heights[j] * divV, 0), glm::vec3(prevSkewedValue, heights[j - 1] * divV, 0), bee::Colors::Red);
 			}
-
-			//float value = iKelvin * Tw;
-			//float prevValue = iKelvin * prevTw;
-			//value -= 273.15f;
-			//prevValue -= 273.15f;
-
-
-
-			//float value = iKelvin - Tw * y * 0.001f;
-			//float prevValue = iKelvin - prevTw * (y - 300) * 0.001f;
-			//value -= 273.15f;
-			//prevValue -= 273.15f;
-			//float skewedValue = value + tanTheta * y * divV;
-			//float prevSkewedValue = prevValue + tanTheta * (y - 300) * divV;
-
-			//bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(skewedValue, y * divV, 0), glm::vec3(prevSkewedValue, (y - 300) * divV, 0), bee::Colors::Red);
-			//prevTw = Tw;
 		}
-
-
 	}
+
+
+	//LCL
+	glm::vec3 LCL = meteoformulas::getLCL(testInfo.data[0].temperature, testInfo.data[0].pressure, testInfo.data[0].altitude, testInfo.data[0].dewPoint);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(testInfo.data[0].temperature + 10, LCL.z * divV, 0), glm::vec3(testInfo.data[0].temperature + 15, LCL.z * divV, 0), bee::Colors::Green);
+
+
+	//Moist adiabatic at LCL
+
+	std::vector<float> OPressures;
+	for (float i = LCL.y; i > 25; i -= 25) OPressures.push_back(i);
+	
+	std::vector<float> temperatures = meteoformulas::getMoistTemp(LCL.x, LCL.y, OPressures);
+	
+	for (int j = 1; j < int(temperatures.size()); j++)
+	{
+		const float heightNew = meteoformulas::getStandardHeightAtPressure(LCL.x, OPressures[j], 1013.25f);
+		const float heightPrev = meteoformulas::getStandardHeightAtPressure(LCL.x, OPressures[j - 1], 1013.25f);
+
+		float skewedValue = temperatures[j] + tanTheta * heightNew * divV;
+		float prevSkewedValue = temperatures[j - 1] + tanTheta * heightPrev * divV;
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(skewedValue, heightNew * divV, 0), glm::vec3(prevSkewedValue, heightPrev * divV, 0), bee::Colors::Black);
+	}
+
+
+	//EL
+	float EL = meteoformulas::getEL(testInfo.data[0].temperature, testInfo.data[0].pressure, testInfo.data[0].altitude, testInfo.data[0].dewPoint, testInfo);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(testInfo.data[0].temperature + 10, EL * divV, 0), glm::vec3(testInfo.data[0].temperature + 15, EL * divV, 0), bee::Colors::Pink);
+
 
 
 	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 0.1f, glm::vec3(0, 0, 1), bee::Colors::Black);
@@ -590,6 +475,11 @@ void readTable::debugDrawData()
 
 	glm::vec2 prevDir = { 0,0 };
 
+	//Due to how skew-T's are drawn, the observed data (in this case) starts at hPa 1000 or the first line.
+	//TODO: research this, what if station has higher offset?
+	const float heightAt0 = meteoformulas::getStandardHeightAtPressure(0, 1000, 1013.25f);
+	const float offset = testInfo.data[0].altitude - heightAt0;
+
 	for (int i = 1; i < int(testInfo.data.size()); i++)
 	{
 		float newTemp = testInfo.data[i].temperature + tanTheta * testInfo.data[i].altitude * divV;
@@ -598,8 +488,8 @@ void readTable::debugDrawData()
 		float newPrevTemp = testInfo.data[i - 1].temperature + tanTheta * testInfo.data[i - 1].altitude * divV;
 		float newPrevDew = testInfo.data[i - 1].dewPoint + tanTheta * testInfo.data[i - 1].altitude * divV;
 
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(newTemp, testInfo.data[i].altitude * divV, 0.0f), glm::vec3(newPrevTemp, testInfo.data[i - 1].altitude * divV, 0.0f), bee::Colors::Red);
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(newDew, testInfo.data[i].altitude * divV, 0.0f), glm::vec3(newPrevDew, testInfo.data[i - 1].altitude * divV, 0.0f), bee::Colors::Green);
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(newTemp, (testInfo.data[i].altitude - offset) * divV, 0.0f), glm::vec3(newPrevTemp, (testInfo.data[i - 1].altitude - offset) * divV, 0.0f), bee::Colors::Red);
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(newDew,  (testInfo.data[i].altitude - offset) * divV, 0.0f), glm::vec3(newPrevDew, (testInfo.data[i - 1].altitude - offset) * divV, 0.0f), bee::Colors::Green);
 
 
 		glm::vec4 color = bee::Colors::Black;

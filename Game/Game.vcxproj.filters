@@ -24,6 +24,9 @@
     <ClCompile Include="readTable.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="meteoformulas.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="gameSystem.h">
@@ -39,6 +42,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="external\odeint.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="meteoformulas.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

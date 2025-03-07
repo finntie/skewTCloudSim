@@ -8,6 +8,8 @@ intermediate/
 lib/
 tidy/
 **/__pycache__/
+executable/*
+
 
 imgui.ini
 inspector.json

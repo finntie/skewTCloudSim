@@ -81,6 +81,8 @@ void gameSystem::OnPanel()
 
 	ImGui::SliderFloat("Angle", &readTableObj.angle, 0, 90);
 	ImGui::SliderFloat("Liquid", &readTableObj.liquid, 0, 1);
+	ImGui::SliderFloat("Height", &readTableObj.plotHeight, 0.001f, 0.01f);
+	ImGui::Checkbox("Use i", &readTableObj.useI);
 
 
 	ImGui::End();
