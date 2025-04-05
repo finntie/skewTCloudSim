@@ -32,8 +32,10 @@ gameSystem::gameSystem()
 
 
 	//readTableObj.readKNMIFile("assets/input/KNMI/DeBilt_20250301_233612.mwx");
-	readTableObj.readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_akt.zip");
+	//readTableObj.readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_akt.zip");
+	readTableObj.readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_20240101_20241231_hist.zip");
 
+	
 	//Add light
 	Entity lightEntity = Engine.ECS().CreateEntity();
 	Transform& transform = Engine.ECS().CreateComponent<Transform>(lightEntity);
@@ -81,9 +83,15 @@ void gameSystem::OnPanel()
 
 	ImGui::SliderFloat("Angle", &readTableObj.angle, 0, 90);
 	ImGui::SliderFloat("Liquid", &readTableObj.liquid, 0, 1);
-	ImGui::SliderFloat("Height", &readTableObj.plotHeight, 0.001f, 0.01f);
 	ImGui::Checkbox("Use i", &readTableObj.useI);
 
+	ImGui::SliderFloat("Width", &readTableObj.sizeSkewT.x, 0.01f, 2.0f);
+	ImGui::SliderFloat("Height", &readTableObj.sizeSkewT.y, 0.1f, 100.0f);
+
+	ImGui::SliderFloat("GroundTemp", &readTableObj.testInfo.data[0].temperature, -50.0f, 50.0f);
+	ImGui::SliderFloat("GroundDew", &readTableObj.testInfo.data[0].dewPoint, -50.0f, 50.0f);
+
+	ImGui::Text("CAPE: %f", readTableObj.CAPE);
 
 	ImGui::End();
 }

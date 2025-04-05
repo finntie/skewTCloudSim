@@ -36,7 +36,9 @@ public:
 	float getPressureAtHeight(float height);
 	float getHeightAtPressure(float pressure);
 	
-	glm::vec2 convertToPlottingCoordinates(float temp, float pressure);
+	//Converts temp and height in meters or pressure to plotting so its easily modified.
+	//Warning: Not using pressure (so height in meters) could lead up to different values due to observed not being the same as standard.
+	glm::vec2 convertToPlottingCoordinates(const float temp, const float value, const bool pressure, const float scaleWidht, const float height);
 
 	void debugDrawData();
 
@@ -44,10 +46,14 @@ public:
 	float liquid = 1.0f;
 	float plotHeight = 0.005f;
 	bool useI = false;
+	float CAPE = 0.0f;
+	const float tanTheta = glm::tan(glm::radians(45.0f));
+	glm::vec2 sizeSkewT = { 1.0f,100 };
 
-private:
 
 	skewTInfo testInfo;
+private:
+
 
 
 };

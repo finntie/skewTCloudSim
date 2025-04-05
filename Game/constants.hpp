@@ -4,7 +4,7 @@ namespace Constants
 {
 	const float Lb = -0.0065f; //Standard lapse rate in K/m
 	const float g = 9.8076f; //Earth's gravitational acceleration in m/s2
-	const float Hv = 2268000; //Heat vaporation of water in J/kg (also written as L) what about 2501000?
+	const float Hv = 2501000; //Heat vaporation of water in J/kg (also written as L) what about 2501000?2268000 https://library.wmo.int/viewer/59923/?offset=#page=220&viewer=picture&o=search&n=0&q=Lv
 	const float R = 8.3145f; //Universal gas constant in J/mol*k
 	const float Rsd = 287.0528f; //specific gas constant of dry air in J/kg*K
 	const float Rsw = 461.5f; //specific gas constant of water in J/kg*K
@@ -20,6 +20,7 @@ namespace Constants
 	const float Mw = 18.02f; //Molair mass of water in g/mol
 	const float ptrip = 611.2f; //Triple point of water in pascal (6.11657 hPa)
 	const float Ttrip = 273.16f; //Triple point of water in Kelvin
-	const float E0v = 2.374e+6f; // Heat latency of vaporising water in J/kg (Could be a different value i.e: 2.3740×10^6)
+	const float E0v = 2.374e+6f; // Heat latency of vaporising water in J/kg
+	const float E0s = 0.3337e+6f; // The difference in specific internal energy between liquid and solid at the triple point. in J/kg
 	const float euler = 2.7182818284f; //Euler's number
 }
