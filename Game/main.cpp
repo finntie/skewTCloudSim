@@ -12,21 +12,19 @@
 
 //Game includes
 #include "gameSystem.h"
+#include "environment.h"
 
 using namespace bee;
 using namespace std;
 
 int main(int, char**)
 {
-    //gameSystem G;
-    //G.Networking();
-
-
     Engine.Initialize();
 
     //Create systems
     Engine.ECS().CreateSystem<Renderer>();
     Engine.ECS().CreateSystem<gameSystem>();
+    Engine.ECS().CreateSystem<environment>();
 
     auto cameraEntity = Engine.ECS().CreateEntity();
     auto& transform = Engine.ECS().CreateComponent<Transform>(cameraEntity);

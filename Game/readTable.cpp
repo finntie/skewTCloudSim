@@ -1,18 +1,25 @@
 #include "readTable.h"
 
 #include "zip_file.hpp"
-#include "constants.hpp"
+#include "math/constants.hpp"
+#include "math/meteoformulas.h"
 using namespace Constants;
 
 //Engine specific
 #include "core/engine.hpp"
 #include "rendering/debug_render.hpp"
+#include "rendering/colors.hpp"
 using namespace bee;
-
-#include "meteoformulas.h"
 
 #include <sstream>
 #include <iostream>
+#include <cassert>
+#include <memory>
+
+#include <CUDA/include/cuda_runtime.h>
+#include <CUDA/include/cuda.h>
+#include "kernelTest.cuh"
+
 
 void readTable::readKNMIFile(const char* _file)
 {
@@ -27,55 +34,54 @@ void readTable::readKNMIFile(const char* _file)
 		return;
 	}
 
-
 	std::string soundingDataFile = file.read("SynchronizedSoundingData.xml");
-
 
 	std::stringstream s(soundingDataFile);
 	std::string word;
 	std::string line;
 	int row = 0;
-	//bool end = false;
+	//Vector for every data type
+	std::vector<float> pressure;
+	std::vector<float> temperature;
+	std::vector<float> dewPoint;
+	std::vector<float> windDir;
+	std::vector<float> windSpeed;
+	std::vector<float> altitude;
 
 	std::getline(s, line); //Skip first line
-	skewTInfo STInfo;
-
 	while (std::getline(s, line))
 	{
-		row++;
 		std::stringstream ss(line);
-		radioScondePart RSP;
 		int count = 0;
 		while (ss >> word)
 		{
-
 			switch (count)
 			{
 			case 4://pressure
 				word = &word[10];
 				word.pop_back();
-				RSP.pressure = std::stof(word);
+				pressure.push_back(std::stof(word));
 				break;
 			case 5://Temp in K
 				word = &word[13];
 				word.pop_back();
-				RSP.temperature = std::stof(word) - 273.15f;
+				temperature.push_back(std::stof(word) - 273.15f);
 				break;
 			case 6://Dew in humidity
 				//For increased speed but less accurasy, the part after the Multiplication could be removed 
 				word = &word[10];
 				word.pop_back();
-				RSP.dewPoint = RSP.temperature - ((100 - std::stof(word)) * 0.2f) * ((RSP.temperature + 273.15f) * 0.01f);
+				dewPoint.push_back(temperature[row] - ((100 - std::stof(word)) * 0.2f) * ((temperature[row] + 273.15f) * 0.01f));
 				break;
 			case 7://WindDir
 				word = &word[9];
 				word.pop_back();
-				RSP.windDir = std::stof(word);
+				windDir.push_back(std::stof(word));
 				break;
 			case 8://WindSpeed
 				word = &word[11];
 				word.pop_back();
-				RSP.windSpeed = std::stof(word);
+				windSpeed.push_back(std::stof(word));
 				break;
 			default:
 				//Because values have been added, these parts will not be hard-coded
@@ -83,7 +89,7 @@ void readTable::readKNMIFile(const char* _file)
 				{
 					word = &word[10];
 					word.pop_back();
-					RSP.altitude = std::stof(word);
+					altitude.push_back(std::stof(word));
 					break;
 				}
 				if (word.substr(0, 8) == "Dropping")
@@ -92,25 +98,32 @@ void readTable::readKNMIFile(const char* _file)
 					word.pop_back();
 					//int dropping = std::stoi(word);
 					if (false/*dropping*/) continue; //We discard when the balloon pops
-					else //TODO: possibly discard reading further
-					{
-						STInfo.data.push_back(RSP);
-					}
 				}
-
-
 				break;
 			}
-
 			count++;
-
 		}
+		row++;
+	}
+	row--; //Go back once
+
+	//Copy the data over
+	{
+		radioSondeData RSP;
+
+		RSP.allocate(row);
+		std::memcpy(RSP.temperature.get(), temperature.data(), row * sizeof(float));
+		std::memcpy(RSP.dewPoint.get(), dewPoint.data(), row * sizeof(float));
+		std::memcpy(RSP.windDir.get(), windDir.data(), row * sizeof(float));
+		std::memcpy(RSP.windSpeed.get(), windSpeed.data(), row * sizeof(float));
+		std::memcpy(RSP.pressure.get(), pressure.data(), row * sizeof(float));
+		std::memcpy(RSP.altitude.get(), altitude.data(), row * sizeof(float));
+
+		skewTData.data.allocate(row);
+		skewTData.data = std::move(RSP);
 	}
 
-	testInfo = STInfo;
-
 	heightToPressureCalculate();
-
 }
 
 
@@ -240,16 +253,21 @@ void readTable::readDWDFile(const char* _file)
 	}
 	reachedDate = false;
 
-
-	skewTInfo STInfo;
+	std::string word;
+	int row = 0;
 	bool quit = false;
+	//Vector for every data type
+	std::vector<float> pressure;
+	std::vector<float> temperature;
+	std::vector<float> dewPoint;
+	std::vector<float> windDir;
+	std::vector<float> windSpeed;
+	std::vector<float> altitude;
 
 	//Move getline until we find our exact position
 	while (std::getline(s, line) && !quit)
 	{
-		std::string word;
 		std::stringstream ss(line);
-		radioScondePart RSP;
 		int count = 0;
 		while (std::getline(ss, word, ';'))
 		{
@@ -278,57 +296,68 @@ void readTable::readDWDFile(const char* _file)
 					}
 					break;
 				case 6://Altitude
-					RSP.altitude = std::stof(word);
+					altitude.push_back(std::stof(word));
 					break;
 				case 7://Pressure
-					RSP.pressure = std::stof(word);
+					pressure.push_back(std::stof(word));
 					break;
 				case 8://Temperature in C
-					RSP.temperature = std::stof(word);
+					temperature.push_back(std::stof(word));
 					break;
 				case 10://Dew point in C
-					RSP.dewPoint = std::stof(word);
+					dewPoint.push_back(std::stof(word));
 					break;
 				case 11://WindSpeed  TODO: Not sure if km.h or knots
-					RSP.windSpeed = std::stof(word);
+					windSpeed.push_back(std::stof(word));
 					break;
 				case 12://Wind Direction
-					RSP.windDir = std::stof(word);
-					STInfo.data.push_back(RSP);
+					windDir.push_back(std::stof(word));
 					break;
 				default:
 					break;
 				}
 				count++;
 			}
-
 		}
+		if (reachedDate) row++;
 	}
 
-	testInfo = STInfo;
+	//Copy the data over
+	{
+		radioSondeData RSP;
+
+		RSP.allocate(row);
+		std::memcpy(RSP.temperature.get(), temperature.data(), row * sizeof(float));
+		std::memcpy(RSP.dewPoint.get(), dewPoint.data(), row * sizeof(float));
+		std::memcpy(RSP.windDir.get(), windDir.data(), row * sizeof(float));
+		std::memcpy(RSP.windSpeed.get(), windSpeed.data(), row * sizeof(float));
+		std::memcpy(RSP.pressure.get(), pressure.data(), row * sizeof(float));
+		std::memcpy(RSP.altitude.get(), altitude.data(), row * sizeof(float));
+
+		skewTData.data.allocate(row);
+		skewTData.data = std::move(RSP);
+	}
 
 	heightToPressureCalculate();
-
-
 }
 
 
 
 void readTable::heightToPressureCalculate()
 {
-	for (int i = 0; i < int(testInfo.data.size()); i++)
+	for (int i = 0; i < int(skewTData.data.dataSize); i++)
 	{
-		testInfo.heightToPressure.emplace(testInfo.data[i].altitude, testInfo.data[i].pressure);
-		testInfo.pressureToHeight.emplace(testInfo.data[i].pressure, testInfo.data[i].altitude);
+		skewTData.heightToPressure.emplace(skewTData.data.altitude[i], skewTData.data.pressure[i]);
+		skewTData.pressureToHeight.emplace(skewTData.data.pressure[i], skewTData.data.altitude[i]);
 	}
 }
 
 float readTable::getPressureAtHeight(float height)
 {
-	auto upper = testInfo.heightToPressure.lower_bound(height);
+	auto upper = skewTData.heightToPressure.lower_bound(height);
 
-	if (upper == testInfo.heightToPressure.begin()) return upper->second;
-	else if (upper == testInfo.heightToPressure.end()) return std::prev(upper)->second;
+	if (upper == skewTData.heightToPressure.begin()) return upper->second;
+	else if (upper == skewTData.heightToPressure.end()) return std::prev(upper)->second;
 
 	auto lower = std::prev(upper);
 
@@ -341,10 +370,10 @@ float readTable::getPressureAtHeight(float height)
 
 float readTable::getHeightAtPressure(float pressure)
 {
-	auto upper = testInfo.pressureToHeight.lower_bound(pressure);
+	auto upper = skewTData.pressureToHeight.lower_bound(pressure);
 
-	if (upper == testInfo.pressureToHeight.begin()) return upper->second;
-	else if (upper == testInfo.pressureToHeight.end()) return std::prev(upper)->second;
+	if (upper == skewTData.pressureToHeight.begin()) return upper->second;
+	else if (upper == skewTData.pressureToHeight.end()) return std::prev(upper)->second;
 
 	auto lower = std::prev(upper);
 
@@ -386,6 +415,20 @@ void readTable::debugDrawData()
 	const float pi = 3.14159265359f;
 	const glm::vec2 hodoOffset(90, 100);
 
+	//Making pressures array
+	const int pressuresSize = 900;
+	float* pressures = new float[pressuresSize];
+	{
+		int i = 0;
+		for (float p = 1000.0f; p > 100; p -= 1.0f)
+		{
+			pressures[i] = p;
+			i++;
+		}
+	}
+	float* potTemps = new float[pressuresSize];
+	float* temps = new float[skewTData.data.dataSize];
+
 
 	for (float h = 0; h < 1000; h += 100) 
 	{
@@ -405,24 +448,13 @@ void readTable::debugDrawData()
 
 
 	//Dry and moist adiabatic 
-	std::vector<float> pressures = {};
 	for (float i = -40; i <= 40; i += 5)
 	{
-		pressures.clear();
-		for (float p = 1000.0f; p > 100; p -= 1.0f)
-		{
-			//const float Pressure = meteoformulas::getStandardPressureAtHeight(i, y, 0 , 1013.25f);
-			float i2 = 0;
-			if (useI) i2 = i;
-			pressures.push_back(p);
-		}
-		
-
 		//Dry adiabatic (potential temps)
 		{
-			std::vector<float> potTemps = meteoformulas::getPotentialTemp(i, 1000.0f, pressures);
+			meteoformulas::getPotentialTemp(i, 1000.0f, pressures, potTemps, pressuresSize);
 
-			for (int j = 10; j < int(potTemps.size()); j += 10)
+			for (int j = 10; j < pressuresSize; j += 10)
 			{
 				glm::vec2 coords = convertToPlottingCoordinates(potTemps[j], pressures[j], true, sizeSkewT.x, sizeSkewT.y);
 				glm::vec2 coordsPrev = convertToPlottingCoordinates(potTemps[j - 10], pressures[j - 10], true, sizeSkewT.x, sizeSkewT.y);
@@ -433,12 +465,14 @@ void readTable::debugDrawData()
 
 		//Moist adiabatic
 		{
-			std::vector<float> temperatures = meteoformulas::getMoistTemp(i, 1000.0f, pressures);
+			int offset = 0;
+			meteoformulas::getMoistTemp(i, 1000.0f, pressures, potTemps, pressuresSize, offset);
+			if (offset == -1) continue;
 
-			for (int j = 10; j < int(temperatures.size()); j += 10)
+			for (int j = 10 + offset; j < pressuresSize; j += 10)
 			{
-				glm::vec2 coords = convertToPlottingCoordinates(temperatures[j], pressures[j], true, sizeSkewT.x, sizeSkewT.y);
-				glm::vec2 coordsPrev = convertToPlottingCoordinates(temperatures[j - 10], pressures[j - 10], true, sizeSkewT.x, sizeSkewT.y);
+				glm::vec2 coords = convertToPlottingCoordinates(potTemps[j], pressures[j], true, sizeSkewT.x, sizeSkewT.y);
+				glm::vec2 coordsPrev = convertToPlottingCoordinates(potTemps[j - 10], pressures[j - 10], true, sizeSkewT.x, sizeSkewT.y);
 
 				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Grey);
 			}
@@ -447,67 +481,61 @@ void readTable::debugDrawData()
 
 
 	//LCL
-	glm::vec3 LCL = meteoformulas::getLCL(testInfo.data[0].temperature, testInfo.data[0].pressure, 0, testInfo.data[0].dewPoint);
+	glm::vec3 LCL = meteoformulas::getLCL(skewTData.data.temperature[0], skewTData.data.pressure[0], 0, skewTData.data.dewPoint[0]);
 	glm::vec2 coords = convertToPlottingCoordinates(LCL.x, LCL.y, true, sizeSkewT.x, sizeSkewT.y);
 	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::Green);
 
 
-	std::vector<float> OPressures;
-	for (float i = testInfo.data[0].pressure; i > LCL.y; i--) OPressures.push_back(i);
-	std::vector<float> OPressures2{};
-	for (float i = LCL.y; i > 100; i--) OPressures2.push_back(i);
-
 	//CCL
-	glm::vec3 CCL = meteoformulas::getCCL(testInfo.data[0].pressure, testInfo.data[0].dewPoint, testInfo);
+	glm::vec3 CCL = meteoformulas::getCCL(skewTData.data.pressure[0], skewTData.data.dewPoint[0], skewTData.data.pressure.get(), skewTData.data.temperature.get(), skewTData.data.dataSize);
 	coords = convertToPlottingCoordinates(CCL.x, CCL.y, true, sizeSkewT.x, sizeSkewT.y);
 	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::White);
-	glm::vec2 coords2 = convertToPlottingCoordinates(testInfo.data[0].dewPoint, testInfo.data[0].pressure, true, sizeSkewT.x, sizeSkewT.y);
+	glm::vec2 coords2 = convertToPlottingCoordinates(skewTData.data.dewPoint[0], skewTData.data.pressure[0], true, sizeSkewT.x, sizeSkewT.y);
 	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, coords.y, 0), glm::vec3(coords2.x, coords2.y, 0), bee::Colors::Grey);
 
-	coords = convertToPlottingCoordinates(CCL.z, testInfo.data[0].pressure, true, sizeSkewT.x, sizeSkewT.y);
+	coords = convertToPlottingCoordinates(CCL.z, skewTData.data.pressure[0], true, sizeSkewT.x, sizeSkewT.y);
 	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, 0, 0), glm::vec3(coords.x, 2, 0), bee::Colors::Red);
 
 
 	//Dry adiabatic to LCL
-	OPressures.push_back(LCL.y);
+	meteoformulas::getPotentialTemp(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.pressure.get(), temps, skewTData.data.dataSize);
 
-	std::vector<float> temperatures = meteoformulas::getPotentialTemp(testInfo.data[0].temperature, testInfo.data[0].pressure, OPressures);
-
-	for (int j = 1; j < int(temperatures.size()); j++)
+	for (int j = 1; j < skewTData.data.dataSize; j++)
 	{
 		//TODO: should convertToPlottingCoordinates include setting default pressure height? (maybe an extra function that sets it)
-		coords = convertToPlottingCoordinates(temperatures[j], OPressures[j], true, sizeSkewT.x, sizeSkewT.y);
-		glm::vec2 coordsPrev = convertToPlottingCoordinates(temperatures[j - 1], OPressures[j - 1], true, sizeSkewT.x, sizeSkewT.y);
+		coords = convertToPlottingCoordinates(temps[j], skewTData.data.pressure[j], true, sizeSkewT.x, sizeSkewT.y);
+		glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], skewTData.data.pressure[j - 1], true, sizeSkewT.x, sizeSkewT.y);
 
 		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
 	}
 
 	//Moist adiabatic at LCL
-	
-	temperatures.clear();
-	temperatures = meteoformulas::getMoistTemp(LCL.x, LCL.y, OPressures2);
-	
-	for (int j = 1; j < int(temperatures.size()); j++)
+	int offset = 0;
+	meteoformulas::getMoistTemp(LCL.x, LCL.y, skewTData.data.pressure.get(), temps, skewTData.data.dataSize, offset);
+	if (offset != -1)
 	{
-		//TODO: should convertToPlottingCoordinates include setting default pressure height? (maybe an extra function that sets it)
-		coords = convertToPlottingCoordinates(temperatures[j], OPressures2[j], true, sizeSkewT.x, sizeSkewT.y);
-		glm::vec2 coordsPrev = convertToPlottingCoordinates(temperatures[j - 1], OPressures2[j - 1], true, sizeSkewT.x, sizeSkewT.y);
+		for (int j = 1 + offset; j < skewTData.data.dataSize; j++)
+		{
+			//TODO: should convertToPlottingCoordinates include setting default pressure height? (maybe an extra function that sets it)
+			coords = convertToPlottingCoordinates(temps[j], skewTData.data.pressure[j], true, sizeSkewT.x, sizeSkewT.y);
+			glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], skewTData.data.pressure[j - 1], true, sizeSkewT.x, sizeSkewT.y);
 
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
+			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
+		}
 	}
 
 	//LFC
-	const glm::vec3 LFC = meteoformulas::getLFC(testInfo.data[0].temperature, testInfo.data[0].pressure, testInfo.data[0].altitude, testInfo.data[0].dewPoint, testInfo);
-	coords = convertToPlottingCoordinates(testInfo.data[0].temperature, LFC.y, true, sizeSkewT.x, sizeSkewT.y);
+	const glm::vec3 LFC = meteoformulas::getLFC(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.altitude[0], skewTData.data.dewPoint[0], skewTData.data.pressure.get(), skewTData.data.temperature.get(), skewTData.data.altitude.get(), skewTData.data.dataSize);
+	coords = convertToPlottingCoordinates(skewTData.data.temperature[0], LFC.y, true, sizeSkewT.x, sizeSkewT.y);
 	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::Yellow);
 
 	//EL
-	const glm::vec3 EL = meteoformulas::getEL(testInfo.data[0].temperature, testInfo.data[0].pressure, testInfo.data[0].altitude, testInfo.data[0].dewPoint, testInfo);
-	coords = convertToPlottingCoordinates(testInfo.data[0].temperature, EL.y, true, sizeSkewT.x, sizeSkewT.y);
+	const glm::vec3 EL = meteoformulas::getEL(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.altitude[0], skewTData.data.dewPoint[0], skewTData.data.pressure.get(), skewTData.data.temperature.get(), skewTData.data.altitude.get(), skewTData.data.dataSize);
+	coords = convertToPlottingCoordinates(skewTData.data.temperature[0], EL.y, true, sizeSkewT.x, sizeSkewT.y);
 	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::Pink);
 
 	//CAPE
-	CAPE = meteoformulas::calculateCAPE(testInfo.data[0].temperature, testInfo.data[0].pressure, 0, testInfo.data[0].dewPoint, testInfo);
+	CAPE = meteoformulas::calculateCAPE(skewTData.data.temperature[0], skewTData.data.pressure[0], 0, skewTData.data.dewPoint[0], skewTData.data.pressure.get(), skewTData.data.temperature.get(), skewTData.data.altitude.get(), skewTData.data.dataSize);
 
 
 	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 0.1f, glm::vec3(0, 0, 1), bee::Colors::Black);
@@ -521,21 +549,21 @@ void readTable::debugDrawData()
 	//Due to how skew-T's are drawn, the observed data (in this case) starts at hPa 1000 or the first line.
 	//TODO: research this, what if station has higher offset?
 	//const float heightAt0 = meteoformulas::getStandardHeightAtPressure(0, 1000, 1013.25f);
-	//const float offset = testInfo.data[0].altitude - heightAt0;
+	//const float offset = skewTData.data.altitude[0] - heightAt0;
 
-	for (int i = 1; i < int(testInfo.data.size()); i++)
+	for (int i = 1; i < skewTData.data.dataSize; i++)
 	{
-		//float newTemp = testInfo.data[i].temperature + tanTheta * testInfo.data[i].altitude * divV;
-		//float newDew = testInfo.data[i].dewPoint + tanTheta * testInfo.data[i].altitude * divV;
+		//float newTemp = skewTData.data[i].temperature + tanTheta * skewTData.data[i].altitude * divV;
+		//float newDew = skewTData.data[i].dewPoint + tanTheta * skewTData.data[i].altitude * divV;
 		//
-		//float newPrevTemp = testInfo.data[i - 1].temperature + tanTheta * testInfo.data[i - 1].altitude * divV;
-		//float newPrevDew = testInfo.data[i - 1].dewPoint + tanTheta * testInfo.data[i - 1].altitude * divV;
+		//float newPrevTemp = skewTData.data[i - 1].temperature + tanTheta * skewTData.data[i - 1].altitude * divV;
+		//float newPrevDew = skewTData.data[i - 1].dewPoint + tanTheta * skewTData.data[i - 1].altitude * divV;
 
-		glm::vec2 tempCoords = convertToPlottingCoordinates(testInfo.data[i].temperature, testInfo.data[i].pressure, true, sizeSkewT.x, sizeSkewT.y);
-		glm::vec2 tempPrevCoords = convertToPlottingCoordinates(testInfo.data[i - 1].temperature, testInfo.data[i - 1].pressure, true, sizeSkewT.x, sizeSkewT.y);
+		glm::vec2 tempCoords = convertToPlottingCoordinates(skewTData.data.temperature[i], skewTData.data.pressure[i], true, sizeSkewT.x, sizeSkewT.y);
+		glm::vec2 tempPrevCoords = convertToPlottingCoordinates(skewTData.data.temperature[i - 1], skewTData.data.pressure[i - 1], true, sizeSkewT.x, sizeSkewT.y);
 
-		glm::vec2 dewCoords = convertToPlottingCoordinates(testInfo.data[i].dewPoint, testInfo.data[i].pressure, true, sizeSkewT.x, sizeSkewT.y);
-		glm::vec2 dewPrevCoords = convertToPlottingCoordinates(testInfo.data[i-1].dewPoint, testInfo.data[i - 1].pressure, true, sizeSkewT.x, sizeSkewT.y);
+		glm::vec2 dewCoords = convertToPlottingCoordinates(skewTData.data.dewPoint[i], skewTData.data.pressure[i], true, sizeSkewT.x, sizeSkewT.y);
+		glm::vec2 dewPrevCoords = convertToPlottingCoordinates(skewTData.data.dewPoint[i - 1], skewTData.data.pressure[i - 1], true, sizeSkewT.x, sizeSkewT.y);
 
 
 		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(tempCoords, 0.0f), glm::vec3(tempPrevCoords, 0.0f), bee::Colors::Red);
@@ -544,24 +572,28 @@ void readTable::debugDrawData()
 
 		glm::vec4 color = bee::Colors::Black;
 
-		if (testInfo.data[i].altitude > 0) color = bee::Colors::Purple;
-		if (testInfo.data[i].altitude > 1000) color = bee::Colors::Red;
-		if (testInfo.data[i].altitude > 2000) color = bee::Colors::Orange;
-		if (testInfo.data[i].altitude > 6000) color = bee::Colors::Yellow;
-		if (testInfo.data[i].altitude > 9000) color = bee::Colors::Cyan;
+		if (skewTData.data.altitude[i] > 0) color = bee::Colors::Purple;
+		if (skewTData.data.altitude[i] > 1000) color = bee::Colors::Red;
+		if (skewTData.data.altitude[i] > 2000) color = bee::Colors::Orange;
+		if (skewTData.data.altitude[i] > 6000) color = bee::Colors::Yellow;
+		if (skewTData.data.altitude[i] > 9000) color = bee::Colors::Cyan;
 
 
 		//Hodograph
 		//Get wind dir
-		float radians = testInfo.data[i].windDir * (pi / 180.0f);
+		float radians = skewTData.data.windDir[i] * (pi / 180.0f);
 		glm::vec2 dir = { -glm::sin(radians), -glm::cos(radians) };
-		dir *= testInfo.data[i].windSpeed;
+		dir *= skewTData.data.windSpeed[i];
 
 		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(dir + hodoOffset, 0.0f), glm::vec3(prevDir + hodoOffset, 0.0f), color);
 		prevDir = dir;
 
 	}
 
+	//Cleanup
+	delete[] pressures;
+	delete[] temps;
+	delete[] potTemps;
 }
 
 

@@ -54,6 +54,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.8.props" />
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
@@ -150,20 +151,26 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="environment.cpp" />
     <ClCompile Include="gameSystem.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="meteoformulas.cpp" />
     <ClCompile Include="readTable.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="constants.hpp" />
+    <ClInclude Include="environment.h" />
     <ClInclude Include="external\odeint.hpp" />
     <ClInclude Include="gameSystem.h" />
-    <ClInclude Include="meteoformulas.h" />
+    <CudaCompile Include="kernelTest.cuh" />
     <ClInclude Include="readTable.h" />
     <ClInclude Include="zip_file.hpp" />
   </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="kernelTest.cu">
+      <FileType>Document</FileType>
+    </CudaCompile>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.8.targets" />
   </ImportGroup>
 </Project>

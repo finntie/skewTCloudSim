@@ -3,21 +3,44 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <memory>
 
 
-struct radioScondePart
+struct radioSondeData
 {
-	float altitude = 0.0f; //In meter
-	float pressure = 0.0f; //In hPa
-	float dewPoint = 0.0f; //In Celcius
-	float temperature = 0.0f; //In Celcius
-	float windSpeed = 0.0f;
-	float windDir = 0.0f;
+	std::unique_ptr<float[]> altitude; //In meter
+	std::unique_ptr<float[]> pressure; //In hPa
+	std::unique_ptr<float[]> dewPoint; //In Celcius
+	std::unique_ptr<float[]> temperature; //In Celcius
+	std::unique_ptr<float[]> windSpeed;
+	std::unique_ptr<float[]> windDir;
+
+	size_t dataSize = 0;
+
+	void allocate(size_t size)
+	{
+		altitude = std::make_unique<float[]>(size);
+		pressure = std::make_unique<float[]>(size);
+		dewPoint = std::make_unique<float[]>(size);
+		temperature = std::make_unique<float[]>(size);
+		windSpeed = std::make_unique<float[]>(size);
+		windDir = std::make_unique<float[]>(size);
+		dataSize = size;
+	}
+
+	radioSondeData() = default;
+
+	// Add move constructor
+	radioSondeData(radioSondeData&&) = default;
+	radioSondeData& operator=(radioSondeData&&) = default;
+	// Prevent copying
+	radioSondeData(const radioSondeData&) = delete;
+	radioSondeData& operator=(const radioSondeData&) = delete;
 };
 
 struct skewTInfo
 {
-	std::vector<radioScondePart> data;
+	radioSondeData data = radioSondeData();
 	std::map<float, float> heightToPressure;
 	std::map<float, float> pressureToHeight;
 	std::string stationNumberName{};
@@ -51,7 +74,7 @@ public:
 	glm::vec2 sizeSkewT = { 1.0f,100 };
 
 
-	skewTInfo testInfo;
+	skewTInfo skewTData;
 private:
 
 

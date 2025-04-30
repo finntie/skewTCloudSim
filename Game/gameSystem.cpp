@@ -33,9 +33,8 @@ gameSystem::gameSystem()
 
 	//readTableObj.readKNMIFile("assets/input/KNMI/DeBilt_20250301_233612.mwx");
 	//readTableObj.readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_akt.zip");
-	readTableObj.readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_20240101_20241231_hist.zip");
+	//readTableObj.readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_20240101_20241231_hist.zip");
 
-	
 	//Add light
 	Entity lightEntity = Engine.ECS().CreateEntity();
 	Transform& transform = Engine.ECS().CreateComponent<Transform>(lightEntity);
@@ -56,8 +55,9 @@ void gameSystem::Update(float dt)
 	//Mouse pos 3D
 	MousePos3D = screenToGround(Engine.Input().GetMousePosition());
 	Engine.DebugRenderer().AddCircle(DebugCategory::General, MousePos3D, 0.5f, glm::vec4(0, 0, 1, 1), glm::vec4(1.0));
+	Engine.DebugRenderer().AddFilledSquare(DebugCategory::General, MousePos3D, 0.5f, glm::vec4(0, 0, 1, 1), glm::vec4(1.0));
 
-	readTableObj.debugDrawData();
+	//readTableObj.debugDrawData();
 
 	//printf("3DPos: x: %f, Y: %f\n", MousePos3D.x, MousePos3D.y);
 
@@ -88,8 +88,8 @@ void gameSystem::OnPanel()
 	ImGui::SliderFloat("Width", &readTableObj.sizeSkewT.x, 0.01f, 2.0f);
 	ImGui::SliderFloat("Height", &readTableObj.sizeSkewT.y, 0.1f, 100.0f);
 
-	ImGui::SliderFloat("GroundTemp", &readTableObj.testInfo.data[0].temperature, -50.0f, 50.0f);
-	ImGui::SliderFloat("GroundDew", &readTableObj.testInfo.data[0].dewPoint, -50.0f, 50.0f);
+	ImGui::SliderFloat("GroundTemp", &readTableObj.skewTData.data.temperature[0], -50.0f, 50.0f);
+	ImGui::SliderFloat("GroundDew", &readTableObj.skewTData.data.dewPoint[0], -50.0f, 50.0f);
 
 	ImGui::Text("CAPE: %f", readTableObj.CAPE);
 

@@ -10,7 +10,6 @@ float meteoformulas::es(const float T)
 {
 	//return (0.61094f * 0.01f) * expf((17.67f * T) / (T + 243.5f)); //Worse accuraccy of around 0.2%
 	return (0.61078f * 0.01f) * expf((17.27f * T) / (T + 237.3f));
-
 }
 
 float meteoformulas::ws(const float T, const float P)
