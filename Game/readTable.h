@@ -55,8 +55,11 @@ public:
 
 	void readDWDFile(const char* file);
 
+	void initEnvironment();
+
+
 	void heightToPressureCalculate();
-	float getPressureAtHeight(float height);
+	std::pair<float,int> getPressureAtHeight(float height);
 	float getHeightAtPressure(float pressure);
 	
 	//Converts temp and height in meters or pressure to plotting so its easily modified.

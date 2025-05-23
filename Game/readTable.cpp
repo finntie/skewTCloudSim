@@ -3,6 +3,7 @@
 #include "zip_file.hpp"
 #include "math/constants.hpp"
 #include "math/meteoformulas.h"
+#include "environment.h"
 using namespace Constants;
 
 //Engine specific
@@ -201,9 +202,9 @@ void readTable::readDWDFile(const char* _file)
 	}
 
 	//TODO: Could do something with the dates, i.e. select a date, but for now we will grab the latest.
-	//targetDate = AllDates[161] + "12";
+	targetDate = AllDates[161] + "12";
 
-	targetDate = AllDates[243] + "12"; //1700 Cape?
+	//targetDate = AllDates[243] + "12"; //1700 Cape?
 
 	printf("Reading file %s\n", targetDate.c_str());
 
@@ -341,6 +342,64 @@ void readTable::readDWDFile(const char* _file)
 	heightToPressureCalculate();
 }
 
+void readTable::initEnvironment()
+{
+
+	std::vector<int> indices;
+	std::vector<float> potTempSmall;
+	potTempSmall.resize(GRIDSIZESKYY);
+	std::vector<float> potTemp;
+	potTemp.resize(GRIDSIZESKY);
+	std::vector<glm::vec2> velField;
+	velField.resize(GRIDSIZESKY);
+	std::vector<half_float::half> Qv;
+	Qv.resize(GRIDSIZESKY);
+	std::vector<float> groundTemp;
+	std::vector<half_float::half> groundPressure;
+	std::vector<float> pressures;
+
+	int j = 0;
+	for (float y = 0; y < GRIDSIZESKYY * VOXELSIZE; y += VOXELSIZE)
+	{
+		auto result = getPressureAtHeight(y + skewTData.data.altitude[0]);
+		pressures.push_back(result.first);
+		indices.push_back(result.second);
+		j++;
+	}
+	
+	meteoformulas::getPotentialTemp(skewTData.data.temperature[0], skewTData.data.pressure[0], pressures.data(), potTempSmall.data(), GRIDSIZESKYY);
+	//Duplicate across x direction
+	for (int i = 0; i < GRIDSIZESKYY; i++)
+	{
+		for (int x = 0; x < GRIDSIZESKYX; x++)
+		{
+			potTemp[x + i * int(GRIDSIZESKYX)] = potTempSmall[i] + 273.15f;
+		}
+	}
+
+	//Converting 2D into 1D: 90degrees = -1, 270 degrees = 1
+	for (int i = 0; i < GRIDSIZESKYY; i++)
+	{
+		float velFieldValue = std::sinf((skewTData.data.windDir[indices[i]] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[indices[i]];
+		float QvValue = meteoformulas::ws(skewTData.data.temperature[indices[i]], skewTData.data.pressure[indices[i]]);
+
+		for (int x = 0; x < GRIDSIZESKYX; x++)
+		{
+			velField[i * GRIDSIZESKYX + x] = { velFieldValue, 0.0f };
+			Qv[i * GRIDSIZESKYX + x] = half_float::half(QvValue);
+		}
+	}
+
+	for (int x = 0; x < GRIDSIZEGROUND; x++)
+	{
+		groundTemp.push_back(skewTData.data.temperature[0] + 273.15f);
+		groundPressure.push_back(half_float::half(skewTData.data.pressure[0]));
+	}
+
+	auto& Environment = Engine.ECS().GetSystem<environment>();
+	Environment.init(potTemp.data(), velField.data(), Qv.data(), groundTemp.data(), groundPressure.data());
+}
+ 
 
 
 void readTable::heightToPressureCalculate()
@@ -352,20 +411,22 @@ void readTable::heightToPressureCalculate()
 	}
 }
 
-float readTable::getPressureAtHeight(float height)
+std::pair<float, int> readTable::getPressureAtHeight(float height)
 {
 	auto upper = skewTData.heightToPressure.lower_bound(height);
 
-	if (upper == skewTData.heightToPressure.begin()) return upper->second;
-	else if (upper == skewTData.heightToPressure.end()) return std::prev(upper)->second;
+	if (upper == skewTData.heightToPressure.begin()) return { upper->second, 0 };
+	else if (upper == skewTData.heightToPressure.end()) return { std::prev(upper)->second, int(skewTData.heightToPressure.size() - 1) };
 
 	auto lower = std::prev(upper);
+
+	int index = std::max(int(std::distance(skewTData.heightToPressure.begin(), lower)),0);
 
 	//P = P1 + (P2 - P1) * (H - H1) / (H2 - H1)
 	float P1 = lower->second, P2 = upper->second;
 	float H1 = lower->first, H2 = upper->first;
 
-	return P1 + (P2 - P1) * (height - H1) / (H2 - H1);
+	return { P1 + (P2 - P1) * (height - H1) / (H2 - H1), index };
 }
 
 float readTable::getHeightAtPressure(float pressure)
@@ -417,7 +478,7 @@ void readTable::debugDrawData()
 
 	//Making pressures array
 	const int pressuresSize = 900;
-	float* pressures = new float[pressuresSize];
+	std::unique_ptr<float[]> pressures = std::make_unique<float[]>(pressuresSize);
 	{
 		int i = 0;
 		for (float p = 1000.0f; p > 100; p -= 1.0f)
@@ -426,8 +487,9 @@ void readTable::debugDrawData()
 			i++;
 		}
 	}
-	float* potTemps = new float[pressuresSize];
-	float* temps = new float[skewTData.data.dataSize];
+	std::unique_ptr<float[]> potTemps = std::make_unique<float[]>(pressuresSize);
+	std::unique_ptr<float[]> temps = std::make_unique<float[]>(skewTData.data.dataSize);
+
 
 
 	for (float h = 0; h < 1000; h += 100) 
@@ -452,7 +514,7 @@ void readTable::debugDrawData()
 	{
 		//Dry adiabatic (potential temps)
 		{
-			meteoformulas::getPotentialTemp(i, 1000.0f, pressures, potTemps, pressuresSize);
+			meteoformulas::getPotentialTemp(i, 1000.0f, pressures.get(), potTemps.get(), pressuresSize);
 
 			for (int j = 10; j < pressuresSize; j += 10)
 			{
@@ -466,7 +528,7 @@ void readTable::debugDrawData()
 		//Moist adiabatic
 		{
 			int offset = 0;
-			meteoformulas::getMoistTemp(i, 1000.0f, pressures, potTemps, pressuresSize, offset);
+			meteoformulas::getMoistTemp(i, 1000.0f, pressures.get(), potTemps.get(), pressuresSize, offset);
 			if (offset == -1) continue;
 
 			for (int j = 10 + offset; j < pressuresSize; j += 10)
@@ -498,7 +560,7 @@ void readTable::debugDrawData()
 
 
 	//Dry adiabatic to LCL
-	meteoformulas::getPotentialTemp(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.pressure.get(), temps, skewTData.data.dataSize);
+	meteoformulas::getPotentialTemp(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.pressure.get(), temps.get(), skewTData.data.dataSize);
 
 	for (int j = 1; j < skewTData.data.dataSize; j++)
 	{
@@ -511,7 +573,7 @@ void readTable::debugDrawData()
 
 	//Moist adiabatic at LCL
 	int offset = 0;
-	meteoformulas::getMoistTemp(LCL.x, LCL.y, skewTData.data.pressure.get(), temps, skewTData.data.dataSize, offset);
+	meteoformulas::getMoistTemp(LCL.x, LCL.y, skewTData.data.pressure.get(), temps.get(), skewTData.data.dataSize, offset);
 	if (offset != -1)
 	{
 		for (int j = 1 + offset; j < skewTData.data.dataSize; j++)
@@ -589,11 +651,6 @@ void readTable::debugDrawData()
 		prevDir = dir;
 
 	}
-
-	//Cleanup
-	delete[] pressures;
-	delete[] temps;
-	delete[] potTemps;
 }
 
 

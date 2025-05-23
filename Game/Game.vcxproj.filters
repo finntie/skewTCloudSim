@@ -44,9 +44,9 @@
     <ClInclude Include="environment.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="kernelTest.cuh" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="kernelTest.cuh" />
     <CudaCompile Include="kernelTest.cu" />
   </ItemGroup>
 </Project>

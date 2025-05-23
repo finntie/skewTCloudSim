@@ -32,8 +32,10 @@ gameSystem::gameSystem()
 
 
 	//readTableObj.readKNMIFile("assets/input/KNMI/DeBilt_20250301_233612.mwx");
-	//readTableObj.readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_akt.zip");
+	readTableObj.readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_akt.zip");
 	//readTableObj.readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_20240101_20241231_hist.zip");
+	readTableObj.initEnvironment();
+
 
 	//Add light
 	Entity lightEntity = Engine.ECS().CreateEntity();
@@ -112,6 +114,11 @@ void gameSystem::CameraMovement(float dt)
 		//------------------------------------------------------------------------------
 
 		float cameraSpeed = 25.0f;
+		if (Engine.Input().GetKeyboardKey(Input::KeyboardKey::LeftShift))
+		{
+			cameraSpeed *= 10.0f;
+		}
+
 
 		//Using keys
 		if (Engine.Input().GetKeyboardKey(Input::KeyboardKey::W))
@@ -136,15 +143,15 @@ void gameSystem::CameraMovement(float dt)
 		}
 
 		//Using mouse
-		//if (LeftShift && Engine.Input().GetMouseButtonOnce(Input::MouseButton::Left))
-		//{
-		//	SaveMousePos = MousePos3D;
-		//}
-		//else if (LeftShift && Engine.Input().GetMouseButton(Input::MouseButton::Left))
-		//{
-		//	glm::vec3 offset = (SaveMousePos - MousePos3D);
-		//	transform.SetTranslation(transform.GetTranslation() + offset);
-		//}
+		if (LeftShift && Engine.Input().GetMouseButtonOnce(Input::MouseButton::Left))
+		{
+			SaveMousePos = MousePos3D;
+		}
+		else if (LeftShift && Engine.Input().GetMouseButton(Input::MouseButton::Left))
+		{
+			glm::vec3 offset = (SaveMousePos - MousePos3D);
+			transform.SetTranslation(transform.GetTranslation() + offset);
+		}
 
 		//------------------------------------------------------------------------------
 		//--------------------------Looking around--------------------------------------

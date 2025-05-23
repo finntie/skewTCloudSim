@@ -23,8 +23,8 @@ int main(int, char**)
 
     //Create systems
     Engine.ECS().CreateSystem<Renderer>();
-    Engine.ECS().CreateSystem<gameSystem>();
     Engine.ECS().CreateSystem<environment>();
+    Engine.ECS().CreateSystem<gameSystem>();
 
     auto cameraEntity = Engine.ECS().CreateEntity();
     auto& transform = Engine.ECS().CreateComponent<Transform>(cameraEntity);
@@ -38,5 +38,7 @@ int main(int, char**)
     Engine.Run();
     Engine.Shutdown();
     
+    _CrtDumpMemoryLeaks();
 
+    return 0;
 }
