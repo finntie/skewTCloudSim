@@ -32,6 +32,7 @@ int main(int, char**)
     Engine.ECS().CreateComponent<Camera>(cameraEntity).Projection = glm::perspective(glm::radians(60.0f), 1.77f, 0.2f, 500.0f);
     auto view = glm::lookAt(glm::vec3(0, 0, 40), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
     transform.SetFromMatrix(glm::inverse(view));
+    transform.SetTranslation(glm::vec3(10, 30, 70));
     
 
     //Run the engine and thus start the game

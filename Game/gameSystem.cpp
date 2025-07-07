@@ -14,6 +14,7 @@
 #include "core/device.hpp"
 #include "tools/inspector.hpp"
 #include "math/geometry.hpp"
+#include "environment.h"
 
 #include <sstream>
 #include <iostream>
@@ -101,10 +102,28 @@ void gameSystem::OnPanel()
 
 void gameSystem::CameraMovement(float dt)
 {
+
+	//Reset state until we de-selected the inspector
+	if (Engine.Inspector().IsSelected())
+	{
+		SaveMousePos = MousePos3D;
+		Save2DPos = Engine.Input().GetMousePosition();
+		glm::vec2 mousePos2D = Engine.Input().GetMousePosition();
+		SaveRoll = mousePos2D.x - Save2DPos.x;
+		SavePitch = mousePos2D.y - Save2DPos.y;
+		MouseWheel = Engine.Input().GetMouseWheel();
+		return;
+	}
+
+
 	//Keybinds = Left-Shift + mouse
 	bool LeftShift = Engine.Input().GetKeyboardKey(Input::KeyboardKey::LeftShift);
-	LeftShift = true;
-	
+
+	//If in view mode, just always be able to move.
+	if (!Engine.ECS().GetSystem<environment>().m_editMode)
+	{
+		LeftShift = true;
+	}
 	
 	//For each camera (we have 1)
 	for (const auto& [entity, camera, transform] : Engine.ECS().Registry.view<Camera, Transform>().each())

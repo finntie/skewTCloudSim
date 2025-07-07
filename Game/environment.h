@@ -57,29 +57,50 @@ public:
 
 	void Update(float dt) override;
 
-	//Ground
+	//--------------------------------Ground---------------------------------
 	float groundCoverageFactor(const int index);
 	void updateGroundTemps(const float dt, const int index, const float Irradiance, const float cloudCoverage);
 	void updateMicroPhysicsGround(const float dt, const int index);
+	float calculateSumPhaseHeatGround(const int i, const float pQgr, const float pQgs, const float pQgi);
 
-	//Sky
-	void updateVelocityField(const float dt, const int index, const float* m_pressures, const float density, const float Buoyancy, const glm::vec2 extraForces);
-	void diffuseAndAdvect(const float dt, const int index, float* array);
+
+	//----------------------------------Sky----------------------------------
+	void diffuseAndAdvectTemp(const float dt, const int index, float* array);
+	void getInterpolValueTemp(float* arrayFull, const glm::vec2 Ppos, float& output);
 	void diffuseAndAdvect(const float dt, const int index, half_float::half* array, bool vapor = false, const float fallVelocity = 0.0f);
-	/// <summary>Calculates the mass-weighted mean terminal velocity of all types of precip</summary>
-	/// <returns>x: rain, y: snow, z: ice</returns>
-	glm::vec3 calculateFallingVelocity(const float dt, const int index, const float density);
+	bool getInterpolValue(half_float::half* array,const glm::vec2 Ppos, const bool Vapor, float& output);
+	float calculateBuoyancy(const int index, const float* m_pressures, const float T);
 	//void backTracing(const float dt, const int index, const float fallingVelocity);
 	//float trilinearSampling(const glm::vec2 pos, half_float::half* array);
 	glm::vec2 vorticityConfinement(const int index);
 	/// <summary> returns eta (?) using nabla velocity, set raw to true to return raw nabla velocity</summary>
-	float eta(const int index, bool raw = false);
-	float calculateBuoyancy(const int index, const float* m_pressures, const float T);
+	float curl(const int index, bool raw = false);
+	float div(const int index);
+	glm::vec2 lap(const int index);
+	void updateVelocityField(const float dt, const int index, float Buoyancy, glm::vec2 extraForces);
+	bool getInterpolVel(glm::vec2 Ppos, bool U, float& output);
+	//-----PressureProject-----
+	void pressureProjectVelField(const float dt);
+	void calculatePresProj(std::vector<float>& pressureProj);
+	void calculateDivergence(std::vector<float>& output);
+	void calculatePrecon(std::vector<float>& output, std::vector<glm::ivec3>& A);
+	void applyPreconditioner(std::vector<float>& precon, std::vector<float>& r, std::vector<glm::ivec3>& A, std::vector<float>& storageQ, std::vector<float>& output);
+	void applyA(std::vector<float>& s, std::vector<glm::ivec3>& A, std::vector<float>& output);
+	/// <summary>Calculates the mass-weighted mean terminal velocity of all types of precip</summary>
+	/// <returns>x: rain, y: snow, z: ice</returns>
+	glm::vec3 calculateFallingVelocity(const float dt, const int index, const float density);
 	void updateMicroPhysics(const float dt, const int index, const float* m_pressures, const float T, const float density);
-	void computeHeatTransfer(const float dt, const int index, const float sumHeat);
 	float calculateSumPhaseHeat(const int index, const float Temp, const float pQv, const float pQw, const float pQc, const float pQr, const float pQs, const float pQi);
-	float calculateSumPhaseHeatGround(const int i, const float pQgr, const float pQgs, const float pQgi);
+	void computeHeatTransfer(const float dt, const int index, const float sumHeat);
 
+	/// <summary> Get UV from the velocity field which is in MAC grid</summary>
+	glm::vec2 getUV(const int index);
+	/// <summary>Get ambient temp at height. Using avaraged lapse rate between 5 and 2 km. </summary>
+	float getIsentropicTemp(const int groundIndex);
+	bool outside(const int i);
+	void setDebugArray(std::vector<float>& s, const int index = 0);
+
+	bool m_editMode = false;
 private:
 	
 
@@ -95,9 +116,14 @@ private:
 
 	float m_pressures[GRIDSIZESKY]{0.0f};
 	
+	float m_debugArray0[GRIDSIZESKY]{ 0.0f };
+	float m_debugArray1[GRIDSIZESKY]{ 0.0f };
+	float m_debugArray2[GRIDSIZESKY]{ 0.0f };
+
 	//Debug
 	int debugViewSky = 0;
 	int debugViewGround = 0;
+	int m_debugEditParam = 0;
 
 	int mousePointingIndex = 0;
 	bool simulationActive = false;

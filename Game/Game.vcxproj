@@ -153,12 +153,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="editor.cpp" />
     <ClCompile Include="environment.cpp" />
     <ClCompile Include="gameSystem.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="readTable.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="editor.h" />
     <ClInclude Include="environment.h" />
     <ClInclude Include="external\odeint.hpp" />
     <ClInclude Include="gameSystem.h" />

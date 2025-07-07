@@ -202,7 +202,7 @@ void readTable::readDWDFile(const char* _file)
 	}
 
 	//TODO: Could do something with the dates, i.e. select a date, but for now we will grab the latest.
-	targetDate = AllDates[161] + "12";
+	targetDate = AllDates[161] + "12"; // 2025 03 24 
 
 	//targetDate = AllDates[243] + "12"; //1700 Cape?
 
@@ -347,13 +347,15 @@ void readTable::initEnvironment()
 
 	std::vector<int> indices;
 	std::vector<float> potTempSmall;
-	potTempSmall.resize(GRIDSIZESKYY);
 	std::vector<float> potTemp;
-	potTemp.resize(GRIDSIZESKY);
 	std::vector<glm::vec2> velField;
-	velField.resize(GRIDSIZESKY);
 	std::vector<half_float::half> Qv;
+
+	potTempSmall.resize(GRIDSIZESKYY);
+	potTemp.resize(GRIDSIZESKY);
+	velField.resize(GRIDSIZESKY);
 	Qv.resize(GRIDSIZESKY);
+
 	std::vector<float> groundTemp;
 	std::vector<half_float::half> groundPressure;
 	std::vector<float> pressures;
@@ -366,7 +368,7 @@ void readTable::initEnvironment()
 		indices.push_back(result.second);
 		j++;
 	}
-	
+
 	meteoformulas::getPotentialTemp(skewTData.data.temperature[0], skewTData.data.pressure[0], pressures.data(), potTempSmall.data(), GRIDSIZESKYY);
 	//Duplicate across x direction
 	for (int i = 0; i < GRIDSIZESKYY; i++)
@@ -389,6 +391,19 @@ void readTable::initEnvironment()
 			Qv[i * GRIDSIZESKYX + x] = half_float::half(QvValue);
 		}
 	}
+
+	//Convert velfield into MAC-grid - TODO: could be done in loop above if loop was counting down.
+	for (int y = 0; y < GRIDSIZESKYY; y++)
+	{
+		for (int x = 0; x < GRIDSIZESKYX; x++)
+		{
+			const int Nx = x + 1 >= GRIDSIZESKYX ? x : x + 1;
+			const int Ny = y + 1 >= GRIDSIZESKYY ? y : y + 1;
+
+			velField[x + y * GRIDSIZESKYX] = { velField[x + y * GRIDSIZESKYX].x + velField[Nx + y * GRIDSIZESKYX].x / 2, (velField[x + y * GRIDSIZESKYX].y + velField[x + Ny * GRIDSIZESKYX].y) / 2 };
+		}
+	}
+
 
 	for (int x = 0; x < GRIDSIZEGROUND; x++)
 	{
