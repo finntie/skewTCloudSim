@@ -347,17 +347,17 @@ void readTable::initEnvironment()
 
 	std::vector<int> indices;
 	std::vector<float> potTempSmall;
-	std::vector<float> potTemp;
+	std::vector<double> potTemp;
 	std::vector<glm::vec2> velField;
-	std::vector<half_float::half> Qv;
+	std::vector<float> Qv;
 
 	potTempSmall.resize(GRIDSIZESKYY);
 	potTemp.resize(GRIDSIZESKY);
 	velField.resize(GRIDSIZESKY);
 	Qv.resize(GRIDSIZESKY);
 
-	std::vector<float> groundTemp;
-	std::vector<half_float::half> groundPressure;
+	std::vector<double> groundTemp;
+	std::vector<float> groundPressure;
 	std::vector<float> pressures;
 
 	int j = 0;
@@ -369,13 +369,13 @@ void readTable::initEnvironment()
 		j++;
 	}
 
-	meteoformulas::getPotentialTemp(skewTData.data.temperature[0], skewTData.data.pressure[0], pressures.data(), potTempSmall.data(), GRIDSIZESKYY);
+	meteoformulas::getPotentialTemp(float(skewTData.data.temperature[0]), skewTData.data.pressure[0], pressures.data(), potTempSmall.data(), GRIDSIZESKYY);
 	//Duplicate across x direction
 	for (int i = 0; i < GRIDSIZESKYY; i++)
 	{
 		for (int x = 0; x < GRIDSIZESKYX; x++)
 		{
-			potTemp[x + i * int(GRIDSIZESKYX)] = potTempSmall[i] + 273.15f;
+			potTemp[x + i * int(GRIDSIZESKYX)] = static_cast<double>(potTempSmall[i] + 273.15f);
 		}
 	}
 
@@ -407,7 +407,7 @@ void readTable::initEnvironment()
 
 	for (int x = 0; x < GRIDSIZEGROUND; x++)
 	{
-		groundTemp.push_back(skewTData.data.temperature[0] + 273.15f);
+		groundTemp.push_back(static_cast<double>(skewTData.data.temperature[0] + 273.15f));
 		groundPressure.push_back(half_float::half(skewTData.data.pressure[0]));
 	}
 

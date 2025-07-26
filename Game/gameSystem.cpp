@@ -15,6 +15,7 @@
 #include "tools/inspector.hpp"
 #include "math/geometry.hpp"
 #include "environment.h"
+#include "editor.h"
 
 #include <sstream>
 #include <iostream>
@@ -31,12 +32,12 @@ gameSystem::gameSystem()
 {
 	Title = "game";
 
+	Engine.Device().GetWidth();
 
 	//readTableObj.readKNMIFile("assets/input/KNMI/DeBilt_20250301_233612.mwx");
 	readTableObj.readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_akt.zip");
 	//readTableObj.readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_20240101_20241231_hist.zip");
 	readTableObj.initEnvironment();
-
 
 	//Add light
 	Entity lightEntity = Engine.ECS().CreateEntity();
@@ -104,6 +105,7 @@ void gameSystem::CameraMovement(float dt)
 {
 
 	//Reset state until we de-selected the inspector
+#ifdef BEE_INSPECTOR
 	if (Engine.Inspector().IsSelected())
 	{
 		SaveMousePos = MousePos3D;
@@ -114,13 +116,13 @@ void gameSystem::CameraMovement(float dt)
 		MouseWheel = Engine.Input().GetMouseWheel();
 		return;
 	}
-
+#endif
 
 	//Keybinds = Left-Shift + mouse
 	bool LeftShift = Engine.Input().GetKeyboardKey(Input::KeyboardKey::LeftShift);
 
 	//If in view mode, just always be able to move.
-	if (!Engine.ECS().GetSystem<environment>().m_editMode)
+	if (!Engine.ECS().Registry.ctx().get<editor>().getEditMode())
 	{
 		LeftShift = true;
 	}
