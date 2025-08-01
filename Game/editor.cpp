@@ -1,5 +1,6 @@
 #include "environment.h"
 #include "editor.h"
+#include "skewTer.h"
 
 #include "math/meteoformulas.h"
 #include "math/constants.hpp"
@@ -45,12 +46,37 @@ editor::editor(environment::gridDataSky& skyData, environment::gridDataGround& g
 	colorScheme.addColor("debugColor", 0.1f, bee::Colors::Pink + glm::vec4(0,0.8f,0,0));
 }
 
+void editor::init()
+{
+	//Init skewTer
+	{
+		auto& skewTObj = bee::Engine.ECS().Registry.ctx().emplace<skewTer>();
+
+		float* temps = new float[GRIDSIZESKYY];
+		float* dewPoints = new float[GRIDSIZESKYY];
+		float* pressures = new float[GRIDSIZESKYY];
+
+		dataToSkewTData(temps, dewPoints, pressures);
+
+		skewTer::skewTInfo skewT;
+		skewT.init(GRIDSIZESKYY, temps, dewPoints, pressures);
+		m_skewTidx = (m_groundHeight[0] + 1) * GRIDSIZESKYX;
+		skewTObj.setSkewT(skewT);
+
+		delete[] temps;
+		delete[] dewPoints;
+		delete[] pressures;
+	}
+}
+
 void editor::update()
 {
 	//ImGui
 	panel();
 	//Edit mode
 	editMode();
+	//Optional info
+	keyBased();
 }
 
 void editor::panel()
@@ -68,6 +94,7 @@ void editor::viewData()
 {
 	viewSky();
 	viewGround();
+	viewSkewT();
 
 	//Mouse pos debugging
 	glm::vec3 MousePos3D = bee::screenToGround(bee::Engine.Input().GetMousePosition());
@@ -75,6 +102,16 @@ void editor::viewData()
 	{
 		m_mousePointingIndex = (int(MousePos3D.x) + int(MousePos3D.y) * GRIDSIZESKYX);
 	}
+}
+
+void editor::keyBased()
+{
+	if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::Space))
+	{
+		viewToolTipData();
+		if (m_mousePointingIndex / GRIDSIZESKYX > m_groundHeight[m_mousePointingIndex % GRIDSIZESKYX]) m_skewTidx = m_mousePointingIndex;
+	}
+
 }
 
 void editor::editMode()
@@ -145,6 +182,13 @@ void editor::viewParamInformation()
 		std::to_string(m_groundView.Qgs[m_mousePointingIndex % GRIDSIZESKYX]) + "\n" +
 		std::to_string(m_groundView.Qgi[m_mousePointingIndex % GRIDSIZESKYX]) + "\n"
 		).c_str());
+
+	//Also render a square
+	const int x = m_mousePointingIndex % GRIDSIZESKYX;
+	const int y = m_mousePointingIndex / GRIDSIZESKYX;
+
+	bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.15f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
+
 }
 
 void editor::setView()
@@ -303,7 +347,7 @@ void editor::viewSky()
 			{
 				//Get temp
 				const float height = y * VOXELSIZE;
-				const float pressure = meteoformulas::getStandardPressureAtHeight(float(m_groundView.T[int(x)]), height);
+				const float pressure = meteoformulas::getStandardPressureAtHeight(float(m_groundView.T[int(x)]) - 273.15f, height);
 				const float T = float(m_envView.potTemp[int(x) + int(y) * GRIDSIZESKYX]) * glm::pow(pressure / m_groundView.P[int(x)], Constants::Rsd / Constants::Cpd);
 				colorScheme.getColor("TemperatureSky", T, color);
 				break;
@@ -381,6 +425,18 @@ void editor::viewGround()
 	}
 }
 
+void editor::renderVelSquare(glm::vec2 vel, const int x, const int y)
+{
+	auto& colorScheme = bee::Engine.DebugRenderer().GetColorScheme();
+
+	glm::vec3 color{};
+	colorScheme.getColor("velField", glm::length(vel), color);
+	bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, 0.1f), glm::vec3(0.0f, 0.0f, 1.0f), vel, 0.9f, bee::Colors::Black);
+
+	bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.0f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
+	bee::Engine.DebugRenderer().AddFilledSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.01f), 1.0f, glm::vec3(0, 0, 1), { color, 1.0f });
+}
+
 void editor::viewBrush()
 {
 	if (m_brushing)
@@ -390,6 +446,44 @@ void editor::viewBrush()
 		bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, MousePos3D, m_brushSize, glm::vec3(0, 0, 1), bee::Colors::White);
 	}
 }
+
+void editor::viewToolTipData()
+{
+	glm::vec2 MousePos = bee::Engine.Input().GetMousePosition();
+	const int x = m_mousePointingIndex % GRIDSIZESKYX;
+	const int y = m_mousePointingIndex / GRIDSIZESKYX;
+
+	const float height = y * VOXELSIZE;
+	const float pressure = meteoformulas::getStandardPressureAtHeight(float(m_groundView.T[int(x)]) - 273.15f, height);
+	const float T = float(m_envView.potTemp[int(x) + int(y) * GRIDSIZESKYX]) * glm::pow(pressure / m_groundView.P[int(x)], Constants::Rsd / Constants::Cpd) - 273.15f;
+
+	const float rs = meteoformulas::ws(T, pressure);
+	const float RH = m_envView.Qv[m_mousePointingIndex] / rs * 100;
+	//Dew point calculation https://www.omnicalculator.com/physics/dew-point
+	float dew = 0.0f;
+	{
+		const float a = 17.625f;
+		const float b = 243.04f;
+		const float c = log(RH / 100) + a * T / (b + T);
+		dew = (b * c) / (a - c);
+	}
+	ImGui::SetTooltip("T   %.4fC,	 D %.4fC \nRH %.4f%%,	 h %.1fm", T, dew, RH, height);
+}
+
+void editor::viewSkewT()
+{
+	auto& skewTObj = bee::Engine.ECS().Registry.ctx().get<skewTer>();
+
+	float* temps = new float[GRIDSIZESKYY];
+	float* dewPoints = new float[GRIDSIZESKYY];
+	float* pressures = new float[GRIDSIZESKYY];
+	dataToSkewTData(temps, dewPoints, pressures);
+
+	skewTObj.setAllArrays(temps, dewPoints, pressures);
+	skewTObj.setStartIdx(m_skewTidx / GRIDSIZESKYX);
+	skewTObj.drawSkewT({ 128, 0 }, 1, 100);
+}
+
 
 void editor::applyBrush()
 {
@@ -525,3 +619,37 @@ void editor::addDataErasedGround(const int x, const int y)
 }
 
 
+void editor::dataToSkewTData(float* temp, float* dew, float* pressures)
+{
+	const int y = m_skewTidx / GRIDSIZESKYX;
+	const int x = m_skewTidx % GRIDSIZESKYX;
+	for (int i = 0; i < GRIDSIZESKYY; i++)
+	{
+		if (i <= y)
+		{
+			temp[i] = 0;
+			dew[i] = 0;
+			pressures[i] = 0;
+			continue;
+		}
+
+		const float height = i * VOXELSIZE;
+		const float pressure = meteoformulas::getStandardPressureAtHeight(float(m_groundView.T[x]) - 273.15f, height);
+		const float T = float(m_envView.potTemp[x + i * GRIDSIZESKYX]) * glm::pow(pressure / m_groundView.P[x], Constants::Rsd / Constants::Cpd) - 273.15f;
+
+		const float rs = meteoformulas::ws(T, pressure);
+		const float RH = m_envView.Qv[x + i * GRIDSIZESKYX] / rs * 100;
+		//Dew point calculation https://www.omnicalculator.com/physics/dew-point
+		float dewpoint = 0.0f;
+		{
+			const float a = 17.625f;
+			const float b = 243.04f;
+			const float c = log(RH / 100) + a * T / (b + T);
+			dewpoint = (b * c) / (a - c);
+		}
+
+		temp[i] = T;
+		dew[i] = dewpoint;
+		pressures[i] = pressure;
+	}
+}

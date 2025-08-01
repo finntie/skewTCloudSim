@@ -4,15 +4,18 @@
 class environment;
 struct gridDataSky;
 struct gridDataGround;
+struct gridDataBounds;
 class editor
 {
 public:
 
 	editor(environment::gridDataSky& skyData, environment::gridDataGround& groundData, int(&height)[GRIDSIZEGROUND], float(&debug1)[GRIDSIZESKY], float(&debug2)[GRIDSIZESKY], float(&debug3)[GRIDSIZESKY]);
 	~editor() {};
+	void init();
 
 	void update();
 	void viewData();
+	void keyBased();
 
 	//Get and set
 	bool getEditMode() { return m_editMode; }
@@ -37,7 +40,10 @@ private:
 	//View
 	void viewSky();
 	void viewGround();
+	void viewSkewT();
+	void renderVelSquare(glm::vec2 vel, const int x, const int y);
 	void viewBrush();
+	void viewToolTipData();
 
 	//Editor
 	void applyBrush();
@@ -45,6 +51,10 @@ private:
 	void setValueOfParam(const int index, const int param, const bool add, const float value, const float secondValue = 0.0f);
 	void setGround(const int index, bool ground);
 	void addDataErasedGround(const int x, const int y);
+
+	//Helpers
+	void dataToSkewTData(float* temp, float* dew, float* pressures);
+
 
 	//Variables
 	environment::gridDataSky& m_envView;
@@ -69,6 +79,7 @@ private:
 	int m_simulationStep{ 0	};
 	float m_simulationSpeed{ 1.0f };
 	bool m_changedGround = false;
+	int m_skewTidx = GRIDSIZESKYX / 2;
 
 	//Brush variables
 	bool m_brushing = false;

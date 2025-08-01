@@ -5,12 +5,12 @@
 #include "half/half.hpp"
 #include <glm/glm.hpp>
 
-#define GRIDSIZESKYX 64
-#define GRIDSIZESKYY 32
+#define GRIDSIZESKYX 32
+#define GRIDSIZESKYY 128
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY)
 #define GRIDSIZEGROUND (GRIDSIZESKYX)
-#define VOXELSIZE 4.0f //Meters
+#define VOXELSIZE 16.0f //Meters
 
 class environment : public bee::System, public bee::IPanel
 {
@@ -73,6 +73,7 @@ public:
 	bool getInterpolValue(float* array,const glm::vec2 Ppos, const bool Vapor, float& output);
 	void updateVelocityField(const float dt);
 	float calculateBuoyancy(const int index, const float* m_pressures);
+	float averageEnvironment(const int index, const int distanceFromidx, const float maxDistance, const bool temp);
 	//void backTracing(const float dt, const int index, const float fallingVelocity);
 	//float trilinearSampling(const glm::vec2 pos, half_float::half* array);
 	glm::vec2 vorticityConfinement(const int index);

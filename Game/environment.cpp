@@ -5,6 +5,7 @@
 #include "environment.h"
 
 #include "editor.h"
+#include "skewTer.h"
 #include "math/meteoformulas.h"
 #include "math/constants.hpp"
 #include "core/engine.hpp"
@@ -92,8 +93,10 @@ void environment::init(double* potTemps, glm::vec2* velField, float* Qv, double*
 		m_GHeight[i] = static_cast<int>(std::round(noise[i] * maxHeight));
 	}
 
+
 	//Init editor
-	bee::Engine.ECS().Registry.ctx().emplace<editor>(m_envGrid, m_groundGrid, m_GHeight, m_debugArray0, m_debugArray1, m_debugArray2);
+	auto& editObj = bee::Engine.ECS().Registry.ctx().emplace<editor>(m_envGrid, m_groundGrid, m_GHeight, m_debugArray0, m_debugArray1, m_debugArray2);
+	editObj.init();
 
 	//Reset values that are in ground
 	for (int x = 0; x < GRIDSIZEGROUND; x++)
@@ -110,6 +113,7 @@ void environment::init(double* potTemps, glm::vec2* velField, float* Qv, double*
 			m_envGrid.velField[x + y * GRIDSIZESKYX] = { 0.0f, 0.0f };
 		}
 	}
+
 
 	computeNeighArray();
 }
@@ -136,7 +140,6 @@ void environment::DebugRender(float dt)
 	{
 		computeNeighArray();
 	}
-
 }
 
 void environment::Update(float dt)
@@ -167,6 +170,13 @@ void environment::Update(float dt)
 	for (int s = 0; s < 1; s++) //Speed in cost of fps.
 	{
 
+		// Fill Pressures
+		for (int i = 0; i < GRIDSIZESKY; i++)
+		{
+			const float height = std::floorf(float(i) / GRIDSIZESKYX) * VOXELSIZE;
+			m_pressures[i] = meteoformulas::getStandardPressureAtHeight(float(m_groundGrid.T[i % GRIDSIZESKYX] - 273.15f), height);
+		}
+
 		// Update Ground
 		for (int i = 0; i < GRIDSIZEGROUND; i++)
 		{
@@ -178,7 +188,8 @@ void environment::Update(float dt)
 
 			// 1.
 			float LC = groundCoverageFactor(i);
-
+			LC;
+			Irradiance;
 			// 2.
 			updateGroundTemps(dt, i, Irradiance, LC);
 
@@ -188,14 +199,6 @@ void environment::Update(float dt)
 
 			// 5.
 			m_groundGrid.T[i] += m_speed * dt * calculateSumPhaseHeatGround(i, pQgr, pQgs, pQgi);
-		}
-
-
-		// Fill Pressures
-		for (int i = 0; i < GRIDSIZESKY; i++)
-		{
-			const float height = std::floorf(float(i) / GRIDSIZESKYX) * VOXELSIZE;
-			m_pressures[i] = meteoformulas::getStandardPressureAtHeight(float(m_groundGrid.T[i % GRIDSIZESKYX] - 273.15f), height);
 		}
 
 		// Update sky
@@ -250,16 +253,23 @@ void environment::Update(float dt)
 					const float density = m_pressures[i] * 100 / (Rsd * Tv); //Convert Pha to Pa
 
 					// 5.
-					const float pQv = m_envGrid.Qv[i], pQw = m_envGrid.Qw[i], pQc = m_envGrid.Qc[i], pQr = m_envGrid.Qr[i], pQs = m_envGrid.Qs[i], pQi = m_envGrid.Qi[i];
+					//const float pQv = m_envGrid.Qv[i], pQw = m_envGrid.Qw[i], pQc = m_envGrid.Qc[i], pQr = m_envGrid.Qr[i], pQs = m_envGrid.Qs[i], pQi = m_envGrid.Qi[i];
+
+					const float QWS = meteoformulas::ws((T - 273.15f), m_pressures[i]); //Maximum water vapor air can hold
+					float EW_min_CW = std::min(QWS - m_envGrid.Qv[i], m_envGrid.Qw[i]);
+					debugVector[i] = QWS - m_envGrid.Qv[i];
+					debugVector2[i] = EW_min_CW;
+
 					updateMicroPhysics(dt, i, m_pressures, T, density);
 
 					// 6.
-					const float sumPhaseHeat = calculateSumPhaseHeat(i, T, pQv, pQw, pQc, pQr, pQs, pQi);
-					computeHeatTransfer(dt, i, sumPhaseHeat);
+					//const float sumPhaseHeat = calculateSumPhaseHeat(i, T, pQv, pQw, pQc, pQr, pQs, pQi);
+					//computeHeatTransfer(dt, i, sumPhaseHeat);
 
 				}
 			}
-			//setDebugArray(debugVector3, 2);
+			setDebugArray(debugVector, 0);
+			setDebugArray(debugVector2, 1);
 		}
 
 		m_time += m_speed * dt * 2.77778e-4f;
@@ -282,7 +292,7 @@ void environment::updateGroundTemps(const float dt, const int i, const float Irr
 	const float groundThickness = 1.0f; //TODO: just 1 meter or??
 	const float densityGround = 1500.0f;
 	const double T4 = m_groundGrid.T[i] * m_groundGrid.T[i] * m_groundGrid.T[i] * m_groundGrid.T[i];
-
+	
 	m_groundGrid.T[i] += m_speed * dt * ((1 - LC) * (((1 - absorbedRadiationAlbedo) * Irradiance - Constants::ge * Constants::oo * T4) / (groundThickness * densityGround * Constants::Cpds)));
 }
 
@@ -300,10 +310,11 @@ void environment::updateMicroPhysicsGround(const float dt, const int i)
 	float ER = 0.0f; // Evaporation of rain
 	float ES = 0.0f; // Evaporation of snow
 	float EI = 0.0f; // Evaporation of ice (precip)
-	float GR = 0.0f; // Rain hit ground
-	float GS = 0.0f; // Snow hit ground
-	float GI = 0.0f; // Ice (precip) hit ground
-	float IR = 0.0f; //	Water flowwing through the ground (through holes in ground)
+	//Done in the sky update due to advection taking place after this update
+	//float GR = 0.0f; // Rain hit ground 
+	//float GS = 0.0f; // Snow hit ground
+	//float GI = 0.0f; // Ice (precip) hit ground
+	float IR = 0.0f; //	Water flowing through the ground (through holes in ground)
 	float EG = 0.0f; // Evaporation of dry ground
 	float DG = 0.0f; // diffusion coefficient for ground rain water https://dtrx.de/od/diff/
 	float DS = 0.0f; // diffusion coefficient for subsurface water https://www.researchgate.net/figure/Diffusion-coefficient-for-water-in-soils_tbl2_267235072
@@ -315,13 +326,16 @@ void environment::updateMicroPhysicsGround(const float dt, const int i)
 	const float BES{ 5e-4f };					  // Aggregation rate of snow to vapor rate coefficient:
 	const float BEI{ 5e-4f };					  // Aggregation rate of ice to vapor rate coefficient:
 	const float BIR{ 100.0f };					  // Evaporation rate of subsurface water (A constant)
-	const float k{ 5e-5f }; //Sand				  // Hydraulic conductivity of the ground in m/s(How easy water flows through ground) https://structx.com/Soil_Properties_007.html?utm_source=chatgpt.com
+	const float k{ 5e-5f }; //Sand				  // Hydraulic conductivity of the ground in m/s(How easy water flows through ground) https://structx.com/Soil_Properties_007.html
 	const float BEG{ 200.0f };					  // Evaporation rate of dry ground
 
 	float T = float(m_groundGrid.T[i]);
 	float p = m_groundGrid.P[i];
 	const float QWS = meteoformulas::ws((T - 273.15f), p); //Maximum water vapor air can hold
 	const float QWI = meteoformulas::wi((T - 273.15f), p);
+
+	const int envGIdx = i + (m_GHeight[i] + 1) * GRIDSIZEGROUND;
+
 
 	if (T < -8 + 273.15f) FR = BFR * (T - 273.15f + 8) * (T - 273.15f + 8); 
 
@@ -353,43 +367,94 @@ void environment::updateMicroPhysicsGround(const float dt, const int i)
 
 	//Constraint on how much can be evaporated (don't evap if air can't hold more)
 	//We first make sure that we are not adding more vapor than the air can hold, then we add up all the things we can evap, multiplied by dt.
-	ER = BER * std::min(m_groundGrid.Qgr[i], std::min(m_speed * dt * (m_envGrid.Qw[i] + m_groundGrid.Qgr[i]), std::max(QWS - m_envGrid.Qv[i], 0.0f)));
-	ES = BES * std::min(m_groundGrid.Qgs[i], std::min(m_speed * dt * (m_envGrid.Qc[i] + m_groundGrid.Qgs[i] + m_groundGrid.Qgi[i]), std::max(QWI - m_envGrid.Qv[i], 0.0f)));
-	EI = BEI * std::min(m_groundGrid.Qgi[i], std::min(m_speed * dt * (m_envGrid.Qc[i] + m_groundGrid.Qgs[i] + m_groundGrid.Qgi[i]), std::max(QWI - m_envGrid.Qv[i], 0.0f)));
+	//TODO: Check if right
+	ER = BER * std::min(m_groundGrid.Qgr[i], std::min(m_speed * dt * (m_envGrid.Qw[envGIdx] + m_groundGrid.Qgr[i]), std::max(QWS - m_envGrid.Qv[envGIdx], 0.0f)));
+	ES = BES * std::min(m_groundGrid.Qgs[i], std::min(m_speed * dt * (m_envGrid.Qc[envGIdx] + m_groundGrid.Qgs[i] + m_groundGrid.Qgi[i]), std::max(QWI - m_envGrid.Qv[envGIdx], 0.0f)));
+	EI = BEI * std::min(m_groundGrid.Qgi[i], std::min(m_speed * dt * (m_envGrid.Qc[envGIdx] + m_groundGrid.Qgs[i] + m_groundGrid.Qgi[i]), std::max(QWI - m_envGrid.Qv[envGIdx], 0.0f)));
 
-	GR = m_envGrid.Qr[i];
-	GS = m_envGrid.Qs[i];
-	GI = m_envGrid.Qi[i];
 	const float D_ = 1e-6f; // Weigthed mean diffusivity of the ground //TODO: hmm, could tripple check if right
 	const float O_ = 0.1f; // evaporative ground water storage coefficient (i.e. only part of the soil can be evaporated) 
 	IR = BIR * k * m_groundGrid.Qgr[i]; //TODO: this values is way too low, I have to increase with BIR, check with real life values.
 	//Only if Qgj = 0 (Precip falling)
 	if (m_groundGrid.Qgr[i] == 0 && m_groundGrid.Qgs[i] == 0 && m_groundGrid.Qgi[i] == 0)
 	{
-		EG = BEG * D_ * m_groundGrid.Qrs[i] * exp(-m_groundGrid.t[i] / 86400 * O_);
+		EG = std::min(BEG * D_ * m_groundGrid.Qrs[i] * exp(-m_groundGrid.t[i] / 86400 * O_), m_groundGrid.Qrs[i]);
 		m_groundGrid.t[i] += dt;
 	}
 	else
 	{
 		m_groundGrid.t[i] = 0;
 	}
+	
+	//Check how many meters down
+	float slopeFlowRain = 0.0f;
+	float slopeFlowWater = 0.0f;
+	{
+		// Using Manning Formula: V = 1 / n * Rh^2/3 * S^1/2
+		// We use for n = 0.030.
+		// RH is weird for open way, so we use water depth, which is in our case is Qgr * VOXELSIZE (in meters)
+		const float n = 1 / 0.03f;
 
-	const float nablaSlope = dt * ((m_groundGrid.Qgr[nX] - m_groundGrid.Qgr[pX]) / (m_GHeight[nX] - m_GHeight[pX] + 1e-32f));
+		const float slope1 = float(m_GHeight[pX] - m_GHeight[i]) / 1; // Divide by 1 is useless but its to say that height changed with n by 1 meters.
+		const float slope2 = float(m_GHeight[nX] - m_GHeight[i]) / 1;
+		const float slope1FromRain = slope1 > 0 ? m_groundGrid.Qgr[pX] : -m_groundGrid.Qgr[i];
+		const float slope2FromRain = slope2 > 0 ? m_groundGrid.Qgr[nX] : -m_groundGrid.Qgr[i];
+		const float slope1FromWater = slope1 > 0 ? m_groundGrid.Qrs[pX] : m_groundGrid.Qrs[i];
+		const float slope2FromWater = slope2 > 0 ? m_groundGrid.Qrs[nX] : m_groundGrid.Qrs[i];
+
+		// Height of water
+		const float RH1 = abs(slope1FromRain) * VOXELSIZE;
+		const float RH2 = abs(slope2FromRain) * VOXELSIZE;
+		const float speed1 = n * powf(RH1, 2.0f / 3.0f);
+		const float speed2 = n * powf(RH2, 2.0f / 3.0f);
+
+		// In m/s
+		const float vel1 = speed1 * pow(abs(slope1), 0.5f);
+		const float vel2 = speed2 * pow(abs(slope2), 0.5f);
+
+		// Speed * time = distance, and use that to calculate how much water has made its way down already, so to say.
+		// This makes the water kind of stick the less it is, which is okay
+		const float change1 = vel1 * dt * slope1FromRain;
+		const float change2 = vel2 * dt * slope2FromRain;
+
+		slopeFlowRain = std::max(change1 + change2, -m_groundGrid.Qgr[i]);
+
+		slopeFlowWater = std::max(g * k * (slope1FromWater * slope1 + slope2FromWater * slope2), -m_groundGrid.Qrs[i]);
+
+	}
 
 	const float lapR = (m_groundGrid.Qgr[pX] + m_groundGrid.Qgr[nX] - 2 * m_groundGrid.Qgr[i]) / (VOXELSIZE * VOXELSIZE);
+	lapR;
 	DG = 1.75e-3f;
 	const float lapSR = (m_groundGrid.Qrs[pX] + m_groundGrid.Qrs[nX] - 2 * m_groundGrid.Qrs[i]) / (VOXELSIZE * VOXELSIZE);
 	DS = 1.8e-5f;
 
-	m_groundGrid.Qgr[i] += ( m_speed * dt * (DG * lapR + GR + MS + MI - ER - FR - IR));
-	m_groundGrid.Qrs[i] += ( m_speed * dt * (DS * lapSR + nablaSlope + IR - EG));
-	m_groundGrid.Qgs[i] += ( m_speed * dt * (GS - MS - ES));
-	m_groundGrid.Qgi[i] += ( m_speed * dt * (GI + FR - EI - MI));
+	//Limit everything if speed is higher
+	if (m_speed > 1.0f) //TODO: speed check?
+	{
+		//Limit subsurface ground water
+		EG = std::min(EG * m_speed, m_groundGrid.Qrs[i]);
+		//Limit rain on ground
+		ER = std::min(ER * m_speed, m_groundGrid.Qgr[i]);
+		FR = std::min(FR * m_speed, m_groundGrid.Qgr[i]);
+		IR = std::min(IR * m_speed, m_groundGrid.Qgr[i]);
+		//Limit snow on ground
+		MS = std::min(MS * m_speed, m_groundGrid.Qgs[i]);
+		ES = std::min(ES * m_speed, m_groundGrid.Qgs[i]);
+		//Limit hail on ground
+		EI = std::min(EI * m_speed, m_groundGrid.Qgi[i]);
+		MI = std::min(MI * m_speed, m_groundGrid.Qgi[i]);
+	}
+
+	m_groundGrid.Qgr[i] += ( dt * (DG * lapR + slopeFlowRain + MS + MI - ER - FR - IR));
+	m_groundGrid.Qrs[i] += ( dt * (DS * lapSR + slopeFlowWater + IR - EG));
+	m_groundGrid.Qgs[i] += ( dt * (-MS - ES));
+	m_groundGrid.Qgi[i] += ( dt * (FR - EI - MI));
 
 	if (m_groundGrid.Qrs[i] < 0|| m_groundGrid.Qgs[i] < 0 || m_groundGrid.Qgi[i] < 0 ||
 		m_groundGrid.Qrs[i] != m_groundGrid.Qrs[i] || m_groundGrid.Qgs[i] != m_groundGrid.Qgs[i] || m_groundGrid.Qgi[i] != m_groundGrid.Qgi[i])
 	{
-		GS = 0;
+		DS = 0;
 	}
 }
 
@@ -453,6 +518,15 @@ void environment::diffuseAndAdvectTemp(const float dt, double* array)
 		{
 			// we want not to update neighbouring cells, so we do the Red-Black Gauss-Seidel tactic
 			if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
+
+			//If at the ground, set to ground temp
+			if (isGround(i - GRIDSIZESKYX))
+			{
+
+				const double dif = array[i] - m_groundGrid.T[i % GRIDSIZESKYX];
+				array[i] -= dif * dt * 0.1f;
+				continue;
+			}
 
 			// Current Position of value
 			const glm::vec2 CPos = { i % GRIDSIZESKYX, int(i / GRIDSIZESKYX) };
@@ -536,7 +610,7 @@ void environment::diffuseAndAdvect(const float dt, float* array, bool vapor, con
 						const float right = m_NeighData[j].right == OUTSIDE ? dif[j + 1 - GRIDSIZESKYX] : m_NeighData[j].right == GROUND ? dif[j] : dif[j + 1];
 						const float down = m_NeighData[j].down != SKY ? dif[j] : dif[j - GRIDSIZESKYX];
 						const float up = m_NeighData[j].up == OUTSIDE ? dif[j] : dif[j + GRIDSIZESKYX]; //Neumann due to being diffusion
-
+					
 						dif[j] = (array[j] + k * (left + right + up + down)) / (1 + 4 * k);
 					}
 					else // Else use nuemann
@@ -557,6 +631,9 @@ void environment::diffuseAndAdvect(const float dt, float* array, bool vapor, con
 
 
 	//Advection
+	std::vector<float> debugVector;
+	debugVector.resize(GRIDSIZESKY);
+
 	for (int loop = 0; loop < 2; loop++)
 	{
 		for (int i = 0; i < GRIDSIZESKY; i++)
@@ -576,6 +653,7 @@ void environment::diffuseAndAdvect(const float dt, float* array, bool vapor, con
 				{
 				case 1:
 					fallVel = fallVelocitiesPrecip.x;
+					debugVector[i] = fallVel;
 					break;
 				case 2:
 					fallVel = fallVelocitiesPrecip.y;
@@ -612,6 +690,7 @@ void environment::diffuseAndAdvect(const float dt, float* array, bool vapor, con
 			}
 		}
 	}
+	//if (fallVelType == 1) setDebugArray(debugVector, 1);
 }
 
 bool environment::getInterpolValue(float* array, const glm::vec2 Ppos, const bool vapor, float& output)
@@ -698,21 +777,27 @@ void environment::updateVelocityField(const float dt)
 	for (int i = 0; i < GRIDSIZESKY; i++)
 	{
 		if (isGround(i)) continue;
+		
+		//TODO: this is not really a good solution.
+		if (m_NeighData[i].left == OUTSIDE || m_NeighData[i].right == OUTSIDE || m_NeighData[i].up == OUTSIDE || m_NeighData[i].down == OUTSIDE)
+		{
+			continue;
+		}
 
 		float B = calculateBuoyancy(i, m_pressures);
 		glm::vec2 F = vorticityConfinement(i);
-
+		
 		debugVector[i] = F.x;
 		debugVector2[i] = F.y;
 		debugVector3[i] = B;
-
+		
 		m_envGrid.velField[i].x += m_speed * dt * F.x;
 		m_envGrid.velField[i].y += m_speed * dt * (B + F.y); //TODO: Buoyance makes the most right edge go up since y will never update here.
 	}
 
 
-	setDebugArray(debugVector);
-	setDebugArray(debugVector2, 1);
+	//setDebugArray(debugVector);
+	//setDebugArray(debugVector2, 1);
 	setDebugArray(debugVector3, 2);
 
 
@@ -723,7 +808,7 @@ void environment::updateVelocityField(const float dt)
 		dif.resize(GRIDSIZESKY);
 		std::memcpy(dif.data(), m_envGrid.velField, GRIDSIZESKY * sizeof(glm::vec2));
 
-		const float k = 0.5f * dt / (VOXELSIZE * VOXELSIZE); //Viscosity value
+		const float k = 1.5f * dt / (VOXELSIZE * VOXELSIZE); //Viscosity value
 		const int LOOPS = 20; //Total loops for the Gauss-Seidel method
 		for (int loop = 0; loop < 2; loop++)
 		{
@@ -755,7 +840,9 @@ void environment::updateVelocityField(const float dt)
 	{
 		for (int i = 0; i < GRIDSIZESKY; i++)
 		{
-			if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
+			const int y = i / GRIDSIZESKYX;
+			if ((i + loop + y) % 2 == 0 || isGround(i)) continue;
+
 
 			const glm::vec2 center = m_envGrid.velField[i];
 			const glm::vec2 left  = m_NeighData[i].left  == OUTSIDE ? center : m_NeighData[i].left == GROUND ? glm::vec2(0.0f) : m_envGrid.velField[i - 1];	// Neumann (Or no slip)
@@ -806,8 +893,7 @@ float environment::calculateBuoyancy(const int i, const float* ps)
 	//TODO: base on distance, not only whole width.
 	const float T = static_cast<float>(m_envGrid.potTemp[i]) * glm::pow(ps[i] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
 
-	const float mDistance = 16.0f;
-	const float maxDistance = mDistance;
+	const float mDistance = 4.0f;
 	const int oX = i % GRIDSIZESKYX;
 	const int oY = int(float(i) / GRIDSIZESKYX);
 
@@ -819,9 +905,6 @@ float environment::calculateBuoyancy(const int i, const float* ps)
 	const int minY = oY - (checkSize - outsideBy);
 	const int maxY = oY + (checkSize - outsideBy);
 
-	const int maxRight = oX + int(ceil(mDistance)) > GRIDSIZEGROUND ? GRIDSIZEGROUND : oX + int(ceil(mDistance));
-	const int minLeft = oX - int(ceil(mDistance)) < 0 ? 0 : oX - int(ceil(mDistance));
-
 	//Environment vapor (Using average vapor of whole width)
 	float Qaverage = 0.0f;
 	float amount = 0.0f;
@@ -832,36 +915,8 @@ float environment::calculateBuoyancy(const int i, const float* ps)
 
 		for (int y = minY; y <= maxY; y++)
 		{
-
-			//Loop to right then left to get environement temp
-			for (int x = oX + 1; x < maxRight; x++)
-			{
-				if (isGround(x, y)) break;
-
-				const float distance = float((oX - x) * (oX - x) + (oY - y) * (oY - y));
-				const float cAmount = -(distance / maxDistance - 1);
-				if (abs(cAmount) > 1 || cAmount <= 0.0f) continue;
-				amount += cAmount;
-				Qaverage += m_envGrid.Qv[x + y * GRIDSIZESKYX] * cAmount;
-			}
-			for (int x = oX - 1; x > minLeft; x--)
-			{
-				if (isGround(x, y)) break;
-
-				const float distance = float((oX - x) * (oX - x) + (oY - y) * (oY - y));
-				const float cAmount = -(distance / maxDistance - 1);
-				if (abs(cAmount) > 1 || cAmount <= 0.0f) continue;
-				amount += cAmount;
-				Qaverage += m_envGrid.Qv[x + y * GRIDSIZESKYX] * cAmount;;
-			}
-			//If nothing got added continue, no need to reset.
-			if (amount == 0) 
-			{
-				Qe[QeIdx++] = m_envGrid.Qv[oX + y * GRIDSIZESKYX];
-				continue;
-			}
-
-			Qaverage /= amount;
+			Qaverage = averageEnvironment(oX + y * GRIDSIZESKYX, oX + oY * GRIDSIZESKYX, mDistance, false);
+			if (Qaverage == 0) continue;
 			amount = 0.0f;
 			//For Qv, we just pick as 'parcel' Qv the one above or below.
 			Qe[QeIdx++] = m_envGrid.Qv[oX + y * GRIDSIZESKYX] - Qaverage;
@@ -880,7 +935,7 @@ float environment::calculateBuoyancy(const int i, const float* ps)
 		if (checkSize - outsideBy > 0)
 		{
 			//First we calculate the parcel temps for each different heights
-			if (m_envGrid.Qv[i] >= meteoformulas::ws((T - 273.15f), ps[i])) //Air is saturated, thus use moist adiabatic
+			if (m_envGrid.Qv[i + checkSize * GRIDSIZESKYX] >= meteoformulas::ws((T - 273.15f), ps[i])) //Air is saturated, thus use moist adiabatic
 			{
 				for (int y = minY; y <= maxY; y++)
 				{
@@ -927,31 +982,8 @@ float environment::calculateBuoyancy(const int i, const float* ps)
 		//Now we calculate the environement temps and use them in the buoyancy formula to calculate buoyancy at each layer
 		for (int y = minY; y <= maxY; y++)
 		{
-			//Loop to right then left to get environement temp
-			for (int x = oX + 1; x < maxRight; x++)
-			{
-				if (isGround(x, y)) break;
-
-				const float distance = float((oX - x) * (oX - x) + (oY - y) * (oY - y));
-				const float cAmount = -(distance / maxDistance - 1);
-				if (abs(cAmount) > 1 || cAmount <= 0.0f) continue;
-				amount += cAmount;
-				Taverage += (static_cast<float>(m_envGrid.potTemp[x + y * GRIDSIZESKYX]) * glm::pow(ps[x + y * GRIDSIZESKYX] / m_groundGrid.P[x], Rsd / Cpd)) * cAmount;
-			}
-			for (int x = oX - 1; x > minLeft; x--)
-			{
-				if (isGround(x, y)) break;
-
-				const float distance = float((oX - x) * (oX - x) + (oY - y) * (oY - y));
-				const float cAmount = -(distance / maxDistance - 1);
-				if (abs(cAmount) > 1 || cAmount <= 0.0f) continue;
-				amount += cAmount;
-				Taverage += (static_cast<float>(m_envGrid.potTemp[x + y * GRIDSIZESKYX]) * glm::pow(ps[x + y * GRIDSIZESKYX] / m_groundGrid.P[x], Rsd / Cpd)) * cAmount;
-			}
-			//If nothing got added continue, no need to reset.
-			if (amount == 0) continue;
-
-			Taverage /= amount + 1e-32f;
+			Taverage = averageEnvironment(oX + y * GRIDSIZESKYX, oX + oY * GRIDSIZESKYX, mDistance, true);
+			if (Taverage == 0) continue;
 			//Temp environment
 			const float Te = T - Taverage;
 			//Temp parcel
@@ -997,27 +1029,62 @@ float environment::calculateBuoyancy(const int i, const float* ps)
 	return Baverage / Bamount; //Take the average
 }
 
+float environment::averageEnvironment(const int i, const int distanceFromidx, const float maxDistance, const bool temp)
+{
+	//Loop to the right then to the left to get average
+
+	const int oX = distanceFromidx % GRIDSIZESKYX;
+	const int oY = int(float(distanceFromidx) / GRIDSIZESKYX);
+	const int y = i / GRIDSIZESKYX;
+	const int maxRight = oX + int(ceil(maxDistance)) > GRIDSIZEGROUND ? GRIDSIZEGROUND : oX + int(ceil(maxDistance));
+	const int minLeft = oX - int(ceil(maxDistance)) < 0 ? 0 : oX - int(ceil(maxDistance));
+	const float MDistanceSqr = maxDistance * maxDistance;
+
+	float amount = 0.0f;
+	float average = 0.0f;
+
+	for (int x = oX + 1; x < maxRight; x++)
+	{
+		if (isGround(x, y)) break;
+
+		const float distance = float((oX - x) * (oX - x) + (oY - y) * (oY - y));
+		float cAmount = -(distance / MDistanceSqr - 1);
+		if (abs(cAmount) > 1 || cAmount <= 0.0f) continue;
+		//Smoothing
+		cAmount = std::pow(cAmount, 5.0f);
+		amount += cAmount;
+		if (temp) average += (static_cast<float>(m_envGrid.potTemp[x + y * GRIDSIZESKYX]) * glm::pow(m_pressures[x + y * GRIDSIZESKYX] / m_groundGrid.P[x], Rsd / Cpd)) * cAmount;
+		else average += m_envGrid.Qv[x + y * GRIDSIZESKYX] * cAmount;
+	}
+	for (int x = oX - 1; x > minLeft; x--)
+	{
+		if (isGround(x, y)) break;
+
+		const float distance = float((oX - x) * (oX - x) + (oY - y) * (oY - y));
+		float cAmount = -(distance / MDistanceSqr - 1);
+		if (abs(cAmount) > 1 || cAmount <= 0.0f) continue;
+		//Smoothing
+		cAmount = std::pow(cAmount, 5.0f);
+		amount += cAmount;
+		if (temp) average += (static_cast<float>(m_envGrid.potTemp[x + y * GRIDSIZESKYX]) * glm::pow(m_pressures[x + y * GRIDSIZESKYX] / m_groundGrid.P[x], Rsd / Cpd)) * cAmount;
+		else average += m_envGrid.Qv[x + y * GRIDSIZESKYX] * cAmount;
+	}
+	if (amount == 0) return 0.0f;
+
+	return average / amount;
+}
+
 glm::vec2 environment::vorticityConfinement(const int i)
 {
 	//Not anymore (Using) https://www.researchgate.net/publication/239547604_Modification_of_the_Euler_equations_for_vorticity_confinement''_Application_to_the_computation_of_interacting_vortex_rings
 	//Now using https://sci-hub.se/downloads/2020-12-24/50/10.1080@10618562.2020.1856822.pdf
-
-	//TODO: this is not really a good solution, but it also does not prevent a lot.
-	if (m_NeighData[i].left == OUTSIDE || m_NeighData[i].right == OUTSIDE || m_NeighData[i].up == OUTSIDE || m_NeighData[i].down == OUTSIDE)
-	{
-		return { 0,0 };
-	}
-
-
-
-
 
 	const float epsilon = 0.08f; //to change the strength of the vorticity confinement
 	const float dynVisc = 1.8e-5f;
 	const float density = 1.225f; //Air density
 
 	const float center = curl(i, true);
-	const float left  = m_NeighData[i].left  == OUTSIDE ? center : m_NeighData[i].left  == GROUND ? center : curl(i - 1);	// Neumann
+	const float left  = m_NeighData[i].left  == OUTSIDE ? center : m_NeighData[i].left == GROUND ? center : curl(i - 1);	// Neumann
 	const float right = m_NeighData[i].right == OUTSIDE ? center : m_NeighData[i].right == GROUND ? center : curl(i + 1);	// Neumann
 	const float up    = m_NeighData[i].up    != SKY ? center : curl(i + GRIDSIZESKYX); // Neumann
 	const float down  = m_NeighData[i].down  != SKY ? center : curl(i - GRIDSIZESKYX); // Neumann
@@ -1133,22 +1200,21 @@ void environment::pressureProjectVelField(const float )
 	presProjectionsDebug.resize(GRIDSIZESKY);
 
 
-	const float density = 2;// 1.225f; //Air density
-
 	for (int i = 0; i < GRIDSIZESKY; i++)
 	{
 		if (isGround(i)) continue;
 
-		const float NxPresProj = m_NeighData[i].right != SKY ? presProjections[i] : presProjections[i + 1];
+		const float NxPresProj = m_NeighData[i].right == OUTSIDE ? 0.0f : m_NeighData[i].right == GROUND ? presProjections[i] : presProjections[i + 1];
 		const float NyPresProj = m_NeighData[i].up != SKY ? presProjections[i] : presProjections[i + GRIDSIZESKYX];
 
-		//TODO: not sure which boundary condition to use
-		m_envGrid.velField[i].x += ((0.5f * density) * ((NxPresProj - presProjections[i])));
-		m_envGrid.velField[i].y += ((0.5f * density) * ((NyPresProj - presProjections[i])));
-		presProjectionsDebug[i] = (0.5f * density) * ((NyPresProj - presProjections[i])); //Debug
-		presProjections[i] = (0.5f * density) * ((NxPresProj - presProjections[i])); //Debug
+		const float scale = 1.0f;
+
+		m_envGrid.velField[i].x += ((scale) * ((NxPresProj - presProjections[i])));
+		m_envGrid.velField[i].y += ((scale) * ((NyPresProj - presProjections[i])));
+		presProjectionsDebug[i] = (scale) * ((NyPresProj - presProjections[i])); //Debug
+		presProjections[i] = (scale) * ((NxPresProj - presProjections[i])); //Debug
 	}
-	//setDebugArray(presProjections, 1); // X
+	//setDebugArray(presProjections); // X
 	//setDebugArray(presProjectionsDebug, 1); // Y
 }
 
@@ -1170,8 +1236,8 @@ void environment::calculatePresProj(std::vector<float>& p)
 	float sigmaNew = 0;
 	float B = 0;
 	float maxr = 0;
-	const float tolValue = 1e-6f; //TODO: THIS SHOULD BE CORRECTED MAYBE
-	const int MAXITERATION = 200;
+	float tolValue = 1e-5f;
+	const int MAXITERATION = 100;
 
 	divergence.resize(GRIDSIZESKY);
 	precon.resize(GRIDSIZESKY);
@@ -1182,6 +1248,13 @@ void environment::calculatePresProj(std::vector<float>& p)
 	r.resize(GRIDSIZESKY);
 	A.resize(GRIDSIZESKY);
 
+	std::vector<float> debugVector;
+	std::vector<float> debugVector2;
+	debugVector.resize(GRIDSIZESKY);
+	debugVector2.resize(GRIDSIZESKY);
+
+
+
 	//Fill matrix A	
 	for (int y = 0; y < GRIDSIZESKYY; y++)
 	{
@@ -1189,11 +1262,14 @@ void environment::calculatePresProj(std::vector<float>& p)
 		{
 			//Because there are extra rows, we add 1 everywhere where needed
 			//TODO: Here you can add if right/up is nonfluid
-			//if (isGround(x, y)) continue;
+			if (isGround(x, y)) continue;
 
 			A[x + y * GRIDSIZESKYX].x = isGround(x + 1, y) ? 0 : -1;
 			A[x + y * GRIDSIZESKYX].y = y < GRIDSIZESKYY - 1 && !isGround(x, y + 1) ? -1 : 0;
 			A[x + y * GRIDSIZESKYX].z = 0;
+
+			debugVector[x + y * GRIDSIZESKYX] = float(A[x + y * GRIDSIZESKYX].x);
+			debugVector2[x + y * GRIDSIZESKYX] = float(A[x + y * GRIDSIZESKYX].y);
 
 			//TODO: Nuemann is using sides, so they are fluids
 			if (!isGround(x + 1, y)) A[x + y * GRIDSIZESKYX].z++;
@@ -1202,13 +1278,24 @@ void environment::calculatePresProj(std::vector<float>& p)
 			if (y > 0 && !isGround(x, y - 1)) A[x + y * GRIDSIZESKYX].z++;
 		}
 	}
-	
+
 
 	{
 		calculateDivergence(divergence);
 	}
 
+	//Make tol value not static
+	float normDiv = 0.0f;
+	for (int i = 0; i < GRIDSIZESKY; i++) 
+	{
+		normDiv += divergence[i] * divergence[i];
+	}
+	normDiv = std::sqrt(normDiv);
+	tolValue *= normDiv;
+
 	r = divergence;
+	//setDebugArray(debugVector);
+	//setDebugArray(r, 2);
 
 	//Checking max residual 
 	{
@@ -1224,7 +1311,6 @@ void environment::calculatePresProj(std::vector<float>& p)
 	
 	applyPreconditioner(precon, divergence, A, q, z);
 	s = z;
-	//setDebugArray(r, 2);
 
 	//Dotproduct
 	{
@@ -1300,9 +1386,10 @@ void environment::calculateDivergence(std::vector<float>& output)
 	for (int i = 0; i < GRIDSIZESKY; i++)
 	{
 		if (isGround(i)) continue;
-		const float Ucurr = m_envGrid.velField[i].x;
-		const float Umin1 = m_NeighData[i].left == OUTSIDE ? m_envGrid.velField[i].x : m_NeighData[i].left == GROUND ? 0.0f : m_envGrid.velField[i - 1].x; //Using Neumann boundary condition (or no-slip if ground)
-		const float Vcurr = m_envGrid.velField[i].y;
+
+		const float Ucurr = m_NeighData[i].right == OUTSIDE ? m_envGrid.velField[i].x : m_NeighData[i].right == GROUND ? 0.0f : m_envGrid.velField[i].x; //Using Neumann boundary condition (or no-slip if ground)
+		const float Umin1 = m_NeighData[i].left == OUTSIDE || i == 0 ? m_envGrid.velField[i].x : m_NeighData[i].left == GROUND ? 0.0f : m_envGrid.velField[i - 1].x; //Using Neumann boundary condition (or no-slip if ground)
+		const float Vcurr = m_NeighData[i].up != SKY ? 0.0f : m_envGrid.velField[i].y; //Using no-slip boundary condition for Sky
 		const float Vmin1 = m_NeighData[i].down != SKY ? 0.0f : m_envGrid.velField[i - GRIDSIZESKYX].y; //Using no-slip boundary condition for ground
 
 		output[i] = (Ucurr - Umin1) / VOXELSIZE + (Vcurr - Vmin1) / VOXELSIZE; //TODO: Division by voxelsize?
@@ -1421,16 +1508,15 @@ void environment::applyA(std::vector<float>& s, std::vector<glm::ivec3>& A, std:
 			const float Splusy = y == GRIDSIZESKYY - 1 ? 0 : s[idx + GRIDSIZESKYX];
 
 			z[idx] = Adiag * s[idx] +
-				((Aminx * Sminx +
-				Aminy * Sminy +
-				Aplusx * Splusx +
-				Aplusy * Splusy)
-				/ Adiag);
+					((Aminx * Sminx +
+					  Aminy * Sminy +
+					  Aplusx * Splusx +
+					  Aplusy * Splusy)
+					);
 		}
 	}
 }
 
-//TODO: dt not used?
 glm::vec3 environment::calculateFallingVelocity(const float , const int i, const float densAir)
 {
 	glm::vec3 outputVelocity{};
@@ -1448,9 +1534,9 @@ glm::vec3 environment::calculateFallingVelocity(const float , const int i, const
 
 	//constants
 	const float b = 0.8f;
-	const float a = glm::pow(2115.0f, 1 - b); // b^1-b??
+	const float a = glm::pow(2115.0f, 1 - b);
 	const float d = 0.25f;
-	const float c = glm::pow(152.93f, 1 - d); //TODO d^1-d?
+	const float c = glm::pow(152.93f, 1 - d);
 	const float CD = 0.6f;
 
 	//Slope Parameters
@@ -1494,9 +1580,8 @@ glm::vec3 environment::calculateFallingVelocity(const float , const int i, const
 	{
 		const float nRD = N0R * exp(-SPR * D); //Exponential distribution (how many particles)
 		const float UDR = a * pow(D, b) * sqrt(densW / densAir);
-		const float D3 = D * D * D;
-		weightedSumNum += UDR * nRD * D3 * stepR;
-		weightedSumDenom += nRD * D3 * stepR;
+		weightedSumNum += UDR * nRD * D * stepR;
+		weightedSumDenom += nRD * D * stepR;
 	}
 	outputVelocity.x = weightedSumNum / weightedSumDenom;
 	weightedSumNum = 0;
@@ -1507,9 +1592,8 @@ glm::vec3 environment::calculateFallingVelocity(const float , const int i, const
 	{
 		const float nSD = N0S * exp(-SPS * D); //Exponential distribution (how many particles)
 		const float UDS = c * pow(D, d) * sqrt(densS / densAir);
-		const float D3 = D * D * D;
-		weightedSumNum += UDS * nSD * D3 * stepS;
-		weightedSumDenom += nSD * D3 * stepS;
+		weightedSumNum += UDS * nSD * D * stepS;
+		weightedSumDenom += nSD * D * stepS;
 	}
 	outputVelocity.y = weightedSumDenom == 0.0f ? 0.0f : weightedSumNum / weightedSumDenom;
 	weightedSumNum = 0;
@@ -1520,9 +1604,8 @@ glm::vec3 environment::calculateFallingVelocity(const float , const int i, const
 	{
 		const float nID = N0I * exp(-SPI * D); //Exponential distribution (how many particles)
 		const float UDI = sqrt(4 / (3 * CD)) * pow(D, 0.5f) * sqrt(densI / densAir);
-		const float D3 = D * D * D;
-		weightedSumNum += UDI * nID * D3 * stepI;
-		weightedSumDenom += nID * D3 * stepI;
+		weightedSumNum += UDI * nID * D * stepI;
+		weightedSumDenom += nID * D * stepI;
 	}
 	outputVelocity.z = weightedSumDenom == 0.0f ? 0.0f : weightedSumNum / weightedSumDenom;
 
@@ -1592,11 +1675,17 @@ void environment::updateMicroPhysics(const float dt, const int i, const float* p
 	float EG = 0.0f; // Evaporation of dry ground
 	
 	const float QWS = meteoformulas::ws((T - 273.15f), ps[i]); //Maximum water vapor air can hold
-	const float QWI = meteoformulas::wi((T - 273.15f), ps[i]);
+	const float QWI = meteoformulas::wi((T - 273.15f), ps[i]); //Maximum water vapor cold air can hold
+
+	const int idxX = i % GRIDSIZESKYX;
+
+	const bool atGround = i / GRIDSIZEGROUND - 1 == m_GHeight[idxX];
 
 	if (T >= -40 + 273.15f)
 	{
-		EW_min_CW = std::min(QWS - m_envGrid.Qv[i], m_envGrid.Qw[i]);
+		//Don't convert if vapor is not overflowing, max by vapor.
+		EW_min_CW = std::max(std::min(QWS - m_envGrid.Qv[i], 0.0f), -m_envGrid.Qv[i]);
+
 
 		if (T <= 0.0f + 273.15f)
 		{
@@ -1615,7 +1704,7 @@ void environment::updateMicroPhysics(const float dt, const int i, const float* p
 
 		const float BMI{ 5e-4f };					  // Aggregation rate of ice to rain rate coefficient:
 
-		const float check = Cpd / Lf * T;
+		const float check = Cpd / Lf * (T - 273.15f);
 		float heatSum = 0.0f;
 
 		const float Qc = m_envGrid.Qc[i];
@@ -1644,7 +1733,8 @@ void environment::updateMicroPhysics(const float dt, const int i, const float* p
 	}
 	if (T <= 0 + 273.15f)
 	{
-		DC_min_SC = std::max(0.0f, std::min(QWI - m_envGrid.Qv[i], m_envGrid.Qc[i]));
+		//Don't convert if vapor is not overflowing, max by vapor.
+		DC_min_SC = std::max(std::min(QWI - m_envGrid.Qv[i], 0.0f), -m_envGrid.Qv[i]);
 	}
 	{
 		// Rate coefficient found in https://journals.ametsoc.org/view/journals/apme/22/6/1520-0450_1983_022_1065_bpotsf_2_0_co_2.xml
@@ -1659,7 +1749,7 @@ void environment::updateMicroPhysics(const float dt, const int i, const float* p
 		const float BER{ 5e-4f };	//NotSure		  // Aggregation rate of rain to vapor rate coefficient:
 		const float BES{ 5e-4f };	//NotSure		  // Aggregation rate of snow to vapor rate coefficient:
 		const float BEI{ 5e-4f };	//NotSure		  // Aggregation rate of ice to vapor rate coefficient:
-		const float BEG{ 100.0f };	//NotSure		  // Evaporation rate of dry ground
+		const float BEG{ 200.0f };	//NotSure		  // Evaporation rate of dry ground
 
 		const float qwmin = 0.001f; // the minimum cloud water content required before rainmaking begins
 		const float qcmin = 0.001f; // the minimum cloud ice content required before snowmaking begins
@@ -1678,25 +1768,61 @@ void environment::updateMicroPhysics(const float dt, const int i, const float* p
 		ES = BES * std::min(m_envGrid.Qs[i], std::min(m_speed * dt * (m_envGrid.Qc[i] +m_envGrid.Qs[i] + m_envGrid.Qi[i]), std::max(QWI - m_envGrid.Qv[i], 0.0f)));
 		EI = BEI * std::min(m_envGrid.Qi[i], std::min(m_speed * dt * (m_envGrid.Qc[i] +m_envGrid.Qs[i] + m_envGrid.Qi[i]), std::max(QWI - m_envGrid.Qv[i], 0.0f)));
 
-		GR = m_envGrid.Qr[i];
-		GS = m_envGrid.Qs[i];
-		GI = m_envGrid.Qi[i];
+		if (atGround)
+		{
+			GR = m_envGrid.Qr[i];
+			GS = m_envGrid.Qs[i];
+			GI = m_envGrid.Qi[i];
+		}
 		const float D_ = 1e-6f; // Weigthed mean diffusivity of the ground //TODO: hmm, could tripple check if right
 		const float O_ = 0.01f; // evaporative ground water storage coefficient (i.e. only part of the soil can be evaporated) 
 		//Only if Qgj = 0 (Precip falling) and if we are at the ground
-		if (int(float(i) / GRIDSIZEGROUND) == m_GHeight[i % GRIDSIZESKYX])
+		if (atGround)
 		{
-			if (m_groundGrid.Qgr[i] == 0 && m_groundGrid.Qgs[i] == 0 && m_groundGrid.Qgi[i] == 0)
+			if (m_groundGrid.Qgr[idxX] == 0 && m_groundGrid.Qgs[idxX] == 0 && m_groundGrid.Qgi[idxX] == 0)
 			{
-				const float waterA = m_groundGrid.Qrs[i];
-				const float time = m_groundGrid.t[i];
+				const float waterA = m_groundGrid.Qrs[idxX];
+				const float time = m_groundGrid.t[idxX];
 				EG = BEG * D_ * waterA * exp(-time / (86400 * O_));
 			}
 			else
 			{
-				m_groundGrid.t[i] = 0;
+				m_groundGrid.t[idxX] = 0;
 			}
 		}
+	}
+
+	//Limit everything if speed is higher
+	if (m_speed > 1.0f) //TODO: speed check?
+	{
+		//Limit Vapor
+		EW_min_CW = std::max(EW_min_CW * m_speed, -m_envGrid.Qv[i]);
+		DC_min_SC = std::max(DC_min_SC * m_speed, -m_envGrid.Qv[i]);
+		//Limit cloud matter
+		AW = std::min(AW * m_speed, m_envGrid.Qw[i]);
+		KW = std::min(KW * m_speed, m_envGrid.Qw[i]);
+		RW = std::min(RW * m_speed, m_envGrid.Qw[i]);
+		FW = std::min(FW * m_speed, m_envGrid.Qw[i]);
+		BW = std::min(BW * m_speed, m_envGrid.Qw[i]);
+		//Limit cloud ice
+		AC = std::min(AC * m_speed, m_envGrid.Qc[i]);
+		KC = std::min(KC * m_speed, m_envGrid.Qc[i]);
+		MC = std::min(MC * m_speed, m_envGrid.Qc[i]);
+		//Limit rain
+		ER = std::min(ER * m_speed, m_envGrid.Qr[i]);
+		FR = std::min(FR * m_speed, m_envGrid.Qr[i]);
+		GR = std::min(GR * m_speed, m_envGrid.Qr[i]);
+		//Limit snow
+		MS = std::min(MS * m_speed, m_envGrid.Qs[i]);
+		ES = std::min(ES * m_speed, m_envGrid.Qs[i]);
+		RS = std::min(RS * m_speed, m_envGrid.Qs[i]);
+		GS = std::min(GS * m_speed, m_envGrid.Qs[i]);
+		//Limit hail
+		EI = std::min(EI * m_speed, m_envGrid.Qi[i]);
+		MI = std::min(MI * m_speed, m_envGrid.Qi[i]);
+		GI = std::min(GI * m_speed, m_envGrid.Qi[i]);
+		
+		EG = EG * m_speed; //No need to limit
 	}
 
 	//𝐷𝑡𝑞𝑣 = 𝐸𝑊 + 𝑆𝐶 + 𝐸𝑅 + 𝐸𝐼 + 𝐸𝑆 + 𝐸𝐺 − 𝐶𝑊 − 𝐷𝐶, (9)
@@ -1706,13 +1832,21 @@ void environment::updateMicroPhysics(const float dt, const int i, const float* p
 	//𝐷𝑡𝑞𝑠 = 𝐴𝐶 + 𝐾𝐶 − 𝑀𝑆 − 𝐸𝑆 − 𝑅𝑆 − 𝐺𝑆, (13)
 	//𝐷𝑡𝑞𝑖 = 𝐹𝑅 + 𝑅𝑆 + 𝑅𝑊 − 𝐸𝐼 − 𝑀𝐼 − 𝐺𝐼
 
-	//TODO: check if everything is right
-	m_envGrid.Qv[i] += m_speed * dt * (EW_min_CW + DC_min_SC + ER + EI + ES + EG);
-	m_envGrid.Qw[i] += m_speed * dt * (-EW_min_CW + MC - AW - KW - RW - FW - BW);
-	m_envGrid.Qc[i] += m_speed * dt * (DC_min_SC + FW + BW - AC - KC - MC);
-	m_envGrid.Qr[i] += m_speed * dt * (AW + KW + MS + MI - ER - FR - GR);
-	m_envGrid.Qs[i] += m_speed * dt * (AC + KC - MS - ES - RS - GS);
-	m_envGrid.Qi[i] += m_speed * dt * (FR + RS + RW - EI - MI - GI);
+	m_envGrid.Qv[i] += dt * (EW_min_CW + DC_min_SC + ER + EI + ES + EG);
+	m_envGrid.Qw[i] += dt * (-EW_min_CW + MC - AW - KW - RW - FW - BW);
+	m_envGrid.Qc[i] += dt * (-DC_min_SC + FW + BW - AC - KC - MC);
+	m_envGrid.Qr[i] += dt * (AW + KW + MS + MI - ER - FR - GR);
+	m_envGrid.Qs[i] += dt * (AC + KC - MS - ES - RS - GS);
+	m_envGrid.Qi[i] += dt * (FR + RS + RW - EI - MI - GI);
+
+	//Add to the ground if needed
+	if (atGround)
+	{
+		m_groundGrid.Qgr[idxX] += dt * GR;
+		m_groundGrid.Qgs[idxX] += dt * GS;
+		m_groundGrid.Qgi[idxX] += dt * GI;
+	}
+
 
 	if (m_envGrid.Qw[i] > 0.0f)
 	{
@@ -1866,7 +2000,6 @@ float environment::div(const int i)
 glm::vec2 environment::lap(const int i)
 {
 	//TODO: in 3D this part is different, could look at the fluid paper.
-
 	const glm::vec2 center = getUV(i);
 	const  glm::vec2 left  = m_NeighData[i].left !=  SKY ? center : getUV(i - 1);	// Neumann 
 	const  glm::vec2 right = m_NeighData[i].right != SKY ? center : getUV(i + 1);	// Neumann 

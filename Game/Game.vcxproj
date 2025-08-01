@@ -158,6 +158,7 @@
     <ClCompile Include="gameSystem.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="readTable.cpp" />
+    <ClCompile Include="skewTer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="editor.h" />
@@ -168,6 +169,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
     </ClInclude>
     <ClInclude Include="readTable.h" />
+    <ClInclude Include="skewTer.h" />
     <ClInclude Include="zip_file.hpp" />
   </ItemGroup>
   <ItemGroup>

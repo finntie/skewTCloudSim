@@ -30,6 +30,9 @@
     <ClCompile Include="editor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="skewTer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="gameSystem.h">
@@ -49,6 +52,9 @@
     </ClInclude>
     <ClInclude Include="kernelTest.cuh" />
     <ClInclude Include="editor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="skewTer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -365,11 +365,12 @@ void readTable::initEnvironment()
 	{
 		auto result = getPressureAtHeight(y + skewTData.data.altitude[0]);
 		pressures.push_back(result.first);
+		potTempSmall[j] = skewTData.data.temperature[result.second];
 		indices.push_back(result.second);
 		j++;
 	}
 
-	meteoformulas::getPotentialTemp(float(skewTData.data.temperature[0]), skewTData.data.pressure[0], pressures.data(), potTempSmall.data(), GRIDSIZESKYY);
+	meteoformulas::getPotentialTempArray(potTempSmall.data(), skewTData.data.pressure[0], pressures.data(), potTempSmall.data(), GRIDSIZESKYY);
 	//Duplicate across x direction
 	for (int i = 0; i < GRIDSIZESKYY; i++)
 	{
@@ -383,11 +384,11 @@ void readTable::initEnvironment()
 	for (int i = 0; i < GRIDSIZESKYY; i++)
 	{
 		float velFieldValue = std::sinf((skewTData.data.windDir[indices[i]] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[indices[i]];
-		float QvValue = meteoformulas::ws(skewTData.data.temperature[indices[i]], skewTData.data.pressure[indices[i]]);
+		float QvValue = meteoformulas::ws(skewTData.data.dewPoint[indices[i]], skewTData.data.pressure[indices[i]]);
 
 		for (int x = 0; x < GRIDSIZESKYX; x++)
 		{
-			velField[i * GRIDSIZESKYX + x] = { velFieldValue, 0.0f };
+			velField[i * GRIDSIZESKYX + x] = { velFieldValue, 0 };
 			Qv[i * GRIDSIZESKYX + x] = half_float::half(QvValue);
 		}
 	}
@@ -529,7 +530,7 @@ void readTable::debugDrawData()
 	{
 		//Dry adiabatic (potential temps)
 		{
-			meteoformulas::getPotentialTemp(i, 1000.0f, pressures.get(), potTemps.get(), pressuresSize);
+			meteoformulas::getDryAdiabatic(i, 1000.0f, pressures.get(), potTemps.get(), pressuresSize);
 
 			for (int j = 10; j < pressuresSize; j += 10)
 			{
@@ -575,7 +576,7 @@ void readTable::debugDrawData()
 
 
 	//Dry adiabatic to LCL
-	meteoformulas::getPotentialTemp(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.pressure.get(), temps.get(), skewTData.data.dataSize);
+	meteoformulas::getDryAdiabatic(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.pressure.get(), temps.get(), skewTData.data.dataSize);
 
 	for (int j = 1; j < skewTData.data.dataSize; j++)
 	{
