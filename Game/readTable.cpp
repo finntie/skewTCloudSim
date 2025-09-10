@@ -1,16 +1,15 @@
 #include "readTable.h"
 
-#include "zip_file.hpp"
-#include "math/constants.hpp"
-#include "math/meteoformulas.h"
-#include "environment.h"
-using namespace Constants;
-
 //Engine specific
 #include "core/engine.hpp"
 #include "rendering/debug_render.hpp"
 #include "rendering/colors.hpp"
-using namespace bee;
+
+#include "zip_file.hpp"
+#include "math/constants.hpp"
+#include "math/meteoformulas.h"
+#include "environment.h"
+#include "game.h"
 
 #include <sstream>
 #include <iostream>
@@ -20,6 +19,9 @@ using namespace bee;
 #include <CUDA/include/cuda_runtime.h>
 #include <CUDA/include/cuda.h>
 #include "kernelTest.cuh"
+
+using namespace Constants;
+using namespace bee;
 
 
 void readTable::readKNMIFile(const char* _file)
@@ -110,18 +112,16 @@ void readTable::readKNMIFile(const char* _file)
 
 	//Copy the data over
 	{
-		radioSondeData RSP;
-
-		RSP.allocate(row);
-		std::memcpy(RSP.temperature.get(), temperature.data(), row * sizeof(float));
-		std::memcpy(RSP.dewPoint.get(), dewPoint.data(), row * sizeof(float));
-		std::memcpy(RSP.windDir.get(), windDir.data(), row * sizeof(float));
-		std::memcpy(RSP.windSpeed.get(), windSpeed.data(), row * sizeof(float));
-		std::memcpy(RSP.pressure.get(), pressure.data(), row * sizeof(float));
-		std::memcpy(RSP.altitude.get(), altitude.data(), row * sizeof(float));
-
-		skewTData.data.allocate(row);
-		skewTData.data = std::move(RSP);
+		//Copy the data over
+		{
+			skewTData.data.allocate(row);
+			std::memcpy(skewTData.data.temperature, temperature.data(), row * sizeof(float));
+			std::memcpy(skewTData.data.dewPoint, dewPoint.data(), row * sizeof(float));
+			std::memcpy(skewTData.data.windDir, windDir.data(), row * sizeof(float));
+			std::memcpy(skewTData.data.windSpeed, windSpeed.data(), row * sizeof(float));
+			std::memcpy(skewTData.data.pressure, pressure.data(), row * sizeof(float));
+			std::memcpy(skewTData.data.altitude, altitude.data(), row * sizeof(float));
+		}
 	}
 
 	heightToPressureCalculate();
@@ -204,7 +204,7 @@ void readTable::readDWDFile(const char* _file)
 	//TODO: Could do something with the dates, i.e. select a date, but for now we will grab the latest.
 	targetDate = AllDates[161] + "12"; // 2025 03 24 
 
-	//targetDate = AllDates[243] + "12"; //1700 Cape?
+	//targetDate = AllDates[243] + "12"; // 2024 05 01 - 1700 Cape?
 
 	printf("Reading file %s\n", targetDate.c_str());
 
@@ -308,7 +308,7 @@ void readTable::readDWDFile(const char* _file)
 				case 10://Dew point in C
 					dewPoint.push_back(std::stof(word));
 					break;
-				case 11://WindSpeed  TODO: Not sure if km.h or knots
+				case 11://WindSpeed
 					windSpeed.push_back(std::stof(word));
 					break;
 				case 12://Wind Direction
@@ -325,18 +325,13 @@ void readTable::readDWDFile(const char* _file)
 
 	//Copy the data over
 	{
-		radioSondeData RSP;
-
-		RSP.allocate(row);
-		std::memcpy(RSP.temperature.get(), temperature.data(), row * sizeof(float));
-		std::memcpy(RSP.dewPoint.get(), dewPoint.data(), row * sizeof(float));
-		std::memcpy(RSP.windDir.get(), windDir.data(), row * sizeof(float));
-		std::memcpy(RSP.windSpeed.get(), windSpeed.data(), row * sizeof(float));
-		std::memcpy(RSP.pressure.get(), pressure.data(), row * sizeof(float));
-		std::memcpy(RSP.altitude.get(), altitude.data(), row * sizeof(float));
-
 		skewTData.data.allocate(row);
-		skewTData.data = std::move(RSP);
+		std::memcpy(skewTData.data.temperature, temperature.data(), row * sizeof(float));
+		std::memcpy(skewTData.data.dewPoint, dewPoint.data(), row * sizeof(float));
+		std::memcpy(skewTData.data.windDir, windDir.data(), row * sizeof(float));
+		std::memcpy(skewTData.data.windSpeed, windSpeed.data(), row * sizeof(float));
+		std::memcpy(skewTData.data.pressure, pressure.data(), row * sizeof(float));
+		std::memcpy(skewTData.data.altitude, altitude.data(), row * sizeof(float));
 	}
 
 	heightToPressureCalculate();
@@ -412,8 +407,7 @@ void readTable::initEnvironment()
 		groundPressure.push_back(half_float::half(skewTData.data.pressure[0]));
 	}
 
-	auto& Environment = Engine.ECS().GetSystem<environment>();
-	Environment.init(potTemp.data(), velField.data(), Qv.data(), groundTemp.data(), groundPressure.data());
+	Game.Environment().init(potTemp.data(), velField.data(), Qv.data(), groundTemp.data(), groundPressure.data());
 }
  
 
@@ -565,7 +559,7 @@ void readTable::debugDrawData()
 
 
 	//CCL
-	glm::vec3 CCL = meteoformulas::getCCL(skewTData.data.pressure[0], skewTData.data.dewPoint[0], skewTData.data.pressure.get(), skewTData.data.temperature.get(), skewTData.data.dataSize);
+	glm::vec3 CCL = meteoformulas::getCCL(skewTData.data.pressure[0], skewTData.data.dewPoint[0], skewTData.data.pressure, skewTData.data.temperature, skewTData.data.dataSize);
 	coords = convertToPlottingCoordinates(CCL.x, CCL.y, true, sizeSkewT.x, sizeSkewT.y);
 	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::White);
 	glm::vec2 coords2 = convertToPlottingCoordinates(skewTData.data.dewPoint[0], skewTData.data.pressure[0], true, sizeSkewT.x, sizeSkewT.y);
@@ -576,7 +570,7 @@ void readTable::debugDrawData()
 
 
 	//Dry adiabatic to LCL
-	meteoformulas::getDryAdiabatic(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.pressure.get(), temps.get(), skewTData.data.dataSize);
+	meteoformulas::getDryAdiabatic(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.pressure, temps.get(), skewTData.data.dataSize);
 
 	for (int j = 1; j < skewTData.data.dataSize; j++)
 	{
@@ -589,7 +583,7 @@ void readTable::debugDrawData()
 
 	//Moist adiabatic at LCL
 	int offset = 0;
-	meteoformulas::getMoistTemp(LCL.x, LCL.y, skewTData.data.pressure.get(), temps.get(), skewTData.data.dataSize, offset);
+	meteoformulas::getMoistTemp(LCL.x, LCL.y, skewTData.data.pressure, temps.get(), skewTData.data.dataSize, offset);
 	if (offset != -1)
 	{
 		for (int j = 1 + offset; j < skewTData.data.dataSize; j++)
@@ -603,17 +597,17 @@ void readTable::debugDrawData()
 	}
 
 	//LFC
-	const glm::vec3 LFC = meteoformulas::getLFC(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.altitude[0], skewTData.data.dewPoint[0], skewTData.data.pressure.get(), skewTData.data.temperature.get(), skewTData.data.altitude.get(), skewTData.data.dataSize);
+	const glm::vec3 LFC = meteoformulas::getLFC(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.altitude[0], skewTData.data.dewPoint[0], skewTData.data.pressure, skewTData.data.temperature, skewTData.data.altitude, skewTData.data.dataSize);
 	coords = convertToPlottingCoordinates(skewTData.data.temperature[0], LFC.y, true, sizeSkewT.x, sizeSkewT.y);
 	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::Yellow);
 
 	//EL
-	const glm::vec3 EL = meteoformulas::getEL(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.altitude[0], skewTData.data.dewPoint[0], skewTData.data.pressure.get(), skewTData.data.temperature.get(), skewTData.data.altitude.get(), skewTData.data.dataSize);
+	const glm::vec3 EL = meteoformulas::getEL(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.altitude[0], skewTData.data.dewPoint[0], skewTData.data.pressure, skewTData.data.temperature, skewTData.data.altitude, skewTData.data.dataSize);
 	coords = convertToPlottingCoordinates(skewTData.data.temperature[0], EL.y, true, sizeSkewT.x, sizeSkewT.y);
 	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::Pink);
 
 	//CAPE
-	CAPE = meteoformulas::calculateCAPE(skewTData.data.temperature[0], skewTData.data.pressure[0], 0, skewTData.data.dewPoint[0], skewTData.data.pressure.get(), skewTData.data.temperature.get(), skewTData.data.altitude.get(), skewTData.data.dataSize);
+	CAPE = meteoformulas::calculateCAPE(skewTData.data.temperature[0], skewTData.data.pressure[0], 0, skewTData.data.dewPoint[0], skewTData.data.pressure, skewTData.data.temperature, skewTData.data.altitude, skewTData.data.dataSize);
 
 
 	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 0.1f, glm::vec3(0, 0, 1), bee::Colors::Black);

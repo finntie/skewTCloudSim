@@ -6,13 +6,15 @@
 #include <glm/glm.hpp>
 
 #define GRIDSIZESKYX 32
-#define GRIDSIZESKYY 128
+#define GRIDSIZESKYY 32
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY)
 #define GRIDSIZEGROUND (GRIDSIZESKYX)
-#define VOXELSIZE 16.0f //Meters
+#define VOXELSIZE 64.0f //Meters
 
-class environment : public bee::System, public bee::IPanel
+struct envDebugData;
+
+class environment
 {
 public:
 
@@ -48,15 +50,9 @@ public:
 
 	void init(double* potTemps, glm::vec2* velField, float* Qv, double* groundTemp, float* groundPres);
 
-#ifdef BEE_INSPECTOR
-	void OnPanel() override;
-	std::string GetName() const override;
-	std::string GetIcon() const override;
-#endif
+	bool EditorData();
 
-	void DebugRender(float dt);
-
-	void Update(float dt) override;
+	void Update(float dt);
 
 	//--------------------------------Ground---------------------------------
 	float groundCoverageFactor(const int index);
@@ -70,12 +66,14 @@ public:
 	void getInterpolValueTemp(double* arrayFull, const glm::vec2 Ppos, double& output);
 	//type: rain = 1, snow = 2, ice = 3
 	void diffuseAndAdvect(const float dt, float* array, bool vapor = false, const int fallVelocityType = 0);
+	void interPolatePrecip(const float dt, float* array, const int fallVelocityType);
 	bool getInterpolValue(float* array,const glm::vec2 Ppos, const bool Vapor, float& output);
+	void PPMWAdvect(float* array, const int i, const float dt);
+	void PPMWAdvectLR(float* array, const int i, const float dt, const bool x);
+	float PPMWAdvectFlux(float* array, const int i, const float dt, const bool x, const bool right);
 	void updateVelocityField(const float dt);
 	float calculateBuoyancy(const int index, const float* m_pressures);
 	float averageEnvironment(const int index, const int distanceFromidx, const float maxDistance, const bool temp);
-	//void backTracing(const float dt, const int index, const float fallingVelocity);
-	//float trilinearSampling(const glm::vec2 pos, half_float::half* array);
 	glm::vec2 vorticityConfinement(const int index);
 	bool getInterpolVel(glm::vec2 Ppos, bool U, float& output);
 	//-----PressureProject-----
@@ -88,14 +86,16 @@ public:
 	/// <summary>Calculates the mass-weighted mean terminal velocity of all types of precip</summary>
 	/// <returns>x: rain, y: snow, z: ice</returns>
 	glm::vec3 calculateFallingVelocity(const float dt, const int index, const float density);
+	void updateMicroPhysics2(const float dt, const int index, const float* m_pressures, const float T, const float density);
 	void updateMicroPhysics(const float dt, const int index, const float* m_pressures, const float T, const float density);
-	float calculateSumPhaseHeat(const int index, const float Temp, const float pQv, const float pQw, const float pQc, const float pQr, const float pQs, const float pQi);
-	void computeHeatTransfer(const float dt, const int index, const float sumHeat);
+	float calculateSumPhaseHeat(const float dt, const int index, const float Temp);
+	void computeHeatTransfer(const int index, const float sumHeat);
 
 	/// <summary> Get UV from the velocity field which is in MAC grid</summary>
 	glm::vec2 getUV(const int index);
 	/// <summary>Get ambient temp at height. Using avaraged lapse rate between 5 and 2 km. </summary>
 	float getIsentropicTemp(const float y);
+	float getIsentropicVapor(const float y);
 	float curl(const int index, bool raw = false);
 	float div(const int index);
 	glm::vec2 lap(const int index);
@@ -106,6 +106,8 @@ public:
 
 	void computeNeighArray();
 	void setDebugArray(std::vector<float>& s, const int index = 0);
+
+	envDebugData* getDebugData();
 
 private:
 	
@@ -119,7 +121,12 @@ private:
 	float m_hourOfSunrise = 6.0f;
 	float m_speed = 1.0f;
 
+	float m_condens = 0.0f; //Heat from condensation
+	float m_freeze = 0.0f; //Heat from freezing
+	float m_depos = 0.0f; //Heat from deposition (gas to solid)
+
 	float m_isenTropicTemps[GRIDSIZESKYY]{ 0.0f };
+	float m_isenTropicVapor[GRIDSIZESKYY]{ 0.0f };
 	float m_pressures[GRIDSIZESKY]{ 0.0f };
 	int m_GHeight[GRIDSIZEGROUND]{ 0 };
 
@@ -138,14 +145,5 @@ private:
 	float m_debugArray0[GRIDSIZESKY]{ 0.0f };
 	float m_debugArray1[GRIDSIZESKY]{ 0.0f };
 	float m_debugArray2[GRIDSIZESKY]{ 0.0f };
-
-	//Debug
-	//int debugViewSky = 0;
-	//int debugViewGround = 0;
-	//int m_debugEditParam = 0;
-	//
-	//int mousePointingIndex = 0;
-	//bool simulationActive = false;
-	//int simulationStep = 0;
 };
 

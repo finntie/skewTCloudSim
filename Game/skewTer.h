@@ -7,10 +7,18 @@ class skewTer
 public:
 	
 	skewTer() {};
-	~skewTer() {};
+	~skewTer() 
+	{
+		delete[] m_skewT.temps;
+		delete[] m_skewT.dewPoints;
+		delete[] m_skewT.pressures;
+
+	};
 
 	struct skewTInfo
 	{
+		~skewTInfo() {};
+
 		enum skewTParam
 		{
 			TEMP, DP, P
@@ -40,23 +48,32 @@ public:
 
 	void setSkewT(skewTInfo skewT);
 
-	void drawSkewT(const glm::vec2 pos, const float width, const float height);
+	void drawSkewT();
 
 	void setVariable(skewTInfo::skewTParam param, const int index, const float value);
 	void setArray(skewTInfo::skewTParam param, const float* input);
 	void setStartIdx(const int idx);
 	void setAllArrays(float* T, float* D, float* Ps);
+
+	//How skewed is the SkewT
+	float tanTheta = glm::tan(glm::radians(45.0f));
+
+	glm::vec2 skewTSize{ 100,100 };
+	glm::vec2 skewTPos{ -40,0 };
 private:
 
 
+	void drawBackground();
+	void drawEnvironment();
+	void drawDryAndMoist();
+
 	//Converts temp and height in meters or pressure to plotting so its easily modified.
 	//Warning: Not using pressure (so height in meters) could lead up to different values due to observed not being the same as standard.
-	glm::vec2 convertToPlottingCoordinates(const float temp, const float value, const bool pressure, const float scaleWidht, const float height);
+	glm::vec2 convertToPlottingCoordinates(const float temp, const float value, const bool pressure, const float width, const float height);
 
 	skewTInfo m_skewT;
-
-	//How skewed
-	const float tanTheta = glm::tan(glm::radians(45.0f));
-
+	
+	const glm::vec2 normalSkewTSize{ 100,100 };
+	int startHeight = 0;
 };
 

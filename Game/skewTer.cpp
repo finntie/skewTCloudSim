@@ -17,85 +17,15 @@ void skewTer::setSkewT(skewTInfo skewT)
 	m_skewT = skewT;
 }
 
-void skewTer::drawSkewT(const glm::vec2 pos, const float width, const float height)
+void skewTer::drawSkewT()
 {
-	const float x = pos.x, y = pos.y;
-	int xstart = m_skewT.startIdx;
-	while (xstart++ < m_skewT.size && m_skewT.pressures[xstart] == 0);
-	//TODO: width and height are broken
+	startHeight = m_skewT.startIdx;
+	while (startHeight <= m_skewT.size && m_skewT.pressures[startHeight] == 0) { startHeight++; }
+	startHeight = startHeight >= m_skewT.size ? m_skewT.size - 1 : startHeight;
 
-	for (float h = 0; h < 1000; h += 100)
-	{
-		glm::vec2 coords = convertToPlottingCoordinates(0, h, true, width, height);
-		coords += pos;
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40 + x, coords.y, 0), glm::vec3(40 + x, coords.y, 0), bee::Colors::Grey);
-	}
-	for (float i = -100 + pos.x; i < 40 + pos.x; i += 10)
-	{
-		glm::vec2 coords = convertToPlottingCoordinates(i, 30000, false, width, height);
-		coords;
-
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(i, 0 + y, 0), glm::vec3(coords, 0), bee::Colors::Grey);
-	}
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40 + x, 0 + y, 0), glm::vec3( 40 + x, 0 + y, 0), bee::Colors::Black);
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40 + x, 0 + y, 0), glm::vec3(-40 + x, 100 + y, 0), bee::Colors::Black);
-
-	//Temp and dewpoint
-	{
-		for (int i = 1; i < m_skewT.size; i++)
-		{
-			glm::vec2 tempCoords = convertToPlottingCoordinates(m_skewT.temps[i], m_skewT.pressures[i], true, width, height);
-			glm::vec2 tempPrevCoords = convertToPlottingCoordinates(m_skewT.temps[i - 1], m_skewT.pressures[i - 1], true, width, height);
-			tempCoords += pos;
-			tempPrevCoords += pos;
-
-			glm::vec2 dewCoords = convertToPlottingCoordinates(m_skewT.dewPoints[i], m_skewT.pressures[i], true, width, height);
-			glm::vec2 dewPrevCoords = convertToPlottingCoordinates(m_skewT.dewPoints[i - 1], m_skewT.pressures[i - 1], true, width, height);
-			dewCoords += pos;
-			dewPrevCoords += pos;
-
-			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(tempCoords, 0.0f), glm::vec3(tempPrevCoords, 0.0f), bee::Colors::Red);
-			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(dewCoords, 0.0f), glm::vec3(dewPrevCoords, 0.0f), bee::Colors::Green);
-		}
-	}
-
-
-	//Dry and moist adiabatics
-	{
-		std::unique_ptr<float[]> temps = std::make_unique<float[]>(m_skewT.size);
-
-		//Dry adiabatic to LCL
-		meteoformulas::getDryAdiabatic(m_skewT.temps[xstart], m_skewT.pressures[xstart], m_skewT.pressures, temps.get(), m_skewT.size);
-		
-		for (int j = xstart; j < m_skewT.size; j++)
-		{
-			//TODO: should convertToPlottingCoordinates include setting default pressure height? (maybe an extra function that sets it)
-			glm::vec2 coords = convertToPlottingCoordinates(temps[j], m_skewT.pressures[j], true, width, height);
-			glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], m_skewT.pressures[j - 1], true, width, height);
-			coords += pos;
-			coordsPrev += pos;
-		
-			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
-		}
-
-		//Moist adiabatic at LCL
-		int offset = 0;
-		glm::vec3 LCL = meteoformulas::getLCL(m_skewT.temps[xstart], m_skewT.pressures[xstart], xstart * VOXELSIZE, m_skewT.dewPoints[xstart]);
-		meteoformulas::getMoistTemp(LCL.x, LCL.y, m_skewT.pressures, temps.get(), m_skewT.size, offset);
-		if (offset != -1)
-		{
-			for (int j = offset + 1; j < m_skewT.size; j++)
-			{
-				//TODO: should convertToPlottingCoordinates include setting default pressure height? (maybe an extra function that sets it)
-				glm::vec2 coords = convertToPlottingCoordinates(temps[j], m_skewT.pressures[j], true, width, height);
-				glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], m_skewT.pressures[j - 1], true, width, height);
-				coords += pos;
-				coordsPrev += pos;
-
-				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
-			}
-		}
-	}
+	drawBackground();
+	drawEnvironment();
+	drawDryAndMoist();
 }
 
 void skewTer::setVariable(skewTInfo::skewTParam param, const int i, const float value)
@@ -146,9 +76,96 @@ void skewTer::setAllArrays(float* T, float* D, float* Ps)
 	std::memcpy(m_skewT.pressures, Ps, m_skewT.size * sizeof(float));
 }
 
+//-------------------------------------------------------------------------------------------------------------------------------------------
+//------------------------------------               Drawing                     ------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------------------------------------------------
+
+void skewTer::drawBackground()
+{
+	const float scaleX = skewTSize.x / normalSkewTSize.x, scaleY = skewTSize.y / normalSkewTSize.y;
+
+	for (float h = 0; h < 1000; h += 100)
+	{
+		glm::vec2 coords = convertToPlottingCoordinates(0, h, true, skewTSize.x, skewTSize.y);
+		coords += skewTPos;
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40 * scaleX + skewTPos.x, coords.y, 0), glm::vec3(40 * scaleX + skewTPos.x, coords.y, 0), bee::Colors::Grey);
+	}
+	for (float i = -100; i < 40; i += 10)
+	{
+		glm::vec2 coords = convertToPlottingCoordinates(i, 100, true, skewTSize.x, skewTSize.y);
+		coords += skewTPos;
+
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(i * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(coords, 0), bee::Colors::Grey);
+	}
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), bee::Colors::Black);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(-40 * scaleX + skewTPos.x, 100 * scaleY + skewTPos.y, 0), bee::Colors::Black);
+}
+
+void skewTer::drawEnvironment()
+{
+	//Temp and dewpoint
+	{
+		for (int i = 1; i < m_skewT.size; i++)
+		{
+			glm::vec2 tempCoords = convertToPlottingCoordinates(m_skewT.temps[i], m_skewT.pressures[i], true, skewTSize.x, skewTSize.y);
+			glm::vec2 tempPrevCoords = convertToPlottingCoordinates(m_skewT.temps[i - 1], m_skewT.pressures[i - 1], true, skewTSize.x, skewTSize.y);
+			tempCoords += skewTPos;
+			tempPrevCoords += skewTPos;
+
+			glm::vec2 dewCoords = convertToPlottingCoordinates(m_skewT.dewPoints[i], m_skewT.pressures[i], true, skewTSize.x, skewTSize.y);
+			glm::vec2 dewPrevCoords = convertToPlottingCoordinates(m_skewT.dewPoints[i - 1], m_skewT.pressures[i - 1], true, skewTSize.x, skewTSize.y);
+			dewCoords += skewTPos;
+			dewPrevCoords += skewTPos;
+
+			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(tempCoords, 0.0f), glm::vec3(tempPrevCoords, 0.0f), bee::Colors::Red);
+			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(dewCoords, 0.0f), glm::vec3(dewPrevCoords, 0.0f), bee::Colors::Green);
+		}
+	}
+}
+
+void skewTer::drawDryAndMoist()
+{
+	//Dry and moist adiabatics
+	{
+		std::unique_ptr<float[]> temps = std::make_unique<float[]>(m_skewT.size);
+
+		//Dry adiabatic to LCL
+		meteoformulas::getDryAdiabatic(m_skewT.temps[startHeight], m_skewT.pressures[startHeight], m_skewT.pressures, temps.get(), m_skewT.size);
+
+		for (int j = startHeight; j < m_skewT.size; j++)
+		{
+			//TODO: should convertToPlottingCoordinates include setting default pressure height? (maybe an extra function that sets it)
+			glm::vec2 coords = convertToPlottingCoordinates(temps[j], m_skewT.pressures[j], true, skewTSize.x, skewTSize.y);
+			glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], m_skewT.pressures[j - 1], true, skewTSize.x, skewTSize.y);
+			coords += skewTPos;
+			coordsPrev += skewTPos;
+
+			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
+		}
+
+		//Moist adiabatic at LCL
+		int offset = 0;
+		glm::vec3 LCL = meteoformulas::getLCL(m_skewT.temps[startHeight], m_skewT.pressures[startHeight], startHeight * VOXELSIZE, m_skewT.dewPoints[startHeight]);
+		meteoformulas::getMoistTemp(LCL.x, LCL.y, m_skewT.pressures, temps.get(), m_skewT.size, offset);
+		if (offset != -1)
+		{
+			for (int j = offset + 1; j < m_skewT.size; j++)
+			{
+				//TODO: should convertToPlottingCoordinates include setting default pressure height? (maybe an extra function that sets it)
+				glm::vec2 coords = convertToPlottingCoordinates(temps[j], m_skewT.pressures[j], true, skewTSize.x, skewTSize.y);
+				glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], m_skewT.pressures[j - 1], true, skewTSize.x, skewTSize.y);
+				coords += skewTPos;
+				coordsPrev += skewTPos;
+
+				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
+			}
+		}
+	}
+}
 
 
-glm::vec2 skewTer::convertToPlottingCoordinates(const float temp, const float value, const bool pressure, const float scaleWidth, const float maxHeight)
+
+glm::vec2 skewTer::convertToPlottingCoordinates(const float temp, const float value, const bool pressure, const float width, const float maxHeight)
 {
 	//Respect hPa for height in meter using standard pressure
 	float height = value;
@@ -164,8 +181,7 @@ glm::vec2 skewTer::convertToPlottingCoordinates(const float temp, const float va
 
 
 	//Skew value
-	float skewedTemp = temp + tanTheta * height;
-	skewedTemp *= scaleWidth;
+	float skewedTemp = (temp * width / normalSkewTSize.x) + tanTheta * height;
 
 	return { skewedTemp, height };
 }

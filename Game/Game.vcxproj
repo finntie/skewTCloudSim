@@ -155,8 +155,10 @@
   <ItemGroup>
     <ClCompile Include="editor.cpp" />
     <ClCompile Include="environment.cpp" />
+    <ClCompile Include="game.cpp" />
     <ClCompile Include="gameSystem.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="microPhys.cpp" />
     <ClCompile Include="readTable.cpp" />
     <ClCompile Include="skewTer.cpp" />
   </ItemGroup>
@@ -164,10 +166,12 @@
     <ClInclude Include="editor.h" />
     <ClInclude Include="environment.h" />
     <ClInclude Include="external\odeint.hpp" />
+    <ClInclude Include="game.h" />
     <ClInclude Include="gameSystem.h" />
     <ClInclude Include="kernelTest.cuh">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
     </ClInclude>
+    <ClInclude Include="microPhys.h" />
     <ClInclude Include="readTable.h" />
     <ClInclude Include="skewTer.h" />
     <ClInclude Include="zip_file.hpp" />

@@ -8,27 +8,36 @@
 
 struct radioSondeData
 {
-	std::unique_ptr<float[]> altitude; //In meter
-	std::unique_ptr<float[]> pressure; //In hPa
-	std::unique_ptr<float[]> dewPoint; //In Celcius
-	std::unique_ptr<float[]> temperature; //In Celcius
-	std::unique_ptr<float[]> windSpeed;
-	std::unique_ptr<float[]> windDir;
+	float* altitude = nullptr; //In meter
+	float* pressure = nullptr; //In hPa
+	float* dewPoint = nullptr; //In Celcius
+	float* temperature = nullptr; //In Celcius
+	float* windSpeed = nullptr;
+	float* windDir = nullptr;
 
 	size_t dataSize = 0;
 
 	void allocate(size_t size)
 	{
-		altitude = std::make_unique<float[]>(size);
-		pressure = std::make_unique<float[]>(size);
-		dewPoint = std::make_unique<float[]>(size);
-		temperature = std::make_unique<float[]>(size);
-		windSpeed = std::make_unique<float[]>(size);
-		windDir = std::make_unique<float[]>(size);
+		altitude = new float[size];
+		pressure = new float[size];
+		dewPoint = new float[size];
+		temperature = new float[size];
+		windSpeed = new float[size];
+		windDir = new float[size];
 		dataSize = size;
 	}
 
 	radioSondeData() = default;
+	~radioSondeData()
+	{
+		delete[] altitude;
+		delete[] pressure;
+		delete[] dewPoint;
+		delete[] temperature;
+		delete[] windSpeed;
+		delete[] windDir;
+	}
 
 	// Add move constructor
 	radioSondeData(radioSondeData&&) = default;
