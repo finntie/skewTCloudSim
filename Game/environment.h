@@ -6,11 +6,11 @@
 #include <glm/glm.hpp>
 
 #define GRIDSIZESKYX 32
-#define GRIDSIZESKYY 32
+#define GRIDSIZESKYY 64
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY)
 #define GRIDSIZEGROUND (GRIDSIZESKYX)
-#define VOXELSIZE 64.0f //Meters
+#define VOXELSIZE 32.0f //Meters
 
 struct envDebugData;
 
@@ -55,10 +55,12 @@ public:
 	void Update(float dt);
 
 	//--------------------------------Ground---------------------------------
+	float irridianceAtLat(const float latitude);
 	float groundCoverageFactor(const int index);
 	void updateGroundTemps(const float dt, const int index, const float Irradiance, const float cloudCoverage);
-	void updateMicroPhysicsGround(const float dt, const int index);
-	float calculateSumPhaseHeatGround(const int i, const float pQgr, const float pQgs, const float pQgi);
+	void advectMicroPhysicsGround(const float dt, const int index);
+	void updateMicroPhysicsGround(const float dt, const int index, const float Tair, const float irr, const float c, const float density);
+	float calculateSumPhaseHeatGround(const int i);
 
 
 	//----------------------------------Sky----------------------------------
@@ -86,7 +88,6 @@ public:
 	/// <summary>Calculates the mass-weighted mean terminal velocity of all types of precip</summary>
 	/// <returns>x: rain, y: snow, z: ice</returns>
 	glm::vec3 calculateFallingVelocity(const float dt, const int index, const float density);
-	void updateMicroPhysics2(const float dt, const int index, const float* m_pressures, const float T, const float density);
 	void updateMicroPhysics(const float dt, const int index, const float* m_pressures, const float T, const float density);
 	float calculateSumPhaseHeat(const float dt, const int index, const float Temp);
 	void computeHeatTransfer(const int index, const float sumHeat);

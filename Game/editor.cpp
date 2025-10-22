@@ -601,8 +601,10 @@ void editor::viewSky()
 			{
 				//Get temp
 				const float height = y * VOXELSIZE;
-				const float pressure = meteoformulas::getStandardPressureAtHeight(float(m_envData->m_groundView.T[int(x)]) - 273.15f, height);
-				const float T = float(m_envData->m_envView.potTemp[int(x) + int(y) * GRIDSIZESKYX]) * glm::pow(pressure / m_envData->m_groundView.P[int(x)], Constants::Rsd / Constants::Cpd);
+				const float Tz = float(m_envData->m_envView.potTemp[int(x) + int(y) * GRIDSIZESKYX]) - 273.15f;
+				const float pressure = meteoformulas::getStandardPressureAtHeight(Tz, height);
+				const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], pressure) + 273.15f;
+
 				colorScheme.getColor("TemperatureSky", T, color);
 				break;
 			}
@@ -770,8 +772,9 @@ void editor::viewToolTipData()
 	const int y = m_mousePointingIndex / GRIDSIZESKYX;
 
 	const float height = y * VOXELSIZE;
-	const float pressure = meteoformulas::getStandardPressureAtHeight(float(m_envData->m_groundView.T[int(x)]) - 273.15f, height);
-	const float T = float(m_envData->m_envView.potTemp[int(x) + int(y) * GRIDSIZESKYX]) * glm::pow(pressure / m_envData->m_groundView.P[int(x)], Constants::Rsd / Constants::Cpd) - 273.15f;
+	const float Tz = float(m_envData->m_envView.potTemp[int(x) + int(y) * GRIDSIZESKYX]) - 273.15f;
+	const float pressure = meteoformulas::getStandardPressureAtHeight(Tz, height);
+	const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], pressure);
 
 	const float rs = meteoformulas::ws(T, pressure);
 	const float RH = m_envData->m_envView.Qv[m_mousePointingIndex] / rs * 100;
@@ -1004,16 +1007,15 @@ void editor::setGround(const int index, bool ground)
 void editor::addDataErasedGround(const int x, const int y)
 {
 	const int idx = x + y * GRIDSIZESKYX;
-	const int idxUp = x + (m_envData->m_groundHeight[x] + 1) * GRIDSIZESKYX;
 
 	//Set data to blank parameters
-	m_envData->m_envView.Qv[idx] = m_envData->m_envView.Qv[idxUp];
-	m_envData->m_envView.Qw[idx] = m_envData->m_envView.Qw[idxUp];
-	m_envData->m_envView.Qc[idx] = m_envData->m_envView.Qc[idxUp];
-	m_envData->m_envView.Qr[idx] = m_envData->m_envView.Qr[idxUp];
-	m_envData->m_envView.Qs[idx] = m_envData->m_envView.Qs[idxUp];
-	m_envData->m_envView.Qi[idx] = m_envData->m_envView.Qi[idxUp];
-	m_envData->m_envView.potTemp[idx] = m_envData->m_envView.potTemp[idxUp];
+	m_envData->m_envView.Qv[idx] = m_envData->m_envVapor[y];
+	m_envData->m_envView.Qw[idx] = 0.0f;
+	m_envData->m_envView.Qc[idx] = 0.0f;
+	m_envData->m_envView.Qr[idx] = 0.0f;
+	m_envData->m_envView.Qs[idx] = 0.0f;
+	m_envData->m_envView.Qi[idx] = 0.0f;
+	m_envData->m_envView.potTemp[idx] = m_envData->m_envTemp[y];
 	m_envData->m_envView.velField[idx] = { 0,0 };
 }
 
@@ -1033,8 +1035,9 @@ void editor::dataToSkewTData(float* temp, float* dew, float* pressures)
 		}
 
 		const float height = i * VOXELSIZE;
-		const float pressure = meteoformulas::getStandardPressureAtHeight(float(m_envData->m_groundView.T[x]) - 273.15f, height);
-		const float T = float(m_envData->m_envView.potTemp[x + i * GRIDSIZESKYX]) * glm::pow(pressure / m_envData->m_groundView.P[x], Constants::Rsd / Constants::Cpd) - 273.15f;
+		const float Tz = float(m_envData->m_envView.potTemp[x + i * GRIDSIZESKYX]) - 273.15f;
+		const float pressure = meteoformulas::getStandardPressureAtHeight(Tz, height);
+		const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], pressure);
 
 		const float rs = meteoformulas::ws(T, pressure);
 		const float RH = m_envData->m_envView.Qv[x + i * GRIDSIZESKYX] / rs * 100;

@@ -69,6 +69,7 @@ public:
 
 	void heightToPressureCalculate();
 	std::pair<float,int> getPressureAtHeight(float height);
+	int getIndexAtHeight(float height);
 	float getHeightAtPressure(float pressure);
 	
 	//Converts temp and height in meters or pressure to plotting so its easily modified.

@@ -358,10 +358,10 @@ void readTable::initEnvironment()
 	int j = 0;
 	for (float y = 0; y < GRIDSIZESKYY * VOXELSIZE; y += VOXELSIZE)
 	{
-		auto result = getPressureAtHeight(y + skewTData.data.altitude[0]);
-		pressures.push_back(result.first);
-		potTempSmall[j] = skewTData.data.temperature[result.second];
-		indices.push_back(result.second);
+		int i = getIndexAtHeight(y + skewTData.data.altitude[0]);
+		pressures.push_back(skewTData.data.pressure[i]);
+		potTempSmall[j] = skewTData.data.temperature[i];
+		indices.push_back(i);
 		j++;
 	}
 
@@ -411,7 +411,7 @@ void readTable::initEnvironment()
 }
  
 
-
+//TODO: just remove?
 void readTable::heightToPressureCalculate()
 {
 	for (int i = 0; i < int(skewTData.data.dataSize); i++)
@@ -421,6 +421,7 @@ void readTable::heightToPressureCalculate()
 	}
 }
 
+//TODO: just remove?
 std::pair<float, int> readTable::getPressureAtHeight(float height)
 {
 	auto upper = skewTData.heightToPressure.lower_bound(height);
@@ -437,6 +438,21 @@ std::pair<float, int> readTable::getPressureAtHeight(float height)
 	float H1 = lower->first, H2 = upper->first;
 
 	return { P1 + (P2 - P1) * (height - H1) / (H2 - H1), index };
+}
+
+int readTable::getIndexAtHeight(float height)
+{
+	auto upper = skewTData.heightToPressure.lower_bound(height);
+
+	for (int i = 0; i < skewTData.data.dataSize; i++)
+	{
+		if (height <= skewTData.data.altitude[i])
+		{
+			return i;
+		}
+	}
+
+	return -1;
 }
 
 float readTable::getHeightAtPressure(float pressure)

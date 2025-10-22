@@ -70,7 +70,6 @@ void microPhys::calculateEnvMicroPhysics(microPhysResult& data)
 
     dt = data.dt;
     m_speed = data.speed;
-    m_idx = data.index;
     m_T = data.temp;
     m_Tc = m_T - 273.15f;
     m_ps = data.pressure;
@@ -136,7 +135,6 @@ void microPhys::calculateEnvMicroPhysics(microPhysResult& data)
 
 
     //Limit by speed and add to heat latency.
-    //TODO: DONT FORGET PTERMS
     if (m_Tc < 0)
     {
         if (PVCON >= 0) data.condens += PVCON = dt * std::min(m_Qv, m_speed * PVCON);
@@ -326,6 +324,163 @@ void microPhys::calculateEnvMicroPhysics(microPhysResult& data)
     {
         //data.freeze = 0.0f; //Check
     }
+}
+
+void microPhys::calculateMicroPhysicsGround(microPhysGroundResult& data)
+{
+    float PGREVP{ 0.0f }; // Evaporation of (rain)water.
+    //float PSDEP{ 0.0f }; // TODO: Depositional growth of snow 
+    //float PSSUB{ 0.0f }; // TODO: Sublimation of snow
+    //float PIDEP{ 0.0f }; // TODO: Depositional growth of ice 
+    //float PISUB{ 0.0f }; // TODO: Sublimation of ice
+    float PGSMLT{ 0.0f }; // Melting of snow to form water
+    float PGGMLT{ 0.0f };// Melting of ice to form water
+    float PGGFR{0.0f};  // Freezing of (rain)water to form ice
+    float PGSFR{ 0.0f }; // Freezing of (rain)water to form snow
+
+    float PGFLW{ 0.0f };  // Water flowing through the ground (through holes in ground) (From Qr to Qrs)
+    float PGDEVP{ 0.0f };  // Evaporation of dry ground
+
+    //TODO: Handle below in advection term of ground???
+    //float PRGDIF{ 0.0f }; // diffusion coefficient for ground rain water https://dtrx.de/od/diff/
+    //float PRSDIF{ 0.0f }; // diffusion coefficient for subsurface water https://www.researchgate.net/figure/Diffusion-coefficient-for-water-in-soils_tbl2_267235072
+
+    //Setting data
+    m_Qrs = data.Qrs > 1e-18f ? data.Qrs : 0.0f;
+    m_Qv = data.Qv > 1e-18f ? data.Qv : 0.0f;
+    m_Qr = data.Qr > 1e-18f ? data.Qr : 0.0f;
+    m_Qs = data.Qs > 1e-18f ? data.Qs : 0.0f;
+    m_Qi = data.Qi > 1e-18f ? data.Qi : 0.0f;
+
+    dt = data.dt;
+    m_speed = data.speed;
+    m_T = data.temp;
+    m_Tc = m_T - 273.15f;
+    m_Ta = data.tempAir;
+    m_ps = data.pressure;
+    m_Dair = data.density;
+    m_time = data.time;
+    m_irradiance = data.irradiance;
+    m_windSpeed = data.windSpeed;
+    m_cloudCover = data.cloudCover;
+
+    m_QWS = meteoformulas::ws((m_Tc), m_ps); //Maximum water vapor air can hold
+    m_QWI = meteoformulas::wi((m_Tc), m_ps); //Maximum water vapor cold air can hold
+
+    m_slopeS = meteoformulas::slopePrecip(m_Dair, m_Qs, 1);
+    m_slopeI = meteoformulas::slopePrecip(m_Dair, m_Qi, 2);
+
+    //Setting variables
+    PGREVP = FPGREVP();
+    PGSMLT = FPGSMLT();
+    PGGMLT = FPGGMLT();
+    PGGFR = FPGGFR();
+    PGSFR = FPGSFR();
+
+    PGFLW = FPGFLW();
+    PGDEVP = FPGDEVP();
+
+    data.condens -= PGREVP = dt * std::min(m_Qr, m_speed * PGREVP);
+    data.freeze -= PGSMLT = dt * std::min(m_Qs, m_speed * PGSMLT);
+    data.freeze -= PGGMLT = dt * std::min(m_Qi, m_speed * PGGMLT);
+    data.freeze += PGGFR = dt * std::min(m_Qr, m_speed * PGGFR);
+    data.freeze += PGSFR = dt * std::min(m_Qr, m_speed * PGSFR);
+
+    PGFLW = dt * std::min(m_Qr, m_speed * PGFLW);
+    data.condens -= PGDEVP = dt * std::min(m_Qrs, m_speed * PGDEVP);
+
+    data.Qrs = 0.0f;
+    data.Qv = 0.0f;
+    data.Qr = 0.0f;
+    data.Qs = 0.0f;
+    data.Qi = 0.0f;
+
+    // Var       Add       Sub       Description
+    //---------------------------------------------
+    //PGREVP: | +Qv     | -Qr     | 
+    //PGSMLT: | +Qr     | -Qs     | 
+    //PGGMLT: | +Qr     | -Qi     | 
+    //PGGFR:  | +Qi     | -Qr     | 
+    //PGSFR:  | +Qs     | -Qr     | 
+    //PGFLW:  | +Qrs    | -Qr     | 
+    //PGDEVP: | +Qv     | -Qrs    | 
+
+    data.Qrs = PGFLW - PGDEVP;
+    data.Qv = PGREVP + PGDEVP;
+    data.Qr = PGSMLT + PGGMLT - PGREVP - PGGFR - PGSFR;
+    data.Qs = PGSFR - PGSMLT;
+    data.Qi = PGGFR - PGGMLT;
+    data.time = m_time;
+
+
+    //Check for certainty
+    if (m_Qv + data.Qv < 0.0f || m_Qrs + data.Qrs < 0.0f || m_Qr + data.Qr < 0.0f || m_Qs + data.Qs < 0.0f || m_Qi + data.Qi < 0.0f)
+    {
+        data.freeze = 0.0f;
+    }
+}
+
+void microPhys::calculateEnvMicroPhysicsHittingGround(microPhysHittingGroundResult& data)
+{
+    float PGRFR{ 0.0f }; // Freezing rain hitting the ground forming ice
+
+    m_Qv = data.Qv > 1e-18f ? data.Qv : 0.0f;
+    m_Qr = data.Qr > 1e-18f ? data.Qr : 0.0f;
+    m_Qs = data.Qs > 1e-18f ? data.Qs : 0.0f;
+    m_Qi = data.Qi > 1e-18f ? data.Qi : 0.0f;
+    m_Qv = data.Qv > 1e-18f ? data.Qv : 0.0f;
+    m_Qgr = data.Qgr > 1e-18f ? data.Qgr : 0.0f;
+    m_Qgs = data.Qgs > 1e-18f ? data.Qgs : 0.0f;
+    m_Qgi = data.Qgi > 1e-18f ? data.Qgi : 0.0f;
+
+    dt = data.dt;
+    m_speed = data.speed;
+    m_T = data.temp;
+    m_Tc = m_T - 273.15f;
+    m_Ta = data.tempAir;
+    m_ps = data.pressure;
+    m_Dair = data.density;
+    m_fallVel = data.fallingVelocity;
+
+    float GR{ 0.0f };
+    float GS{ 0.0f };
+    float GI{ 0.0f };
+
+    GR = m_Qr;
+    GS = m_Qs;
+    GI = m_Qi;
+
+    //Limit
+    GR = dt * std::min(GR * m_speed, m_Qr);
+    GS = dt * std::min(GS * m_speed, m_Qs);
+    GI = dt * std::min(GI * m_speed, m_Qi);
+
+    PGRFR = FPGRFR();
+
+    data.Qr = 0.0f;
+    data.Qs = 0.0f;
+    data.Qi = 0.0f;
+    data.Qgr = 0.0f;
+    data.Qgs = 0.0f;
+    data.Qgi = 0.0f;
+
+
+    if (m_Ta < 273.15f)
+    {
+        data.freeze += PGRFR = dt * std::min(m_Qr, m_speed * PGRFR);
+    }
+
+    // Var       Add       Sub       Description
+    //---------------------------------------------
+    //PGRFR   | +Qgi    | -Qgr   | Subtract from ground rain
+
+
+    data.Qr = -GR;
+    data.Qs = -GS;
+    data.Qi = -GI;
+    data.Qgr = GR - PGRFR;
+    data.Qgs = GS;
+    data.Qgi = GI + PGRFR;
 }
 
 using namespace Constants;
@@ -918,3 +1073,365 @@ float microPhys::FPGACR1(const float PGWET, const float PGACW, const float PGACI
     return 0.0f;
 }
 
+
+float microPhys::FPGEVP()
+{
+    if (m_Qrs > 0.0f)
+    {
+        const float BEG{ 200.0f }; // Evaporation rate of dry ground
+
+        const float D_ = 1e-6f; // Weigthed mean diffusivity of the ground //TODO: hmm, could tripple check if right
+        const float O_ = 0.1f; // evaporative ground water storage coefficient (i.e. only part of the soil can be evaporated) 
+        const float time = m_time;
+        //Only if Qgj = 0 (Precip falling)
+        if (m_Qr == 0 && m_Qs == 0 && m_Qi == 0)
+        {
+            m_time += dt;
+            return std::min(BEG * D_ * m_Qrs * exp(-time / 86400 * O_), m_Qrs);
+        }
+        else
+        {
+            m_time = 0;
+            return 0.0f;
+        }
+    }
+    return 0.0f;
+}
+
+float microPhys::FPGFLW()
+{
+    if (m_Qr > 0.0f)
+    {
+        const float BIR = 100.0f; // Rate of water flowing through ground
+        const float k{ 5e-5f }; //Sand. Hydraulic conductivity of the ground in m/s(How easy water flows through ground) https://structx.com/Soil_Properties_007.html
+        return BIR * k * m_Qr; //TODO: this values is way too low, I have to increase with BIR, check with real life values.
+    }
+    return 0.0f;
+}
+
+float microPhys::FPGGMLT()
+{
+    if (m_Qi > 0.0f) //Ice on ground
+    {
+        //Made up formula using variables from papers and help of AI
+        //Thermal conductivity soil https://www.cableizer.com/documentation/k_4
+        const float k4 = 0.955f * 1.0e-2f; // from meter to W/(cm.K)
+
+        //Density in g/cm3
+        const float densI = 0.91f;
+        //Ice thickness
+        const float currentDens = m_Qi * m_Dair * 0.001f; //Convert to g/cm3
+        const float amountIce = currentDens / densI;
+        const float iceHeight = amountIce * 100.0f; //Convert to cm3, then to cm (height)
+
+        //Contact fraction
+        //const float RoughnessSoil = 10.0f; //in mm https://www.sciencedirect.com/science/article/abs/pii/S034181622030014X
+        //const float roughnessIce = 0.2f; //in mm https://www.cambridge.org/core/journals/journal-of-glaciology/article/measurement-and-parameterization-of-aerodynamic-roughness-length-variations-at-haut-glacier-darolla-switzerland/30AB8A2DCFF90741FF302B4EB68D359B
+        //Taking these into account, we just assume the area fraction to be of around 0.45
+        const float areaFraction = 0.45f;
+
+        //How many of this particle
+        const float N0I = 4e-4f;
+
+        const float QGround = areaFraction * k4 * m_Tc / iceHeight;
+
+        const float meltRate = std::max(0.0f, QGround / Lf); //Melting rate in kg/m2/s
+        //Convert to kg/kg/s
+        return meltRate * N0I * powf(m_slopeI, -2) * areaFraction / (m_Dair * 0.001f);
+    }
+    return 0.0f;
+}
+
+float microPhys::FPGSMLT()
+{
+    if (m_Qs > 0.0f) //Snow on ground
+    {
+        //Using formulas from https://tc.copernicus.org/articles/17/211/2023/
+        float Qs = 0.0f, Ql = 0.0f, Qh = 0.0f, Qe = 0.0f, Qg = 0.0f, Qp = 0.0f; //Energy in W/m-2
+        const float Tac = m_Ta - 273.15f;
+
+        const float Ts = 0.0f; //Snow surface temp (using 0 because it would be about freezing)
+        const float Tsk = Ts + 273.15f; //Now in kelvin
+
+        //--DDFs (shortwave)--
+        const float Si = m_irradiance; 
+        //Assuming snow lies for no longer then 1 day, Albedo will be about 0.9 with max being 0.95
+        const float A = 0.9f;
+        Qs = (1 - A) * Si;
+
+        //--DDFl (longwave)--
+        const float Qlout = 310.0f; //W/m-2
+        const float eac = 9.2e-6f * m_Ta * m_Ta; //Calculate the clear-sky longwave emissivity;
+        const float ea = (1 - 0.84f * m_cloudCover) * eac + 0.84f * m_cloudCover;
+        const float Qlin = ea * Constants::oo * Tsk * Tsk * Tsk * Tsk;
+        Ql = Qlin - Qlout;
+        
+        //DDFh (Sensible heat)
+        const float k = 0.41f;
+        const float z0m = 0.001f; // Aerodynamic Roughness Lengths in m using from https://tc.copernicus.org/articles/17/211/2023/
+        const float z0h = 0.0002f; // heat roughness parameter
+        const float Ch = k * k / (log(1.0f / z0m) * log(2.0f / z0h)); //Using z = 2 meter high because its the standard
+        Qh = m_Dair * Constants::Cpd * Ch * m_windSpeed * (Tac - Ts);
+
+        //DDFe (latent heat)
+        const float Ce = Ch;
+        const float Qvs = m_Qv / (1 + m_Qv); //Mixing ratio to specific humidity
+        Qe = m_Dair * Constants::E0v * Ce * m_windSpeed * (Qvs - meteoformulas::qs(Ts, m_ps));
+
+        //DDFe (ground)  using https://en.wikipedia.org/wiki/Thermal_conduction
+        const float Td = m_Tc - Ts; //Delta temp
+        if (Td > 0.0f) //We don't want to subtract energy (i.e. create more snow)
+        {
+            //Density in g/cm3
+            const float densS = 0.11f;
+            //Ice thickness
+            const float currentDens = m_Qs * m_Dair * 0.001f; //Convert to g/cm3
+            const float amountSnow = currentDens / densS;
+            const float snowHeight = amountSnow; //Convert to cm3, then to m (height)
+            const float ks = 0.3f; //Thermal conductivity of snow in w/m/k: https://online.ucpress.edu/elementa/article/12/1/00086/200266/Snow-thermal-conductivity-and-conductive-flux-in
+            Qg = ks * (m_Tc - Ts) / snowHeight;
+        }
+
+        //DDFp (precip)
+        Qp = Constants::Cvl * 0.001f * m_Qr * m_Dair * m_Ta;
+
+        const float Q = Qs + Ql + Qh + Qe + Qg + Qp ;
+
+        // Getting kg/m3, due to multiplying by cell height you get kg/m2, 
+        // yet, cells are same widht and height, thus multiplying by 1 gives the same answer.
+        const float Qss = m_Qs * m_Dair; 
+        const float QE = (Q * dt) / Qss; //Getting energy in J/kg 
+        const float meltFrac = QE / Constants::Lf; //Get fraction of what melted
+
+        return std::max(0.0f, meltFrac * m_Qs); //Amount of snow that melts.
+    }
+    return 0.0f;
+}
+
+float microPhys::FPGREVP()
+{
+    if (m_Qr)
+    {
+        //Using formula from: https://en.wikipedia.org/wiki/Penman_equation
+        //Net radiation from https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2020WR027332
+
+        //Vapour pressure deficit
+        const float VPD = meteoformulas::es(m_Tc) * 1000.0f * (1 - m_Qv / meteoformulas::ws(m_Tc, m_ps));
+
+        //momentum surface aerodynamic conductance 
+        const float k = 0.41f;
+        const float z0m = 0.0001f; // Aerodynamic Roughness Lengths in m for winds https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2020EA001165
+        const float z0h = z0m * 0.1f; // Simply assuming smooth water 
+        const float ga = m_windSpeed * k * k / (log(1.0f / z0m) * log(2.0f / z0h)); //Using z = 2 meter high because its the standard
+
+        //Psychrometric constant
+        const float y = Constants::Cpd * m_ps * 100.0f / (0.622f * Constants::E0v);
+
+        //Calculate net irradiance
+        const float es = 0.96f; //Water emissivity https://en.wikipedia.org/wiki/Emissivity
+        const float a = 0.08f; //Water albedo https://en.wikipedia.org/wiki/Albedo
+        const float aP = meteoformulas::es(m_Ta - 273.15f) * 10.0f * (m_Qv / meteoformulas::ws(m_Ta - 273.15f, m_ps)); //Actual vapor pressure
+        const float ea = 1.24f * pow((aP / m_Ta), 1.0f / 7.0f);
+        const float Rn = m_irradiance * (1 - a) + Constants::oo * es * (ea * (m_Ta * m_Ta * m_Ta * m_Ta) - (m_T * m_T * m_T * m_T));
+        const float RnG = Rn - 0.2f * Rn; //Using ground flux https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/2016jg003591#jgrg20708-bib-0001
+
+        //Slope of saturation vapor pressure curve
+        const float m = meteoformulas::es(m_Tc) * 1000.0f * Constants::E0v / (Constants::Rsw * m_T * m_T);
+
+        //Ground heat flux - Rn = - H - LE
+
+        //Evaporation in kg/m2*s
+        const float Em = (m * RnG + m_Dair * Constants::Cpd * VPD * ga) / (Constants::E0v * (m + y));
+
+        //Divide by density of air to get kg/kg*s since our grid is of 1:1 scale.
+        return std::max(0.0f, Em / m_Dair);
+    }
+    return 0.0f;
+}
+
+float microPhys::FPGDEVP()
+{
+    if (m_Qrs)
+    {
+        if (m_Qr == 0 && m_Qs == 0 && m_Qi == 0)
+        {
+            float BEG{ 200.0f };	//NotSure		  // Evaporation rate of dry ground
+            const float D_ = 1e-6f; // Weigthed mean diffusivity of the ground //TODO: hmm, could tripple check if right
+            const float secsInDay = 60 * 60 * 24;
+            const float O_ = 0.21f * secsInDay; // evaporative ground water storage coefficient (i.e. only part of the soil can be evaporated) https://en.wikipedia.org/wiki/Specific_storage
+
+            //Note that this is just picked from water storage coefficient which may not is the same as the evaporative soil water storage coefficient.
+            //Only if Qgj = 0 (Precip falling) and if we are at the ground
+
+            //https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/2013WR014872
+            const float waterA = m_Qrs;
+            return BEG * D_ * waterA * exp(-m_time / O_);
+        }
+        else
+        {
+            m_time = 0.0f;
+        }
+    }
+    return 0.0f;
+}
+
+float microPhys::FPGGFR()
+{
+    //Freezing of water
+    const float Tac = m_Ta - 273.15f;
+    if (m_Qr && Tac < 0.0f)
+    {
+        //Using the same principle as FPGRFR (https://journals.ametsoc.org/view/journals/wefo/37/1/WAF-D-21-0085.1.xml)
+        float Qw = 0.0f, Qc = 0.0f, Qe = 0.0f, Ql = 0.0f, Qs = 0.0f, Qg = 0.0f, Qf = 0.0f;
+
+        //How much energy to fully convert 
+        //Going from J/kg to W/kg by dividing by dt and W/kg to W/m2 by multiplying by air density.
+        Qf = Constants::Lf * m_Qr * m_Dair / dt;
+
+        //How much energy it would take to go to freezing, assuming the water is still as cold as the air
+        Qw = Constants::Cvl * (273.15f - m_Ta) * m_Qr * m_Dair / dt;
+
+        const float k = 0.41f;
+        const float z0m = 0.0001f; // Aerodynamic Roughness Lengths in m for winds https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2020EA001165
+        const float z0h = z0m * 0.1f; // Simply assuming smooth water 
+        const float ga = m_windSpeed * k * k / (log(1.0f / z0m) * log(1.0f / z0h)); //Using z = 1 meter high. 
+        Qc = m_Dair * Constants::Cpd * ga * (m_Tc - Tac); //Using ground temp as water temp
+
+        //Using formula from FPGSMLT, energy from latent heat of evaporating water.
+        const float Ce = k * k;
+        const float Qvs = m_Qv / (1 + m_Qv); //Mixing ratio to specific humidity
+        Qe = m_Dair * Constants::E0v * Ce * m_windSpeed * std::max(0.0f, Qvs - meteoformulas::qs(0, m_ps));
+
+        // shortwave
+        const float Si = m_irradiance;
+        //Water has a low albedo, especially if its still
+        const float A = 0.06f;
+        Qs = -(1 - A) * Si;
+
+        // longwave
+        const float Qlout = 310.0f; //W/m-2
+        const float eac = 9.2e-6f * m_Ta * m_Ta; //Calculate the clear-sky longwave emissivity;
+        const float ea = (1 - 0.84f * m_cloudCover) * eac + 0.84f * m_cloudCover;
+        const float Qlin = ea * Constants::oo * 273.15f * 273.15f * 273.15f * 273.15f; //Using 273.15f kelvin as surface temp of ice.
+        Ql = Qlin - Qlout;
+
+        //Include current ice if there is any
+        if (m_Qi > 0.0f)
+        {
+            //Density in g/cm3
+            const float densI = 0.91f;
+            //Ice thickness
+            const float currentDens = m_Qi * m_Dair * 0.001f; //Convert to g/cm3
+            const float amountIce = currentDens / densI;
+            const float iceHeight = amountIce; //Convert to cm3, then to m (height)
+            const float ks = 0.3f; //Thermal conductivity of ice in w/m/k: https://online.ucpress.edu/elementa/article/12/1/00086/200266/Snow-thermal-conductivity-and-conductive-flux-in
+            Qg = ks * (m_Tc - 0) / iceHeight;
+            Qg *= -1; //Change signature around indicating heating as negative
+        }
+
+        //Fraction of water that gets converted to snow
+        //We clamp because if its lower then 0, we account for melting inside the melting function
+        const float f = std::clamp((Qw + Qe + Qc + Qs + Ql + Qg) / Qf, 0.0f, 1.0f);
+
+        return f * m_Qr;
+    }
+    return 0.0f;
+}
+
+float microPhys::FPGSFR()
+{
+    //Freezing of water to become snow, only if there is snow
+    if (m_Qr && m_Qs)
+    {
+        //Using the same principle as FPGRFR (https://journals.ametsoc.org/view/journals/wefo/37/1/WAF-D-21-0085.1.xml)
+        float Qw = 0.0f, Qe = 0.0f, Qg = 0.0f, Qf = 0.0f;
+
+        //How much energy to fully convert 
+        //Going from J/kg to W/kg by dividing by dt and W/kg to W/m2 by multiplying by air density.
+        Qf = Constants::Lf * m_Qr * m_Dair / dt; 
+                                                 
+        //How much energy it would take to go to freezing, assuming the water is still as cold as the air
+        Qw = Constants::Cvl * (273.15f - m_Ta) * m_Qr * m_Dair / dt; 
+
+        //No Qc due to the fact that we assume the change is not effected by wind, due to snow blocking wind.
+
+        //Using formula from FPGSMLT, energy from latent heat of evaporating water.
+        const float k = 0.41f;
+        const float Ce = k * k;
+        const float Qvs = m_Qv / (1 + m_Qv); //Mixing ratio to specific humidity
+        Qe = m_Dair * Constants::E0v * Ce * m_windSpeed * std::max(0.0f, Qvs - meteoformulas::qs(0, m_ps));
+        //Also no Qs and Ql: long/short-wave radiation due to snow blocking sun
+
+        //But we do introduce Qg again
+
+        //Density in g/cm3
+        const float densS = 0.11f;
+        //Snow thickness
+        const float currentDens = m_Qs * m_Dair * 0.001f; //Convert to g/cm3
+        const float amountSnow = currentDens / densS;
+        const float snowHeight = amountSnow; //Convert to cm3, then to m (height)
+        const float ks = 0.3f; //Thermal conductivity of snow in w/m/k: https://online.ucpress.edu/elementa/article/12/1/00086/200266/Snow-thermal-conductivity-and-conductive-flux-in
+        Qg = ks * (m_Tc - 0) / snowHeight;
+        Qg *= -1; //Change signature around indicating heating as negative
+
+
+        //Fraction of water that gets converted to snow
+        //We clamp because if its lower then 0, we account for melting inside the melting function
+        const float f = std::clamp((Qw + Qe + Qg) / Qf, 0.0f, 1.0f);
+
+        return f * m_Qr;
+    }
+    return 0.0f;
+}
+
+float microPhys::FPGRFR()
+{
+    const float Tac = m_Ta - 273.15f;
+    if (!m_Qgr && !m_Qgs && m_Qr && Tac < 0.0f)
+    {
+        //Using formula from https://journals.ametsoc.org/view/journals/wefo/37/1/WAF-D-21-0085.1.xml
+        float Qw = 0.0f, Qc = 0.0f, Qe = 0.0f, Ql = 0.0f, Qs = 0.0f, Qg = 0.0f, Qf = 0.0f;
+        
+        //P is mm/h rain rate
+        const float densW = 0.99f; // Water density in g/cm3
+        const float Rr = m_Qr * m_Dair * m_fallVel.x; // RainRate in kg/kg to kg/m3 to kg/m2/s
+        const float P = Rr * 3600.0f / (densW * 1000.0f) * 1000; // Rainrate in m/h to mm/h (Water density to kg/m3)
+        const float FFW = sqrt(pow(P * densW / 3.6f, 2.0f) + pow(0.067f * pow(P, 0.846f) * m_windSpeed, 2.0f)); //Flux of falling and windblown precipitation
+        Qf = Constants::Lf * 0.001f * FFW;
+        Qw = Constants::Cvl * 0.001f * (0 - Tac) * FFW;
+
+        const float k = 0.41f;
+        const float z0m = 0.1f; // Aerodynamic Roughness Lengths in mm for winds https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2020EA001165
+        const float z0h = z0m * 0.1f; // Simply assuming smooth water 
+        const float ga = m_windSpeed * k * k / (log(1.0f / z0m) * log(1.0f / z0h)); //Using z = 1 meter high. 
+        Qc = m_Dair * Constants::Cpd * ga * (m_Tc - Tac);
+
+        //Using formula from FPGSMLT
+        const float Ce = k * k;
+        const float Qvs = m_Qv / (1 + m_Qv); //Mixing ratio to specific humidity
+        Qe = m_Dair * Constants::E0v * Ce * m_windSpeed * std::max(0.0f, Qvs - meteoformulas::qs(0, m_ps));
+
+        //TODO: could add long and shortwave radiation.
+
+        const float Td = m_Tc - 0; //Delta temp
+        if (Td > 0.0f) //We don't want to subtract energy (i.e. create more snow)
+        {
+            //Density in g/cm3
+            const float densI = 0.91f;
+            //Ice thickness
+            const float currentDens = m_Qi * m_Dair * 0.001f; //Convert to g/cm3
+            const float amountIce = currentDens / densI;
+            const float iceHeight = amountIce; //Convert to cm3, then to m (height)
+            const float ks = 0.3f; //Thermal conductivity of snow in w/m/k: https://online.ucpress.edu/elementa/article/12/1/00086/200266/Snow-thermal-conductivity-and-conductive-flux-in
+            Qg = ks * (m_Tc - 0) / iceHeight;
+            Qg *= -1; //Change signature around indicating heating as negative
+        }
+
+        //Fraction of rain that gets converted to ice
+        const float f = std::clamp((Qw + Qc + Qe + Ql + Qs + Qg) / Qf, 0.0f, 1.0f);
+
+        return f * m_Qr;
+    }
+
+    return 0.0f;
+}

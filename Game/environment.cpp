@@ -144,10 +144,7 @@ void environment::Update(float dt)
 
 
 	// 1. Update total incoming solar radiation 
-	//Avarage solar irradiance: https://globalsolaratlas.info/map?c=51.793328,5.633017,9&r=NLD
-	float avarageIrradiance = 1150.0f; // W/m2
-	float Irradiance = avarageIrradiance * std::max(std::sin(PI / 2 * (1 - ((m_time - m_hourOfSunrise - m_dayLightDuration / 2) / (m_dayLightDuration / 2)))), 0.0f);
-	
+	float Irradiance = irridianceAtLat(glm::radians(52.37f));
 	
 	for (int s = 0; s < 1; s++) //Speed in cost of fps.
 	{
@@ -164,23 +161,27 @@ void environment::Update(float dt)
 		{
 			// 1. Compute Cloud Covering Fraction 
 			// 2. Update ground temperature
-			// 3. Diffuse and advect water content Qjg
-			// 4. Update microphysic process of Qjg
+			// 3. Advect microphysics ground
+			// 4. Update microphysic process ground
 			// 5. Compute heat transfer at ground level due to phase transition
 
 			// 1.
 			float LC = groundCoverageFactor(i);
-			LC;
-			Irradiance;
 			// 2.
 			updateGroundTemps(dt, i, Irradiance, LC);
 
-			// 3. and 4.
-			const float pQgr = (m_groundGrid.Qgr[i]), pQgs = (m_groundGrid.Qgs[i]), pQgi = (m_groundGrid.Qgi[i]);
-			updateMicroPhysicsGround(dt, i);
+			// 3.
+			advectMicroPhysicsGround(dt, i);
+
+			// 4.
+			const int envGIdx = i + (m_GHeight[i] + 1) * GRIDSIZEGROUND;
+			const float T = float(m_envGrid.potTemp[envGIdx]) * glm::pow(m_pressures[envGIdx] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
+			const float Tv = T * (0.608f * m_envGrid.Qv[envGIdx] + 1);
+			const float density = m_pressures[envGIdx] * 100 / (Rsd * Tv); //Convert Pha to Pa
+			updateMicroPhysicsGround(dt, i, T, Irradiance * (1 - LC), LC, density);
 
 			// 5.
-			m_groundGrid.T[i] += dt * calculateSumPhaseHeatGround(i, pQgr, pQgs, pQgi);
+			m_groundGrid.T[i] += dt * calculateSumPhaseHeatGround(i); 
 		}
 
 		// Update sky
@@ -229,27 +230,13 @@ void environment::Update(float dt)
 			diffuseAndAdvect(m_speed * dt, m_envGrid.Qs, false, 2);
 			diffuseAndAdvect(m_speed * dt, m_envGrid.Qi, false, 3);
 
-			float totalMass = 0.0f;
-			for (int i = 0; i < GRIDSIZESKY; i++)
-			{
-				totalMass += m_envGrid.Qw[i];
-			}
-			printf("Mass: %f\n", totalMass);
-			totalMass = 0.0f;
-
-			// --	Loop 2.	--
+			// --	Loop 	--
 			for (int loop = 0; loop < 2; loop++)
 			{
 				for (int i = 0; i < GRIDSIZESKY; i++)
 				{
 					// we want not to update neighbouring cells, so we do the Red-Black Gauss-Seidel tactic
 					if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
-
-					float T22 = 255;
-					if (m_envGrid.Qi[i] > 0.0f && i / GRIDSIZESKYX > 16)
-					{
-						T22 = 273.15f - 31.0f; //Check
-					}
 
 					// 4.
 					const float T = float(m_envGrid.potTemp[i]) * glm::pow(m_pressures[i] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
@@ -264,7 +251,7 @@ void environment::Update(float dt)
 					//debugVector2[i] = (m_envGrid.Qv[i] - meteoformulas::ws((T2 - 273.15f), m_pressures[i + GRIDSIZESKYX]));
 
 					// 5.
-					updateMicroPhysics2(dt, i, m_pressures, T, density);
+					updateMicroPhysics(dt, i, m_pressures, T, density);
 
 					debugVector[i] = m_condens * 1000;
 					//debugVector2[i] = m_freeze * 1000;
@@ -286,11 +273,26 @@ void environment::Update(float dt)
 	}
 }
 
+float environment::irridianceAtLat(const float latitude)
+{
+	//Calculates the total energy from the sun at a specific spot
+	//Using formulas from https://tc.copernicus.org/articles/17/211/2023/
+	float Gs = 1361.0f; // Solar constant in W/m-2
+	float J = 130.0f; // Day number (1 = 1th of January)
+	float rd = 1 + 0.034f * cos(2 * PI * J / 365); //Relative distance to the sun
+	float sd = 0.409f * sin(2 * PI / 365 * (J - 81)); //Solar diclenation with spring equinox on day 81
+
+	float solarRad = (m_time - (m_hourOfSunrise + m_dayLightDuration / 2.0f)) * (PI / 12.0f); //Convert time to noon to radians.
+
+	//Get amount of W/m-2 at this time of the day.
+	return std::max(0.0f, Gs * rd * (sin(latitude) * sin(sd) + cos(latitude) * cos(sd) * cos(solarRad)));
+}
+
 float environment::groundCoverageFactor(const int i)
 {
 	float totalCloudContent = 0.0f;
 	const float qfull = 1.2f; // a threshold value where all incoming radiation is reflected by cloud matter: http://meto.umd.edu/~zli/PDF_papers/Li%20Nature%20Article.pdf
-	for (int y = 0; y < GRIDSIZESKYY; y++) totalCloudContent += m_envGrid.Qc[i + y * GRIDSIZESKYX] + m_envGrid.Qw[i + y * GRIDSIZESKYX];
+	for (int y = 0; y < GRIDSIZESKYY; y++) totalCloudContent += (m_envGrid.Qc[i + y * GRIDSIZESKYX] + m_envGrid.Qw[i + y * GRIDSIZESKYX]) * VOXELSIZE;
 	return std::min(totalCloudContent / qfull, 1.0f);
 }
 
@@ -304,95 +306,12 @@ void environment::updateGroundTemps(const float dt, const int i, const float Irr
 	m_groundGrid.T[i] += m_speed * dt * ((1 - LC) * (((1 - absorbedRadiationAlbedo) * Irradiance - Constants::ge * Constants::oo * T4) / (groundThickness * densityGround * Constants::Cpds)));
 }
 
-void environment::updateMicroPhysicsGround(const float dt, const int i)
+void environment::advectMicroPhysicsGround(const float dt, const int i)
 {
-	// Uses some of the variables used in updateMicroPhysics
-
 	const int pX = (i % GRIDSIZEGROUND == 0) ? i : i - 1;
 	const int nX = ((i + 1) % GRIDSIZEGROUND == 0) ? i : i + 1;
 
-	float FR = 0.0f; // Growth of ice (precip) by freezing rain
-	float MS = 0.0f; // Snow melting
-	float MI = 0.0f; // Ice (precip) melting
-	float ER = 0.0f; // Evaporation of rain
-	float ES = 0.0f; // Evaporation of snow
-	float EI = 0.0f; // Evaporation of ice (precip)
-	//Done in the sky update due to advection taking place after this update
-	//float GR = 0.0f; // Rain hit ground 
-	//float GS = 0.0f; // Snow hit ground
-	//float GI = 0.0f; // Ice (precip) hit ground
-	float IR = 0.0f; //	Water flowing through the ground (through holes in ground)
-	float EG = 0.0f; // Evaporation of dry ground
-	float DG = 0.0f; // diffusion coefficient for ground rain water https://dtrx.de/od/diff/
-	float DS = 0.0f; // diffusion coefficient for subsurface water https://www.researchgate.net/figure/Diffusion-coefficient-for-water-in-soils_tbl2_267235072
 
-	//TODO: these values could be so wrong.
-	const float BFR{ 5e-3f };					  // Aggregation rate of freezing rain to ice (precip) rate coefficient:
-	const float BMI{ 5e-4f };					  // Aggregation rate of ice to rain rate coefficient:
-	const float BER{ 5e-4f };					  // Aggregation rate of rain to vapor rate coefficient:
-	const float BES{ 5e-4f };					  // Aggregation rate of snow to vapor rate coefficient:
-	const float BEI{ 5e-4f };					  // Aggregation rate of ice to vapor rate coefficient:
-	const float BIR{ 100.0f };					  // Evaporation rate of subsurface water (A constant)
-	const float k{ 5e-5f }; //Sand				  // Hydraulic conductivity of the ground in m/s(How easy water flows through ground) https://structx.com/Soil_Properties_007.html
-	const float BEG{ 200.0f };					  // Evaporation rate of dry ground
-
-	float T = float(m_groundGrid.T[i]);
-	float p = m_groundGrid.P[i];
-	const float QWS = meteoformulas::ws((T - 273.15f), p); //Maximum water vapor air can hold
-	const float QWI = meteoformulas::wi((T - 273.15f), p);
-
-	const int envGIdx = i + (m_GHeight[i] + 1) * GRIDSIZEGROUND;
-
-
-	if (T < -8 + 273.15f) FR = BFR * (T - 273.15f + 8) * (T - 273.15f + 8); 
-
-	if (T > 0 + 273.15f) //Melting
-	{
-		// 𝛿(𝑋𝑐 + 𝑋𝑠 + 𝑋𝑖) ≤ 𝑐𝑝air / 𝐿𝑓 * 𝑇, == First melt cloud ice, then snow, then precip ice, when the criteria is met between any step, stop melting.
-
-		const float check = Cpd / Lf * (T - 273.15f);
-		float heatSum = 0.0f;
-
-		const float Qs = m_groundGrid.Qgs[i];
-		const float Qi = m_groundGrid.Qgi[i];
-		const float MIt = BMI * (T - 273.15f);
-
-		//Melt snow if possible
-		if (Qs > 0.0f && heatSum < check)
-		{
-			const float melting = std::min(Qs, check - heatSum);
-			MS = melting;
-			heatSum += melting;
-		}
-		if (Qi > 0.0f && heatSum < check)
-		{
-			//Precip Ice can fall longer through air warmer than its melting point.
-			MI = std::min(MIt, std::min(Qi, check - heatSum));
-		}
-	}
-	//i represent the first sky voxel (the voxel above the ground)
-
-	//Constraint on how much can be evaporated (don't evap if air can't hold more)
-	//We first make sure that we are not adding more vapor than the air can hold, then we add up all the things we can evap, multiplied by dt.
-	//TODO: Check if right
-	ER = BER * std::min(m_groundGrid.Qgr[i], std::min(m_speed * dt * (m_envGrid.Qw[envGIdx] + m_groundGrid.Qgr[i]), std::max(QWS - m_envGrid.Qv[envGIdx], 0.0f)));
-	ES = BES * std::min(m_groundGrid.Qgs[i], std::min(m_speed * dt * (m_envGrid.Qc[envGIdx] + m_groundGrid.Qgs[i] + m_groundGrid.Qgi[i]), std::max(QWI - m_envGrid.Qv[envGIdx], 0.0f)));
-	EI = BEI * std::min(m_groundGrid.Qgi[i], std::min(m_speed * dt * (m_envGrid.Qc[envGIdx] + m_groundGrid.Qgs[i] + m_groundGrid.Qgi[i]), std::max(QWI - m_envGrid.Qv[envGIdx], 0.0f)));
-
-	const float D_ = 1e-6f; // Weigthed mean diffusivity of the ground //TODO: hmm, could tripple check if right
-	const float O_ = 0.1f; // evaporative ground water storage coefficient (i.e. only part of the soil can be evaporated) 
-	IR = BIR * k * m_groundGrid.Qgr[i]; //TODO: this values is way too low, I have to increase with BIR, check with real life values.
-	//Only if Qgj = 0 (Precip falling)
-	if (m_groundGrid.Qgr[i] == 0 && m_groundGrid.Qgs[i] == 0 && m_groundGrid.Qgi[i] == 0)
-	{
-		EG = std::min(BEG * D_ * m_groundGrid.Qrs[i] * exp(-m_groundGrid.t[i] / 86400 * O_), m_groundGrid.Qrs[i]);
-		m_groundGrid.t[i] += dt;
-	}
-	else
-	{
-		m_groundGrid.t[i] = 0;
-	}
-	
 	//Check how many meters down
 	float slopeFlowRain = 0.0f;
 	float slopeFlowWater = 0.0f;
@@ -401,6 +320,9 @@ void environment::updateMicroPhysicsGround(const float dt, const int i)
 		// We use for n = 0.030.
 		// RH is weird for open way, so we use water depth, which is in our case is Qgr * VOXELSIZE (in meters)
 		const float n = 1 / 0.03f;
+
+		// Hydraulic conductivity of the ground in m/s (How easy water flows through ground) https://structx.com/Soil_Properties_007.html
+		const float k{ 5e-5f }; //Sand	
 
 		const float slope1 = float(m_GHeight[pX] - m_GHeight[i]) / 1; // Divide by 1 is useless but its to say that height changed with n by 1 meters.
 		const float slope2 = float(m_GHeight[nX] - m_GHeight[i]) / 1;
@@ -431,56 +353,88 @@ void environment::updateMicroPhysicsGround(const float dt, const int i)
 	}
 
 	const float lapR = (m_groundGrid.Qgr[pX] + m_groundGrid.Qgr[nX] - 2 * m_groundGrid.Qgr[i]) / (VOXELSIZE * VOXELSIZE);
-	lapR;
-	DG = 1.75e-3f;
+	float DG = 1.75e-3f; // diffusion coefficient for ground rain water https://dtrx.de/od/diff/
 	const float lapSR = (m_groundGrid.Qrs[pX] + m_groundGrid.Qrs[nX] - 2 * m_groundGrid.Qrs[i]) / (VOXELSIZE * VOXELSIZE);
-	DS = 1.8e-5f;
+	float DS = 1.8e-5f; // diffusion coefficient for subsurface water https://www.researchgate.net/figure/Diffusion-coefficient-for-water-in-soils_tbl2_267235072
 
-	//Limit everything if speed is higher
+	//TODO: Limit on speed (Watch out: if only limiting 1 side and not the left or right, it could lead to inconsistencies)
 	if (m_speed > 1.0f)
 	{
-		//Limit subsurface ground water
-		EG = std::min(EG * m_speed, m_groundGrid.Qrs[i]);
-		//Limit rain on ground
-		ER = std::min(ER * m_speed, m_groundGrid.Qgr[i]);
-		FR = std::min(FR * m_speed, m_groundGrid.Qgr[i]);
-		IR = std::min(IR * m_speed, m_groundGrid.Qgr[i]);
-		//Limit snow on ground
-		MS = std::min(MS * m_speed, m_groundGrid.Qgs[i]);
-		ES = std::min(ES * m_speed, m_groundGrid.Qgs[i]);
-		//Limit hail on ground
-		EI = std::min(EI * m_speed, m_groundGrid.Qgi[i]);
-		MI = std::min(MI * m_speed, m_groundGrid.Qgi[i]);
+		
 	}
 
-	m_groundGrid.Qgr[i] += ( dt * (DG * lapR + slopeFlowRain + MS + MI - ER - FR - IR));
-	m_groundGrid.Qrs[i] += ( dt * (DS * lapSR + slopeFlowWater + IR - EG));
-	m_groundGrid.Qgs[i] += ( dt * (-MS - ES));
-	m_groundGrid.Qgi[i] += ( dt * (FR - EI - MI));
-
-	if (m_groundGrid.Qrs[i] < 0|| m_groundGrid.Qgs[i] < 0 || m_groundGrid.Qgi[i] < 0 ||
-		m_groundGrid.Qrs[i] != m_groundGrid.Qrs[i] || m_groundGrid.Qgs[i] != m_groundGrid.Qgs[i] || m_groundGrid.Qgi[i] != m_groundGrid.Qgi[i])
-	{
-		DS = 0;
-	}
+	m_groundGrid.Qgr[i] += ( m_speed * dt * (DG * lapR + slopeFlowRain));
+	m_groundGrid.Qrs[i] += ( m_speed * dt * (DS * lapSR + slopeFlowWater));
 }
 
-float environment::calculateSumPhaseHeatGround(const int i, const float pQgr, const float pQgs, const float pQgi)
+void environment::updateMicroPhysicsGround(const float dt, const int i, const float Tair, const float irr, const float c, const float density)
 {
+	const int iH = i + (m_GHeight[i] + 1) * GRIDSIZEGROUND;
+
+	glm::vec3 fallVel{ 0.0f };
+	if (m_envGrid.Qr[iH] > 0.0f || m_envGrid.Qs[iH] > 0.0f || m_envGrid.Qi[iH] > 0.0f) fallVel = calculateFallingVelocity(dt, iH, density);
+
+	//Calculate precip falling on ground
+	microPhys::microPhysHittingGroundResult MResultHitting = microPhys::microPhysHittingGroundResult(m_envGrid.Qv[iH], m_envGrid.Qr[iH], m_envGrid.Qs[iH], m_envGrid.Qi[iH],
+		m_groundGrid.Qgr[i], m_groundGrid.Qgs[i], m_groundGrid.Qgi[i],
+		dt, m_speed, float(m_groundGrid.T[i]), Tair, m_groundGrid.P[i], density, fallVel);
+
+	Game.mPhys().calculateEnvMicroPhysicsHittingGround(MResultHitting);
+
+	m_groundGrid.Qgr[i] += MResultHitting.Qgr;
+	m_groundGrid.Qgs[i] += MResultHitting.Qgs;
+	m_groundGrid.Qgi[i] += MResultHitting.Qgi;
+	m_envGrid.Qr[iH] += MResultHitting.Qr;
+	m_envGrid.Qs[iH] += MResultHitting.Qs;
+	m_envGrid.Qi[iH] += MResultHitting.Qi;
+
+	m_condens = MResultHitting.condens;
+	m_freeze = MResultHitting.freeze;
+	m_depos = MResultHitting.depos;
+
+	//Calculate ground microphysics
+	microPhys::microPhysGroundResult MResult = microPhys::microPhysGroundResult(m_groundGrid.Qgr[i], m_envGrid.Qv[iH], m_groundGrid.Qgr[i], m_groundGrid.Qgs[i], m_groundGrid.Qgi[i],
+		dt, m_speed, float(m_groundGrid.T[i]), Tair, m_groundGrid.P[i], density, m_groundGrid.t[i], irr, getUV(iH).x, c);
+
+	Game.mPhys().calculateMicroPhysicsGround(MResult);
+
+	m_groundGrid.Qrs[i] += MResult.Qrs;
+	m_envGrid.Qv[iH] += MResult.Qv;
+	m_groundGrid.Qgr[i] += MResult.Qr;
+	m_groundGrid.Qgs[i] += MResult.Qs;
+	m_groundGrid.Qgi[i] += MResult.Qi;
+	m_groundGrid.t[i] = MResult.time;
+	
+	//Adding, not setting, due to precip hitting ground also creating heat
+	m_condens += MResult.condens;
+	m_freeze += MResult.freeze;
+	m_depos += MResult.depos;
+}
+
+float environment::calculateSumPhaseHeatGround(const int i)
+{
+	const float Qv = m_envGrid.Qv[i];
+	const float Mair = 0.02896f; //In kg/mol
+	const float Mwater = 0.01802f; //In kg/mol
+	const float XV = (Qv / Mwater) / ((Qv / Mwater) + (1 - Qv) / Mair);
+	const float Mth = XV * Mwater + (1 - XV) * Mair;
+	const float Yair = 1.4f, yV = 1.33f;
+	const float YV = XV * (Mwater / Mth); //Mass fraction of vapor
+	const float yth = YV * yV + (1 - YV) * Yair; //Weighted average
+
+	// Get specific gas constant
+	const float cpth = R / (Mth * (yth - 1)); //Not multiplied by yth due to not needing pottemp but normal temp
+
 	float sumPhaseheat = 0.0f;
 
-	float dQgr = m_groundGrid.Qgr[i] - pQgr;
-	float dQgs = m_groundGrid.Qgs[i] - pQgs;
-	float dQgi = m_groundGrid.Qgi[i] - pQgi;
-	dQgr = dQgr == 0 ? 0 : dQgr / (1 + dQgr);
-	dQgs = dQgs == 0 ? 0 : dQgs / (1 + dQgs);
-	dQgi = dQgi == 0 ? 0 : dQgi / (1 + dQgi);
+	sumPhaseheat += meteoformulas::Lwater(float(m_groundGrid.T[i]) - 273.15f) / cpth * m_condens;
+	sumPhaseheat += meteoformulas::Lice(float(m_groundGrid.T[i]) - 273.15f) / cpth * m_depos;
+	sumPhaseheat += Lf / cpth * m_freeze;
 
-	const float invCpdRatio = 1.0f / Cpws;
+	m_condens = 0.0f;
+	m_freeze = 0.0f;
+	m_depos = 0.0f;
 
-	sumPhaseheat += Ls * invCpdRatio * dQgr;
-	sumPhaseheat += Ls * invCpdRatio * dQgs;
-	sumPhaseheat += Lf * invCpdRatio * dQgi;
 	return sumPhaseheat;
 }
 
@@ -504,11 +458,14 @@ void environment::diffuseAndAdvectTemp(const float dt, double* array)
 					if ((j + loop + int(float(j) / GRIDSIZESKYX)) % 2 == 0 || isGround(j)) continue;
 
 					const float yPos = floor(float(j) / GRIDSIZESKYX);
+					const int idxGL = (j - 1) % GRIDSIZESKYX;
+					const int idxGR = (j + 1) % GRIDSIZESKYX;
+					const int idxGD = j % GRIDSIZESKYX;
 
 					//TODO: could use a function inside this function which switches over the types, is faster.
-					const double l = m_NeighData[j].left == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].left  == GROUND ? m_groundGrid.T[(j - 1) % GRIDSIZESKYX] : dif[j - 1];
-					const double r = m_NeighData[j].right == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].right == GROUND ? m_groundGrid.T[(j + 1) % GRIDSIZESKYX] : dif[j + 1];
-					const double d = m_NeighData[j].down == GROUND ? m_groundGrid.T[j % GRIDSIZESKYX] : dif[j - GRIDSIZESKYX];
+					const double l = m_NeighData[j].left == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].left  == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGL]) - 273.25f,  m_pressures[j], m_groundGrid.P[idxGL]) + 273.15f : dif[j - 1];
+					const double r = m_NeighData[j].right == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].right == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGR]) - 273.25f, m_pressures[j], m_groundGrid.P[idxGR]) + 273.15f : dif[j + 1];
+					const double d = m_NeighData[j].down == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGD]) - 273.25f, m_pressures[j], m_groundGrid.P[idxGD]) + 273.15f : dif[j - GRIDSIZESKYX];
 					const double u = m_NeighData[j].up == OUTSIDE ? getIsentropicTemp(yPos) : dif[j + GRIDSIZESKYX];
 
 					dif[j] = (m_envGrid.potTemp[j] + k * (l + r + u + d)) / (1 + 4 * k);
@@ -529,8 +486,8 @@ void environment::diffuseAndAdvectTemp(const float dt, double* array)
 			//If at the ground, set to ground temp
 			if (isGround(i - GRIDSIZESKYX))
 			{
-
-				const double dif = array[i] - m_groundGrid.T[i % GRIDSIZESKYX];
+				const float T = meteoformulas::potentialTemp(float(m_groundGrid.T[i % GRIDSIZESKYX]) - 273.15f, m_pressures[i], m_groundGrid.P[i % GRIDSIZESKYX]) + 273.15f;
+				const double dif = array[i] - T;
 				array[i] -= dif * dt * 0.1f;
 				continue;
 			}
@@ -570,11 +527,14 @@ void environment::getInterpolValueTemp(double* array, const glm::vec2 Ppos, doub
 	const int index01 = index00 + GRIDSIZESKYX;
 	const int index11 = index10 + GRIDSIZESKYX;
 
-	//Use Isentropic Temp if outside of grid and also check for ground
-	const double value00 = outside(coord1.x, coord1.y) ? getIsentropicTemp(coord1.y) : isGround(index00) ? m_groundGrid.T[int(coord1.x)] : array[index00];
-	const double value10 = outside(coord1.x + 1, coord1.y) ? getIsentropicTemp(coord1.y) : isGround(index10) ? m_groundGrid.T[int(coord1.x) + 1] : array[index10];
-	const double value01 = outside(coord1.x, coord1.y + 1) ? getIsentropicTemp(coord1.y + 1) : isGround(index01) ? m_groundGrid.T[int(coord1.x)] : array[index01];
-	const double value11 = outside(coord1.x + 1, coord1.y + 1) ? getIsentropicTemp(coord1.y + 1) : isGround(index11) ? m_groundGrid.T[int(coord1.x) + 1] : array[index11];
+	const int idxG0 = int(coord1.x);
+	const int idxG1 = int(coord1.x + 1);
+
+	//Use Isentropic Temp if outside of grid and also check for ground which we need to make potential temp
+	const double value00 = outside(coord1.x, coord1.y) ? getIsentropicTemp(coord1.y) : isGround(index00) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG0]) - 273.15f, m_pressures[index00], m_groundGrid.P[idxG0]) + 273.15f : array[index00];
+	const double value10 = outside(coord1.x + 1, coord1.y) ? getIsentropicTemp(coord1.y) : isGround(index10) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG1]) - 273.15f, m_pressures[index10], m_groundGrid.P[idxG1]) + 273.15f : array[index10];
+	const double value01 = outside(coord1.x, coord1.y + 1) ? getIsentropicTemp(coord1.y + 1) : isGround(index01) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG0]) - 273.15f, m_pressures[index01], m_groundGrid.P[idxG0]) + 273.15f : array[index01];
+	const double value11 = outside(coord1.x + 1, coord1.y + 1) ? getIsentropicTemp(coord1.y + 1) : isGround(index11) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG1]) - 273.15f, m_pressures[index11], m_groundGrid.P[idxG1]) + 273.15f : array[index11];
 		
 	//Interpolate using bilinear interpolation, could be compressed
 
@@ -601,7 +561,7 @@ void environment::diffuseAndAdvect(const float dt, float* array, bool vapor, con
 		std::memcpy(dif.data(), array, GRIDSIZESKY * sizeof(float));
 	
 		//TODO: how much diffusion?
-		const float k = 0.05f * dt / (VOXELSIZE * VOXELSIZE); //Viscosity value
+		const float k = 0.2f * dt / (VOXELSIZE * VOXELSIZE); //Viscosity value
 		const int LOOPS = 20; //Total loops for the Gauss-Seidel method
 		for (int loop = 0; loop < 2; loop++)
 		{
@@ -665,7 +625,7 @@ void environment::diffuseAndAdvect(const float dt, float* array, bool vapor, con
 		for (int i = 0; i < GRIDSIZESKY; i++)
 		{
 			// we want not to update neighbouring cells, so we do the Red-Black Gauss-Seidel tactic
-			if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i) || (m_NeighData[i].down == GROUND && vapor)) continue;
+			if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
 
 			//Advection
 			if (!vapor) PPMWAdvect(array, i, dt);
@@ -1451,6 +1411,7 @@ bool environment::getInterpolVel(glm::vec2 Ppos, bool U, float& output)
 	const glm::vec2 v01 = outside(index01) ? glm::vec2(m_envGrid.velField[index01].x, 0.0f) : isGround(int(indexFull.x), int(indexFull.y + 1)) ? glm::vec2(0.0f) : m_envGrid.velField[index01];
 	const glm::vec2 v11 = outside(index11) ? glm::vec2(m_envGrid.velField[index11].x, 0.0f) : isGround(int(indexFull.x) + 1, int(indexFull.y + 1)) ? glm::vec2(0.0f) : m_envGrid.velField[index11];
 
+
 	//Interpolate using bilinear interpolation, could be compressed
 	if (U)
 	{
@@ -1832,7 +1793,7 @@ glm::vec3 environment::calculateFallingVelocity(const float , const int i, const
 	return glm::vec3(UR, US, UI);
 }
 
-void environment::updateMicroPhysics2(const float dt, const int i, const float* ps, const float T, const float density)
+void environment::updateMicroPhysics(const float dt, const int i, const float* ps, const float T, const float density)
 {
 	const int idxX = i % GRIDSIZESKYX;
 
@@ -1840,12 +1801,12 @@ void environment::updateMicroPhysics2(const float dt, const int i, const float* 
 	if (m_envGrid.Qr[i] > 0.0f || m_envGrid.Qs[i] > 0.0f || m_envGrid.Qi[i] > 0.0f) fallVel = calculateFallingVelocity(dt, i, density);
 
 	microPhys::microPhysResult MResult = microPhys::microPhysResult(m_envGrid.Qv[i], m_envGrid.Qw[i], m_envGrid.Qc[i], m_envGrid.Qr[i], m_envGrid.Qs[i], m_envGrid.Qi[i],
-		dt, m_speed, i, T, ps[i], density, m_GHeight[idxX], fallVel);
+		dt, m_speed, T, ps[i], density, m_GHeight[idxX], fallVel);
 
 	Game.mPhys().calculateEnvMicroPhysics(MResult);
 
 
-	//Ground addition
+	//Ground addition from mainly precip hitting ground
 	{
 		const bool atGround = i / GRIDSIZEGROUND - 1 == m_GHeight[idxX];
 		if (atGround)
@@ -1916,555 +1877,6 @@ void environment::updateMicroPhysics2(const float dt, const int i, const float* 
 	{
 		m_freeze = 0.0f;
 	}
-}
-
-
-void environment::updateMicroPhysics(const float dt, const int i, const float* ps, const float T, const float D)
-{
-	//Formulas:
-	// 𝐷𝑡𝑞𝑣 = 𝐸𝑊 + 𝑆𝐶 + 𝐸𝑅 + 𝐸𝐼 + 𝐸𝑆 + 𝐸𝐺 − 𝐶𝑊 − 𝐷𝐶, (9)
-	// 𝐷𝑡𝑞𝑤 = 𝐶𝑊 + 𝑀𝐶 − 𝐸𝑊 − 𝐴𝑊 − 𝐾𝑊 − 𝑅𝑊 − 𝐹𝑊 − 𝐵𝑊, (10)
-	// 𝐷𝑡𝑞𝑐 = 𝐷𝐶 + 𝐹𝑊 + 𝐵𝑊 − 𝑆𝐶 − 𝐴𝐶 − 𝐾𝐶 − 𝑀𝐶, (11)
-	// 𝐷𝑡𝑞𝑟 = 𝐴𝑊 + 𝐾𝑊 + 𝑀𝑆 + 𝑀𝐼 − 𝐸𝑅 − 𝐹𝑅 − 𝐺𝑅, (12)
-	// 𝐷𝑡𝑞𝑠 = 𝐴𝐶 + 𝐾𝐶 − 𝑀𝑆 − 𝐸𝑆 − 𝑅𝑆 − 𝐺𝑆, (13)
-	// 𝐷𝑡𝑞𝑖 = 𝐹𝑅 + 𝑅𝑆 + 𝑅𝑊 − 𝐸𝐼 − 𝑀𝐼 − 𝐺𝐼, (14)
-
-	float EW_min_CW = 0.0f; // Difference between evaporation of water vapor and condensation of water vapor
-	float BW = 0.0f; // Ice growth at the cost of cloud water
-	float FW = 0.0f; // Homogeneous freezing (instant freezing below -40)
-	float MC = 0.0f; // Melting (ice to liquid)
-	float DC_min_SC = 0.0f; // Difference between sublimation of ice to vapor and deposition of vapor to ice
-	float AW = 0.0f; // Autoconversion to rain. droplets being big enough to fall
-	float KW = 0.0f; // Collection of cloud water (droplets growing by taking other droplets)
-	float AC = 0.0f; // Autoconversion to snow. ice forming snow
-	float KCW = 0.0f; // Gradually collection of cloud matter by snow
-	float KCI = 0.0f; // Gradually collection of Ice matter by snow
-	float RW = 0.0f; // TODO: WRONG. Growth of ice (precip) by hitting ice crystals and cloud liquid water
-	float FKI = 0.0f; // Growth of ice (precip) or snow by rain hitting ice clouds (decrease cloud ice).
-	float FKR = 0.0f; // Growth of ice (precip) or snow by rain hitting ice clouds (decrease rain).
-	float RS = 0.0f; // Growth of ice (precip) by hitting snow 
-	float RRS = 0.0f; // Accretion rate of rain by snow (takes away snow)
-	float RSR = 0.0f; // Accretion rate of snow by rain (takes away rain)
-	float FR = 0.0f; // Growth of ice (precip) by freezing rain
-	float MS = 0.0f; // Snow melting
-	float MI = 0.0f; // Ice (precip) melting
-	float ER = 0.0f; // Evaporation of rain
-	float ES = 0.0f; // Evaporation(Sublimation) of snow
-	float DS = 0.0f; // Deposition to snow (Almost same term as ES)
-	float EI = 0.0f; // Evaporation of ice (precip)
-	float GR = 0.0f; // Rain hit ground
-	float GS = 0.0f; // Snow hit ground
-	float GI = 0.0f; // Ice (precip) hit ground
-	float EG = 0.0f; // Evaporation of dry ground
-
-	const float QWS = meteoformulas::ws((T - 273.15f), ps[i]); //Maximum water vapor air can hold
-	const float QWI = meteoformulas::wi((T - 273.15f), ps[i]); //Maximum water vapor cold air can hold
-
-	//Production terms, used to sometimes create snow or ice or other stuff (formula 20): https://research.csiro.au/ccam/wp-content/uploads/sites/520/2024/01/1377337420.pdf 
-	const float PTerm1 = T < 273.15f && m_envGrid.Qw[i] + m_envGrid.Qc[i] > 0 + 1e-11f ? 1.0f : 0.0f;
-	const float PTerm2 = T < 273.15f && m_envGrid.Qr[i] < 1e-4f && m_envGrid.Qs[i] < 1e-4f ? 1.0f : 0.0f;
-	const float PTerm3 = T < 273.15f && m_envGrid.Qr[i] < 1e-4f ? 1.0f : 0.0f;
-
-	const int idxX = i % GRIDSIZESKYX;
-
-	const bool atGround = i / GRIDSIZEGROUND - 1 == m_GHeight[idxX];
-
-	if (T >= -40 + 273.15f)
-	{
-		//Don't convert if vapor is not overflowing, max by vapor.
-		//EW_min_CW = std::max(std::min(QWS - m_envGrid.Qv[i], 0.0f), -m_envGrid.Qv[i]);
-
-		//Condensation rate https://www.ecmwf.int/sites/default/files/elibrary/2002/16952-parametrization-non-convective-condensation-processes.pdf
-		{
-			const float _ES = meteoformulas::es(T - 273.15f) * 10.0f;
-			const float Tc = T - 273.15f;
-			const float derivative = ((E * ps[i]) / ((ps[i] - _ES) * (ps[i] - _ES))) * (_ES * (17.27f * 237.3f / ((Tc + 237.3f) * (Tc + 237.3f))));
-			const float Cr = 1 / (dt * m_speed) * (m_envGrid.Qv[i] - QWS) / (1 + Constants::E0v / Constants::Cpd * derivative);
-			EW_min_CW = -std::min(std::max(Cr, -m_envGrid.Qw[i]), m_envGrid.Qv[i]);
-			
-		}
-
-
-		if (T <= 0.0f + 273.15f)
-		{
-			//Formula from https://journals.ametsoc.org/view/journals/mwre/128/4/1520-0493_2000_128_1070_asfcot_2.0.co_2.xml and WeatherScapes
-			const float a = 0.5f; // capacitance for hexagonal crystals
-			const float quu = std::max(1e-12f * meteoformulas::Ni(T - 273.15f) / D, m_envGrid.Qc[i]);
-			BW = std::min(m_envGrid.Qw[i], pow((1 - a) * meteoformulas::cvd(T - 273.15f, ps[i], D) * dt + pow(quu, 1 - a), 1 / (1 - a)) - m_envGrid.Qc[i]);
-		}
-	}
-	if (T < -40 + 273.15f)
-	{
-		FW = m_envGrid.Qw[i];
-	}
-	if (T > 0 + 273.15f) //Melting
-	{
-		// 𝛿(𝑋𝑐 + 𝑋𝑠 + 𝑋𝑖) ≤ 𝑐𝑝air / 𝐿𝑓 * 𝑇, == First melt cloud ice, then snow, then precip ice, when the criteria is met between any step, stop melting.
-
-		const float BMI{ 5e-4f };					  // Aggregation rate of ice to rain rate coefficient:
-
-		const float check = Cpd / Lf * (T - 273.15f);
-		float heatSum = 0.0f;
-
-		const float Qc = m_envGrid.Qc[i];
-		const float Qs = m_envGrid.Qs[i];
-		const float Qi = m_envGrid.Qi[i];
-		const float MIt = BMI * T;
-
-		//Melt cloud ice if possible
-		if (Qc > 0.0f && heatSum < check)
-		{
-			//Melt all or the maximum we can handle
-			const float melting = std::min(Qc, check - heatSum);
-			MC = melting;
-			heatSum += melting;
-		}
-		if (Qs > 0.0f && heatSum < check)
-		{
-			//PSMLT by https://research.csiro.au/ccam/wp-content/uploads/sites/520/2024/01/1377337420.pdf
-						//How many of this particle
-			const float N0S = 3e-2f;
-			const float slopeS = meteoformulas::slopePrecip(D, m_envGrid.Qs[i], 1);
-			//constants
-			const float c = 152.93f;
-			const float d = 0.25f;
-
-			const float dQv = meteoformulas::DQVair(T - 273.15f, ps[i]); //Diffusivity of water vapor in air
-			const float kv = meteoformulas::ViscAir(T - 273.15f); //Kinematic viscosity of air
-			float Sc = kv / dQv; // Schmidt number (kv /dQv)
-			const static float gammaDS = meteoformulas::gamma((d + 5.0f) / 2); //Save it, since it is a constant
-			const float Tc = T - 273.15f;
-			const float Drs = meteoformulas::ws(0.0f, ps[i]) - m_envGrid.Qv[i];
-
-			const float density = pow(D / 1.225f, 0.25f);
-
-			float PSMLT = 0.0f;
-
-			PSMLT = -(2 * PI / (density * 0.001f * Lf)) * (Ka * Tc - E0s * dQv * density * 0.001f * Drs) * N0S *
-				(0.78f * powf(slopeS, -2) + 0.31f * powf(Sc, 1.0f / 3.0f) * gammaDS * powf(c, 0.5f) * density * powf(kv, -0.5f) * powf(slopeS, -(d + 5) / 2))
-				- (Constants::Cvl * Tc / Lf); //TODO: Adding PSACW + PSACR later will result in heatSum not being right.
-
-			MS = std::max(0.0f, PSMLT);
-			heatSum += PSMLT;
-		}
-		if (Qi > 0.0f && heatSum < check)
-		{
-			MI = std::min(MIt, std::min(Qi, check - heatSum));
-		}
-	}
-	if (T <= 0 + 273.15f)
-	{
-		//Don't convert if vapor is not overflowing, max by vapor.
-		//DC_min_SC = std::max(std::min(QWI - m_envGrid.Qv[i], 0.0f), -m_envGrid.Qv[i]);
-
-		//Deposition rate based on https://www.ecmwf.int/sites/default/files/elibrary/2002/16952-parametrization-non-convective-condensation-processes.pdf
-		{
-			const float _EI = meteoformulas::ei(T - 273.15f) * 10.0f;
-			const float Tc = T - 273.15f;
-			const float derivative = ((E * ps[i]) / ((ps[i] - _EI) * (ps[i] - _EI))) * (_EI * (21.875f * 265.5f / ((Tc + 265.5f) * (Tc + 265.5f))));
-			const float Cr = 1 / (dt * m_speed) * (m_envGrid.Qv[i] - QWI) / (1 + Constants::Ls / Constants::Cpd * derivative);
-			DC_min_SC = -std::min(std::max(Cr, -m_envGrid.Qc[i]), m_envGrid.Qv[i]);
-
-		}
-	}
-	{
-		//Aggration rates
-		float BAC{ 0.0f }; // Aggregation rate of ice to snow rate coefficient:
-		float BAW{ 0.0f };	// Aggregation rate of autoconversion of rain rate coefficient:
-		float BKW{ 0.0f };	// Aggregation rate of rain hitting cloud rate coefficient:
-		float BFKI{ 0.0f };	// Accretion rate of rain hitting ice cloud rate coefficient: (take away ice cloud)
-		float BFKR{ 0.0f };	// Accretion rate of rain hitting ice cloud rate coefficient: (take away rain)
-		float BKCW{ 0.0f };	// Aggregation rate of warm cloud to snow rate coefficient:
-		float BKCI{ 0.0f };	// Aggregation rate of cold cloud to snow rate coefficient:
-		float BRW{ 2e-3f };	//NotSure		  // Aggregation rate of ice cloud to ice (precip) rate coefficient:
-		float BRS{ 0.0f };	// Aggregation rate of ice hitting snow rate coefficient:
-		float BFR{ 1e-3f };	//NotSure		  // Aggregation rate of freezing rain to ice (precip) rate coefficient:
-		float BER{ 0.0f };	// Aggregation rate of rain to vapor rate coefficient:
-		float BES{ 0.0f };	// Aggregation rate of snow to vapor rate coefficient:
-		float BDS{ 0.0f };	// Deposition rate of vapor to snow rate coefficient: (almost same as BES term)
-		float BEI{ 5e-4f };	//NotSure		  // Aggregation rate of ice to vapor rate coefficient:
-		float BEG{ 200.0f };	//NotSure		  // Evaporation rate of dry ground
-		float BRRS{ 0.0f }; // Accretion of rain by snow (takes away snow)
-		float BRSR{ 0.0f }; // Accrestion of snow by rain (takes away rain)
-
-		const float qwmin = 0.001f; // the minimum cloud water content required before rainmaking begins
-		const float qcmin = 0.001f; // the minimum cloud ice content required before snowmaking begins
-
-		glm::vec3 fallVel{ 0.0f };
-		if (m_envGrid.Qr[i] > 0.0f || m_envGrid.Qs[i] > 0.0f || m_envGrid.Qi[i] > 0.0f) fallVel = calculateFallingVelocity(dt, i, D);
-
-		//Rate coefficients
-		const float a1 = 1e-3f * exp(0.025f * (T - 273.15f));
-		const float a2 = 1e-3f * exp(0.09f * (T - 273.15f));
-
-		//Ice to Snow
-		if (m_envGrid.Qw[i] >= qcmin)
-		{
-			// Rate coefficient found in https://journals.ametsoc.org/view/journals/apme/22/6/1520-0450_1983_022_1065_bpotsf_2_0_co_2.xml
-			BAC = 1e-3f * exp(0.025f * (T - 273.15f)); // Aggregation rate of ice to snow rate coefficient:
-		}
-
-		//Cloud to rain due to autoconversion
-		if (m_envGrid.Qw[i] >= qwmin)
-		{
-			const float rc = 10e-6f; // Estimated cloud droplet size, averages between 4 and 12 μm;
-			float Nc = (m_envGrid.Qw[i] / (4 / 3 * PI * meteoformulas::pwater(T - 273.15f) * rc * rc * rc)) * 1.225f; //Cloud number concentation in m3
-			Nc /= 1e6f; //Convert to how many droplets would be in cm3 instead of m3
-			const float disE = 0.5f * 0.5f; //following Liu et al. (2006)
-			//Normally its ^ 1 / 6, but in the formula we will be using its ^6, so it cancells out.
-			const float dispersion = ((1 + 3 * disE) * (1 + 4 * disE) * (1 + 5 * disE)) / ((1 + disE) * (1 + 2 * disE)); //the relative dispersion ε of cloud droplets, 
-			const float kBAW = 1.1e10f; //Constant k in g-2/cm3/s-1
-			const float shapeParam = 1.0f; //Shape of tail of drop, μ
-			const float L = m_envGrid.Qw[i] * 1.225f * 1e-3f; //From kg/kg to g/cm3
-
-			// Aggregation rate of liquid to rain rate coefficient: // Liu–Daum–McGraw–Wood (LD) scheme: https://journals.ametsoc.org/view/journals/atsc/63/3/jas3675.1.xml
-			BAW = kBAW * dispersion * (L * L * L) * std::powf(Nc, -1) *
-				static_cast<float>(1 - std::exp(-std::pow(1.03e16f * std::pow(Nc, -2.0f / 3.0f) * (L * L), shapeParam)));
-			BAW *= 1e3f; //To kg/m3
-		}
-
-		//Cloud to rain due to collection and rain to snow/hail due to 3 component freezing
-		if (m_envGrid.Qr[i] > 0 && (m_envGrid.Qw[i] > 0 || m_envGrid.Qc[i] > 0.0f))
-		{
-			//Formula from https://journals.ametsoc.org/view/journals/apme/22/6/1520-0450_1983_022_1065_bpotsf_2_0_co_2.xml
-			//How many of this particle are in this region
-			const float N0R = 8e-2f;
-			//Densities in g/cm3
-			const float densW = 0.99f;
-			//constants
-			const float b = 0.8f;
-			const float a = 2115.0f;
-			const float MassI = 4.19e-10f; //Mass ice in gram
-			//collection efficiency rain from cloud ice and cloud water
-			const float ERI = 0.3f;
-			const float ERW = 1.0f;
-
-			const float slopeR = meteoformulas::slopePrecip(D, m_envGrid.Qr[i], 0);
-			const static float gammaR = meteoformulas::gamma(3.0f + b); //Save it, since it is a constant
-			const static float gammaRC = meteoformulas::gamma(6.0f + b); //Save it, since it is a constant
-
-			float PIACR = 0.0f;
-			float PRACI = 0.0f;
-			float PRACW = 0.0f;
-
-			const float density = pow(D / 1.225f, 0.5f);
-
-			//Collection from cloud ice to form snow/hail
-			if (m_envGrid.Qc[i] > 0.0f)
-			{
-				PRACI = (PI * ERI * N0R * a * m_envGrid.Qc[i] * gammaR) / (4 * pow(slopeR, 3 + b)) * density;
-				PIACR = (PI * PI * ERI * N0R * a * m_envGrid.Qc[i] * densW * gammaRC) / (24 * MassI * pow(slopeR, 6 + b)) * density;
-			}
-
-			//Collection from cloud water
-			if (m_envGrid.Qw[i] > 0.0f) PRACW = (PI * ERW * N0R * a * m_envGrid.Qw[i] * gammaR) / (4 * pow(slopeR, 3 + b)) * density;
-
-			BKW = PRACW;
-			BFKI = PRACI;
-			BFKR = PIACR;
-		}
-
-		//Cloud to snow due to collection or autoconversion
-		if (m_envGrid.Qs[i] > 0 && (m_envGrid.Qw[i] > 0 || m_envGrid.Qc[i] > 0))
-		{
-			//Formula from https://journals.ametsoc.org/view/journals/apme/22/6/1520-0450_1983_022_1065_bpotsf_2_0_co_2.xml
-			//Correction from https://ntrs.nasa.gov/api/citations/19990100647/downloads/19990100647.pdf
-			//How many of this particle are in this region
-			const float N0S = 3e-2f;
-			//constants
-			const float c = 152.93f;
-			const float d = 0.25f;
-			//collection efficiency snow from cloud ice and cloud water
-			const float ESI = a1 * 1e3f;
-			const float ESW = 1.0f;
-			//const float EIW = 1.0f;
-
-			//radius, mass and terminal velocity of 50 or 40 micrometer size ice crystal to cm or gram
-			//const float RI50 = 5e-3f;
-			const float mI50 = 4.8e-7f;
-			const float mI40 = 2.46e-7f;
-			//const float UI50 = 100.0f;
-
-			const float slopeS = meteoformulas::slopePrecip(D, m_envGrid.Qs[i], 1);
-			const static float gammaS = meteoformulas::gamma(3.0f + d); //Save it, since it is a constant
-
-			//Formula for A and B https://journals.ametsoc.org/view/journals/atsc/40/5/1520-0469_1983_040_1185_tmamsa_2_0_co_2.xml?tab_body=pdf
-			const float density = pow(D / 1.225f, 0.5f);
-			float Si = m_envGrid.Qv[i] / QWI; // Saturation ratio over ice
-			const float X = meteoformulas::DQVair(T - 273.15f, ps[i]);
-			const float A = Constants::E0v / (Constants::Ka * T) * (Constants::Ls * Constants::Mw * 0.001f / (Constants::R * T) - 1); //Mw to kg/mol
-			const float B = Constants::R * T * X * Constants::Mw * 0.001f * meteoformulas::ei(T - 273.15f) * 1000; //kPa to Pa
-
-			float PSACI = 0.0f;
-			float PSACW = 0.0f;
-			//Based on https://journals.ametsoc.org/view/journals/apme/19/8/1520-0450_1980_019_0950_nsoipc_2_0_co_2.xml?tab_body=pdf
-			float PSFW = 0.0f; //Growth of snow by transforming water cloud to snow by deposition and riming
-			float PSFI = 0.0f; //Growth of snow by transforming ice cloud to snow by deposition and riming
-
-			const float a1g = 206.2f * (Si - 1) / (A + B);
-			const float a2g = exp(0.09f * (T - 273.15f));
-
-			//const float dt1 = 1 / (a1g * (1 - a2g)) * (pow(mI50, 1 - a2g) - pow(mI40, 1 - a2g));
-
-			//Collection from cloud ice
-			if (m_envGrid.Qc[i] > 0.0f)
-			{
-				PSACI = (PI * ESI * N0S * c * m_envGrid.Qc[i] * gammaS) / (4 * pow(slopeS, 3 + d)) * density;
-				if (a1g > 0) PSFI = a2g * a1g * m_envGrid.Qi[i] / (pow(mI50, 0.5f) - pow(mI40, 0.5f));
-			}
-
-			//Collection from cloud water
-			if (m_envGrid.Qw[i] > 0.0f)
-			{
-				PSACW = (PI * ESW * N0S * c * m_envGrid.Qw[i] * gammaS) / (4 * pow(slopeS, 3 + d)) * density;
-				//const float Qc50 = m_envGrid.Qc[i] * (dt / dt1) / 100; //Should vary between 0.5 and 10%
-				//const float NI50 = Qc50 / mI50;
-				//PSFW = NI50 * (a1g * pow(mI50, a2g) + PI * EIW * (D * 0.001f) * m_envGrid.Qw[i] * RI50 * RI50 * UI50);
-			}
-
-			BKCI = PSACI + PSFI;
-			BKCW = PSACW + PSFW; //TODO: Do we need PSFW, (possibly the same as PSACW
-		}
-
-		//Hail hitting snow and snow forming hail
-		if (m_envGrid.Qs[i] > 0.0f || m_envGrid.Qi[i] > 0.0f)
-		{
-			//Densities in g/cm3
-			const float densS = 0.11f;
-			//How many of this particle
-			const float N0S = 3e-2f;
-			const float N0I = 4e-4f;
-
-			const float slopeS = meteoformulas::slopePrecip(D, m_envGrid.Qs[i], 1);
-			const float slopeI = meteoformulas::slopePrecip(D, m_envGrid.Qi[i], 2);
-
-			const float EGS = T >= 273.15f ? 1.0f : exp(0.09f * (T - 273.15f));
-			float PGACS = 0.0f; //Hail hitting snow
-			float PGAUT = 0.0f; //Snow autoconverting to form hail
-
-			if (m_envGrid.Qs[i] > 0.0f && m_envGrid.Qi[i] > 0.0f) PGACS = PI * PI * EGS * N0S * N0I * fabs(fallVel.z - fallVel.y) * (densS / D) *
-				(5 / (powf(slopeS, 6) * slopeI) + (2 / (powf(slopeS, 5) * powf(slopeI, 2))) + (0.5f / (powf(slopeS, 4) * powf(slopeI, 3))));
-
-			if (m_envGrid.Qs[i] > 0.0f)
-			{
-				const float QS0 = 6e-4f; //Minimum snow needed to create ice.
-				PGAUT = a2 * std::max(m_envGrid.Qs[i] - QS0, 0.0f);
-			}
-
-			BRS = PGACS + PGAUT;
-		}
-
-		// Snow creating rain and visa versa
-		if (m_envGrid.Qr[i] > 0.0f && m_envGrid.Qs[i] > 0.0f)
-		{
-			//Densities in g/cm3
-			const float densS = 0.11f;
-			const float densW = 0.99f;
-			//Intercept parameter size distribution in cm-4
-			const float N0S = 3e-2f;
-			const float N0R = 8e-2f;
-
-			const float ESR = 1.0f;
-
-			const float slopeR = meteoformulas::slopePrecip(D, m_envGrid.Qr[i], 0);
-			const float slopeS = meteoformulas::slopePrecip(D, m_envGrid.Qs[i], 1);
-
-			//If PTerm2 = 0, 3-component freezing to increase hail.
-			//Else 2-component freezing, snow grows in expens of rain, only PSACR is used.
-			//But if T > 0, PSACR is used to enhance PSMLT.
-
-			float PRACS = 0.0f;
-			float PSACR = 0.0f;
-
-			const float size = PI * PI * ESR * N0R * N0S;
-
-			if (PTerm2 == 0) PRACS = size * fabs(fallVel.x - fallVel.y) * (densS / D) *
-				(5 / (powf(slopeS, 6) * slopeR) + (2 / (powf(slopeS, 5) * powf(slopeR, 2))) + (0.5f / (powf(slopeS, 4) * powf(slopeR, 3))));
-
-			PSACR = size * fabs(fallVel.y - fallVel.x) * (densW / D) *
-				(5 / (powf(slopeR, 6) * slopeS) + (2 / (powf(slopeR, 5) * powf(slopeS, 2))) + (0.5f / (powf(slopeR, 4) * powf(slopeS, 3))));
-			
-
-			BRRS = PRACS; //Used for 3 component freezing snow to hail.
-			BRSR = PSACR; //Used in PSMLT or decreases rain
-		}
-
-		//Deposition/Sublimation of snow
-		if (T < 273.15f)
-		{
-			//How many of this particle
-			const float N0S = 3e-2f;
-			const float slopeS = meteoformulas::slopePrecip(D, m_envGrid.Qs[i], 1);
-			//constants
-			const float c = 152.93f;
-			const float d = 0.25f;
-
-			const float dQv = meteoformulas::DQVair(T - 273.15f, ps[i]); //Diffusivity of water vapor in air
-			const float kv = meteoformulas::ViscAir(T - 273.15f); //Kinematic viscosity of air
-			float Sc = kv / dQv; // Schmidt number (kv /dQv)
-			float Si = m_envGrid.Qv[i] / QWI; // Saturation ratio over ice
-			const static float gammaDS = meteoformulas::gamma((d + 5.0f) / 2); //Save it, since it is a constant
-
-			const float A = Constants::Ls * Constants::Ls / (Constants::Ka * Constants::Rsw * T * T);
-			const float B = 1 / (D * 0.001f * meteoformulas::wi(T - 273.15f, ps[i]) * dQv); //TODO dQv is probably wrong
-
-			const float density = pow(D / 1.225f, 0.25f);
-
-			float PSDEP = 0.0f;
-			float PSSUB = 0.0f;
-
-			PSSUB = PSDEP = PI * PI * (Si - 1) / (D * 0.001f * (A + B)) * N0S * 
-				(0.78f * powf(slopeS, -2) + 0.31f * powf(Sc, 1.0f / 3.0f) * gammaDS * powf(c, 0.5f) * density * powf(kv, -0.5f) * powf(slopeS, -(d + 5) / 2));
-
-			//TODO: test if positive/negative is correct
-			BES = -1 * PSSUB * (1 - PTerm1); //Only occurs outside of cloud
-			BDS = -1 * PSDEP * PTerm1; //Only occurs within cloud
-		}
-
-
-		// Evaporation rate of rain
-		if (m_envGrid.Qr[i] > 0.0f && m_envGrid.Qr[i] + m_envGrid.Qw[i] < QWS - m_envGrid.Qv[i]) //Only if there is vapor dificit in relation to saturation mixing ratio
-		{
-			//TODO: fix (g/g not g/m3???)
-			const float Qs = std::max(QWS - m_envGrid.Qv[i], 0.0f) * D * 1000; //Vapor dificit to g/m3
-			const float Qr = m_envGrid.Qr[i] * D * 1000; //To g/m3
-			const float N0 = 1.93e-6f * std::pow(8e6f, 7.0f / 20.0f); //Controls shape and density of rain
-			BER = N0 * Qr * std::pow(Qs, 13.0f / 20.0f);
-			BER = BER * 0.001f / D; //g/m3 to kg/kg
-		}
-
-
-		AW = std::max(m_envGrid.Qw[i] - qwmin, 0.0f) == 0.0f ? 0.0f : BAW;
-		KW = BKW;
-		AC = BAC * std::max(m_envGrid.Qc[i] - qcmin, 0.0f);
-		FKI = BFKI;
-		FKR = BFKR;
-		KCI = BKCI;
-		KCW = BKCW;
-		RW = BRW * m_envGrid.Qi[i] * m_envGrid.Qw[i];
-		RS = BRS;
-		RRS = BRRS;
-		RSR = BRSR;
-		if (T < -8 + 273.15f) FR = std::min(BFR * (T - 273.15f + 8) * (T - 273.15f + 8), m_envGrid.Qr[i]); //use min to not use rain if there is none
-
-		//Constraint on how much can be evaporated (don't evap if air can't hold more)
-		//We first make sure that we are not adding more vapor than the air can hold, then we add up all the things we can evap, multiplied by dt.
-		ER = std::min(m_envGrid.Qr[i], BER);
-		ES = std::max(0.0f, BES);
-		DS = std::max(0.0f, BDS); //Using DS and ES for consistancy with paper, but only need 1 to add to latent heat.
-		EI = BEI * std::min(m_envGrid.Qi[i], std::min(m_speed * dt * (m_envGrid.Qc[i] + m_envGrid.Qs[i] + m_envGrid.Qi[i]), std::max(QWI - m_envGrid.Qv[i], 0.0f)));
-
-		if (atGround)
-		{
-			GR = m_envGrid.Qr[i];
-			GS = m_envGrid.Qs[i];
-			GI = m_envGrid.Qi[i];
-		}
-		const float D_ = 1e-6f; // Weigthed mean diffusivity of the ground //TODO: hmm, could tripple check if right
-		const float secsInDay = 60 * 60 * 24;
-		const float O_ = 0.21f * secsInDay; // evaporative ground water storage coefficient (i.e. only part of the soil can be evaporated) https://en.wikipedia.org/wiki/Specific_storage
-		//Note that this is just picked from water storage coefficient which may not is the same as the evaporative soil water storage coefficient.
-		//Only if Qgj = 0 (Precip falling) and if we are at the ground
-		if (atGround)
-		{
-			if (m_groundGrid.Qgr[idxX] == 0 && m_groundGrid.Qgs[idxX] == 0 && m_groundGrid.Qgi[idxX] == 0)
-			{
-				//https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/2013WR014872
-				const float waterA = m_groundGrid.Qrs[idxX];
-				const float time = m_groundGrid.t[idxX];
-				EG = BEG * D_ * waterA * exp(-time / O_);
-			}
-			else
-			{
-				m_groundGrid.t[idxX] = 0;
-			}
-		}
-	}
-
-	//Limit by speed and add latent heat
-	{
-		m_condens = 0.0f;
-		m_freeze = 0.0f;
-		m_depos = 0.0f;
-		//TODO: DELTATIME IS NOT USED
-		//Limit Vapor
-		m_condens -= EW_min_CW = dt * std::min(EW_min_CW * m_speed, m_envGrid.Qw[i]);
-		m_depos -= DC_min_SC = dt * std::min(DC_min_SC * m_speed, m_envGrid.Qc[i]); //TODO: wrong latent heat add/subtact, jus remove from Qv or something.
-		m_depos += DS = dt * std::min(DS * m_speed, m_envGrid.Qv[i]);
-		//Limit cloud matter
-		AW = dt * std::min(AW * m_speed, m_envGrid.Qw[i]);
-		KW = dt * std::min(KW * m_speed, m_envGrid.Qw[i]);
-		m_freeze += RW = dt * std::min(RW * m_speed, m_envGrid.Qw[i]);
-		m_freeze += FW = dt * std::min(FW * m_speed, m_envGrid.Qw[i]);
-		m_freeze += BW = dt * std::min(BW * m_speed, m_envGrid.Qw[i]);
-		m_freeze += KCW = dt * std::min(KCW * m_speed, m_envGrid.Qw[i]);
-		//Limit cloud ice
-		AC = dt * std::min(AC * m_speed, m_envGrid.Qc[i]);
-		KCI = dt * std::min(KCI * m_speed, m_envGrid.Qc[i]);
-		FKI = dt * std::min(FKI * m_speed, m_envGrid.Qc[i]);
-		m_freeze -= MC = dt * std::min(MC * m_speed, m_envGrid.Qc[i]);
-		//Limit rain
-		m_condens -= ER = dt * std::min(ER * m_speed, m_envGrid.Qr[i]);
-		m_freeze += FR = dt * std::min(FR * m_speed, m_envGrid.Qr[i]);
-		m_freeze += FKR = dt * std::min(FKR * m_speed, m_envGrid.Qr[i]);
-		GR = dt * std::min(GR * m_speed, m_envGrid.Qr[i]);
-		m_freeze += RSR = dt * std::min(RSR * m_speed, m_envGrid.Qr[i]);
-		//Limit snow
-		m_freeze -= MS = dt * std::min(MS * m_speed, m_envGrid.Qs[i]);
-		m_depos -= ES = dt * std::min(ES * m_speed, m_envGrid.Qs[i]);
-		RS = dt * std::min(RS * m_speed, m_envGrid.Qs[i]);
-		GS = dt * std::min(GS * m_speed, m_envGrid.Qs[i]);
-		RRS = dt * std::min(RRS * m_speed, m_envGrid.Qs[i]);
-		//Limit hail
-		m_depos -= EI = dt * std::min(EI * m_speed, m_envGrid.Qi[i]);
-		m_freeze -= MI = dt * std::min(MI * m_speed, m_envGrid.Qi[i]);
-		GI = dt * std::min(GI * m_speed, m_envGrid.Qi[i]);
-
-		m_condens -= EG = dt * EG * m_speed; //No need to limit 
-	}
-	
-
-	//𝐷𝑡𝑞𝑣 = 𝐸𝑊 + 𝑆𝐶 + 𝐸𝑅 + 𝐸𝐼 + 𝐸𝑆 + 𝐸𝐺 − 𝐶𝑊 − 𝐷𝐶, (9)
-	//𝐷𝑡𝑞𝑤 = 𝐶𝑊 + 𝑀𝐶 − 𝐸𝑊 − 𝐴𝑊 − 𝐾𝑊 − 𝑅𝑊 − 𝐹𝑊 − 𝐵𝑊, (10)
-	//𝐷𝑡𝑞𝑐 = 𝐷𝐶 + 𝐹𝑊 + 𝐵𝑊 − 𝑆𝐶 − 𝐴𝐶 − 𝐾𝐶 − 𝑀𝐶, (11)
-	//𝐷𝑡𝑞𝑟 = 𝐴𝑊 + 𝐾𝑊 + 𝑀𝑆 + 𝑀𝐼 − 𝐸𝑅 − 𝐹𝑅 − 𝐺𝑅, (12)
-	//𝐷𝑡𝑞𝑠 = 𝐴𝐶 + 𝐾𝐶 − 𝑀𝑆 − 𝐸𝑆 − 𝑅𝑆 − 𝐺𝑆, (13)
-	//𝐷𝑡𝑞𝑖 = 𝐹𝑅 + 𝑅𝑆 + 𝑅𝑊 − 𝐸𝐼 − 𝑀𝐼 − 𝐺𝐼
-
-
-	m_envGrid.Qw[i] += (-EW_min_CW + MC - AW - KW - KCW - RW - FW - BW);
-	m_envGrid.Qc[i] += (-DC_min_SC + FW + BW - AC - KCI - MC - FKI);
-	if (T < 0 + 273.15f)
-	{
-		m_envGrid.Qv[i] += (EW_min_CW + DC_min_SC + ER + EI + EG + ES - DS);
-		m_envGrid.Qr[i] += (AW + KW + MS + MI - ER - FR - GR - FKR - RSR);
-		//m_debugArray0[i] = std::max(ES - 1e-11f, 0.0f) / (AC + KCW + KCI + FKI * (PTerm3)+FKR * (PTerm3)+RSR * (PTerm2)-RRS * (1 - PTerm2) - ES + DS - MS - RS - GS);
-		m_debugArray1[i] = (AC + KCW + KCI + FKI * (PTerm3)+FKR * (PTerm3)+RSR * (PTerm2)-RRS * (1 - PTerm2) - ES + DS - MS - RS - GS) * 100.0f;
-
-		m_envGrid.Qs[i] += (AC + KCW + KCI + FKI * (PTerm3) + FKR * (PTerm3) + RSR * (PTerm2) - RRS * (1 - PTerm2) - ES + DS - MS - RS - GS);
-		m_envGrid.Qi[i] += (FR + RS + RW + FKI * (1 - PTerm3) + FKR * (1 - PTerm3) + RSR * (1 - PTerm2) + RRS * (1 - PTerm2) - EI - MI - GI);
-	}
-	else
-	{
-		m_envGrid.Qv[i] += (EW_min_CW + DC_min_SC + ER + EI + EG);
-		m_envGrid.Qr[i] += (AW + KW + MS + MI - ER - FR - GR - FKR); //TODO: watch out for PSMLT
-		m_envGrid.Qs[i] += (-MS - RS - GS);
-		m_envGrid.Qi[i] += (FR + RS + RW + FKI * (1 - PTerm3) + FKR * (1 - PTerm3) - EI - MI - GI);
-	}
-	//Add to the ground if needed
-	if (atGround)
-	{
-		m_groundGrid.Qgr[idxX] += GR;
-		m_groundGrid.Qgs[idxX] += GS;
-		m_groundGrid.Qgi[idxX] += GI;
-	}
-
-	if (m_envGrid.Qv[i] < 0 || m_envGrid.Qw[i] < 0 || m_envGrid.Qc[i] < 0 || m_envGrid.Qr[i] < 0 || m_envGrid.Qs[i] < 0 || m_envGrid.Qi[i] < 0 ||
-		m_envGrid.Qv[i] != m_envGrid.Qv[i] || m_envGrid.Qw[i] != m_envGrid.Qw[i] || m_envGrid.Qc[i] != m_envGrid.Qc[i] || m_envGrid.Qr[i] != m_envGrid.Qr[i] || m_envGrid.Qs[i] != m_envGrid.Qs[i] || m_envGrid.Qi[i] != m_envGrid.Qi[i])
-	{
- 		AW = 0;
-	}
-
 }
 
 float environment::calculateSumPhaseHeat(const float , const int i, const float T)
@@ -2617,7 +2029,14 @@ void environment::computeNeighArray()
 	//Set correct ground temp for height using isentropic
 	for (int x = 0; x < GRIDSIZEGROUND; x++)
 	{
-		m_groundGrid.T[x] = getIsentropicTemp(float(m_GHeight[x]));
+		const float height = m_GHeight[x] * VOXELSIZE;
+		const float isenT = getIsentropicTemp(0);
+		const float pressure = meteoformulas::getStandardPressureAtHeight(isenT, height);
+		const float T = meteoformulas::potentialTemp(getIsentropicTemp(float(m_GHeight[x])), m_groundGrid.P[x], pressure);
+		//const float T = float(getIsentropicTemp(float(m_GHeight[x])) * glm::pow(pressure / m_groundGrid.P[x], Constants::Rsd / Constants::Cpd));
+		m_groundGrid.T[x] = T;
+		//m_groundGrid.T[x] = getIsentropicTemp(float(m_GHeight[x]));
+
 	}
 }
 
