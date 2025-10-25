@@ -23,6 +23,8 @@ void skewTer::drawSkewT()
 	while (startHeight <= m_skewT.size && m_skewT.pressures[startHeight] == 0) { startHeight++; }
 	startHeight = startHeight >= m_skewT.size ? m_skewT.size - 1 : startHeight;
 
+	if (startHeight >= m_skewT.size - 1) return;
+
 	drawBackground();
 	drawEnvironment();
 	drawDryAndMoist();
@@ -105,7 +107,7 @@ void skewTer::drawEnvironment()
 {
 	//Temp and dewpoint
 	{
-		for (int i = 1; i < m_skewT.size; i++)
+		for (int i = startHeight + 1; i < m_skewT.size; i++)
 		{
 			glm::vec2 tempCoords = convertToPlottingCoordinates(m_skewT.temps[i], m_skewT.pressures[i], true, skewTSize.x, skewTSize.y);
 			glm::vec2 tempPrevCoords = convertToPlottingCoordinates(m_skewT.temps[i - 1], m_skewT.pressures[i - 1], true, skewTSize.x, skewTSize.y);
@@ -132,7 +134,7 @@ void skewTer::drawDryAndMoist()
 		//Dry adiabatic to LCL
 		meteoformulas::getDryAdiabatic(m_skewT.temps[startHeight], m_skewT.pressures[startHeight], m_skewT.pressures, temps.get(), m_skewT.size);
 
-		for (int j = startHeight; j < m_skewT.size; j++)
+		for (int j = startHeight + 1; j < m_skewT.size; j++)
 		{
 			//TODO: should convertToPlottingCoordinates include setting default pressure height? (maybe an extra function that sets it)
 			glm::vec2 coords = convertToPlottingCoordinates(temps[j], m_skewT.pressures[j], true, skewTSize.x, skewTSize.y);
@@ -145,7 +147,7 @@ void skewTer::drawDryAndMoist()
 
 		//Moist adiabatic at LCL
 		int offset = 0;
-		glm::vec3 LCL = meteoformulas::getLCL(m_skewT.temps[startHeight], m_skewT.pressures[startHeight], startHeight * VOXELSIZE, m_skewT.dewPoints[startHeight]);
+		glm::vec3 LCL = meteoformulas::getLCL(m_skewT.temps[startHeight], m_skewT.pressures[startHeight],0, m_skewT.dewPoints[startHeight]);
 		meteoformulas::getMoistTemp(LCL.x, LCL.y, m_skewT.pressures, temps.get(), m_skewT.size, offset);
 		if (offset != -1)
 		{

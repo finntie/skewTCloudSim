@@ -48,7 +48,7 @@ public:
 	environment();
 	~environment();
 
-	void init(double* potTemps, glm::vec2* velField, float* Qv, double* groundTemp, float* groundPres);
+	void init(double* potTemps, glm::vec2* velField, float* Qv, double* groundTemp, float* groundPres, float* pressures);
 
 	bool EditorData();
 
@@ -74,12 +74,12 @@ public:
 	void PPMWAdvectLR(float* array, const int i, const float dt, const bool x);
 	float PPMWAdvectFlux(float* array, const int i, const float dt, const bool x, const bool right);
 	void updateVelocityField(const float dt);
-	float calculateBuoyancy(const int index, const float* m_pressures);
+	float calculateBuoyancy(const int index);
 	float averageEnvironment(const int index, const int distanceFromidx, const float maxDistance, const bool temp);
 	glm::vec2 vorticityConfinement(const int index);
 	bool getInterpolVel(glm::vec2 Ppos, bool U, float& output);
 	//-----PressureProject-----
-	void pressureProjectVelField(const float dt);
+	void pressureProjectVelField();
 	void calculatePresProj(std::vector<float>& pressureProj);
 	void calculateDivergence(std::vector<float>& output);
 	void calculatePrecon(std::vector<float>& output, std::vector<glm::ivec3>& A);
@@ -88,7 +88,7 @@ public:
 	/// <summary>Calculates the mass-weighted mean terminal velocity of all types of precip</summary>
 	/// <returns>x: rain, y: snow, z: ice</returns>
 	glm::vec3 calculateFallingVelocity(const float dt, const int index, const float density);
-	void updateMicroPhysics(const float dt, const int index, const float* m_pressures, const float T, const float density);
+	void updateMicroPhysics(const float dt, const int index, const float T, const float density);
 	float calculateSumPhaseHeat(const float dt, const int index, const float Temp);
 	void computeHeatTransfer(const int index, const float sumHeat);
 

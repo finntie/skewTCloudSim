@@ -63,15 +63,14 @@ void editor::setColors()
 	colorScheme.addColor("debugColor", 0.1f, bee::Colors::Pink + glm::vec4(0, 0.8f, 0, 0));
 }
 
-void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor)
+void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressures)
 {
 	//Init skewTer
 	{
 		float* temps = new float[GRIDSIZESKYY];
 		float* dewPoints = new float[GRIDSIZESKYY];
-		float* pressures = new float[GRIDSIZESKYY];
 
-		dataToSkewTData(temps, dewPoints, pressures);
+		dataToSkewTData(temps, dewPoints);
 
 		skewTer::skewTInfo skewT;
 		skewT.init(GRIDSIZESKYY, temps, dewPoints, pressures);
@@ -80,11 +79,12 @@ void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor)
 
 		delete[] temps;
 		delete[] dewPoints;
-		delete[] pressures;
 	}
 
 	memcpy(m_envData->m_envTemp, isentropicTemps, GRIDSIZESKYY * sizeof(float));
 	memcpy(m_envData->m_envVapor, isentropicVapor, GRIDSIZESKYY * sizeof(float));
+	memcpy(m_envData->m_envPressure, pressures, GRIDSIZESKYY * sizeof(float));
+
 }
 
 void editor::update(float dt)
@@ -600,10 +600,8 @@ void editor::viewSky()
 			case editor::POTTEMP:
 			{
 				//Get temp
-				const float height = y * VOXELSIZE;
 				const float Tz = float(m_envData->m_envView.potTemp[int(x) + int(y) * GRIDSIZESKYX]) - 273.15f;
-				const float pressure = meteoformulas::getStandardPressureAtHeight(Tz, height);
-				const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], pressure) + 273.15f;
+				const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], m_envData->m_envPressure[y]) + 273.15f;
 
 				colorScheme.getColor("TemperatureSky", T, color);
 				break;
@@ -767,16 +765,14 @@ void editor::viewSelection()
 
 void editor::viewToolTipData()
 {
-	glm::vec2 MousePos = bee::Engine.Input().GetMousePosition();
 	const int x = m_mousePointingIndex % GRIDSIZESKYX;
 	const int y = m_mousePointingIndex / GRIDSIZESKYX;
 
 	const float height = y * VOXELSIZE;
 	const float Tz = float(m_envData->m_envView.potTemp[int(x) + int(y) * GRIDSIZESKYX]) - 273.15f;
-	const float pressure = meteoformulas::getStandardPressureAtHeight(Tz, height);
-	const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], pressure);
+	const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], m_envData->m_envPressure[y]);
 
-	const float rs = meteoformulas::ws(T, pressure);
+	const float rs = meteoformulas::ws(T, m_envData->m_envPressure[y]);
 	const float RH = m_envData->m_envView.Qv[m_mousePointingIndex] / rs * 100;
 	//Dew point calculation https://www.omnicalculator.com/physics/dew-point
 	float dew = 0.0f;
@@ -809,20 +805,17 @@ void editor::viewPickerData()
 
 void editor::viewSkewT()
 {
-
 	float* temps = new float[GRIDSIZESKYY];
 	float* dewPoints = new float[GRIDSIZESKYY];
-	float* pressures = new float[GRIDSIZESKYY];
-	dataToSkewTData(temps, dewPoints, pressures);
+	dataToSkewTData(temps, dewPoints);
 
-	Game.SkewT().setAllArrays(temps, dewPoints, pressures);
+	Game.SkewT().setAllArrays(temps, dewPoints, m_envData->m_envPressure);
 	Game.SkewT().setStartIdx(m_skewTidx / GRIDSIZESKYX);
 	Game.SkewT().drawSkewT();
 
 
 	delete[] temps;
 	delete[] dewPoints;
-	delete[] pressures;
 }
 
 
@@ -1020,7 +1013,7 @@ void editor::addDataErasedGround(const int x, const int y)
 }
 
 
-void editor::dataToSkewTData(float* temp, float* dew, float* pressures)
+void editor::dataToSkewTData(float* temp, float* dew)
 {
 	const int y = m_skewTidx / GRIDSIZESKYX;
 	const int x = m_skewTidx % GRIDSIZESKYX;
@@ -1030,16 +1023,13 @@ void editor::dataToSkewTData(float* temp, float* dew, float* pressures)
 		{
 			temp[i] = 0;
 			dew[i] = 0;
-			pressures[i] = 0;
 			continue;
 		}
 
-		const float height = i * VOXELSIZE;
 		const float Tz = float(m_envData->m_envView.potTemp[x + i * GRIDSIZESKYX]) - 273.15f;
-		const float pressure = meteoformulas::getStandardPressureAtHeight(Tz, height);
-		const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], pressure);
+		const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], m_envData->m_envPressure[i]);
 
-		const float rs = meteoformulas::ws(T, pressure);
+		const float rs = meteoformulas::ws(T, m_envData->m_envPressure[i]);
 		const float RH = m_envData->m_envView.Qv[x + i * GRIDSIZESKYX] / rs * 100;
 		//Dew point calculation https://www.omnicalculator.com/physics/dew-point
 		float dewpoint = 0.0f;
@@ -1052,7 +1042,6 @@ void editor::dataToSkewTData(float* temp, float* dew, float* pressures)
 
 		temp[i] = T;
 		dew[i] = RH == 0 ? 0.0f : dewpoint;
-		pressures[i] = pressure;
 	}
 }
 

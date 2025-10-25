@@ -346,22 +346,27 @@ void readTable::initEnvironment()
 	std::vector<glm::vec2> velField;
 	std::vector<float> Qv;
 
+	indices.resize(GRIDSIZESKYY);
 	potTempSmall.resize(GRIDSIZESKYY);
 	potTemp.resize(GRIDSIZESKY);
 	velField.resize(GRIDSIZESKY);
 	Qv.resize(GRIDSIZESKY);
 
 	std::vector<double> groundTemp;
-	std::vector<float> groundPressure;
-	std::vector<float> pressures;
+	std::vector<float>  groundPressure;
+	std::vector<float>  pressures;
+
+	groundTemp.resize(GRIDSIZEGROUND);
+	groundPressure.resize(GRIDSIZEGROUND);
+	pressures.resize(GRIDSIZESKYY);
 
 	int j = 0;
 	for (float y = 0; y < GRIDSIZESKYY * VOXELSIZE; y += VOXELSIZE)
 	{
 		int i = getIndexAtHeight(y + skewTData.data.altitude[0]);
-		pressures.push_back(skewTData.data.pressure[i]);
+		pressures[j] = skewTData.data.pressure[i];
 		potTempSmall[j] = skewTData.data.temperature[i];
-		indices.push_back(i);
+		indices[j] = i;
 		j++;
 	}
 
@@ -384,7 +389,7 @@ void readTable::initEnvironment()
 		for (int x = 0; x < GRIDSIZESKYX; x++)
 		{
 			velField[i * GRIDSIZESKYX + x] = { velFieldValue, 0 };
-			Qv[i * GRIDSIZESKYX + x] = half_float::half(QvValue);
+			Qv[i * GRIDSIZESKYX + x] = QvValue;
 		}
 	}
 
@@ -403,11 +408,11 @@ void readTable::initEnvironment()
 
 	for (int x = 0; x < GRIDSIZEGROUND; x++)
 	{
-		groundTemp.push_back(static_cast<double>(skewTData.data.temperature[0] + 273.15f));
-		groundPressure.push_back(half_float::half(skewTData.data.pressure[0]));
+		groundTemp[x] = static_cast<double>(skewTData.data.temperature[0] + 273.15f);
+		groundPressure[x] = skewTData.data.pressure[0];
 	}
 
-	Game.Environment().init(potTemp.data(), velField.data(), Qv.data(), groundTemp.data(), groundPressure.data());
+	Game.Environment().init(potTemp.data(), velField.data(), Qv.data(), groundTemp.data(), groundPressure.data(), pressures.data());
 }
  
 
@@ -518,9 +523,9 @@ void readTable::debugDrawData()
 
 
 
-	for (float h = 0; h < 1000; h += 100) 
+	for (float p = 0; p < 1000; p += 100) 
 	{
-		glm::vec2 coords = convertToPlottingCoordinates(0, h, true, sizeSkewT.x, sizeSkewT.y);
+		glm::vec2 coords = convertToPlottingCoordinates(0, p, true, sizeSkewT.x, sizeSkewT.y);
 
 		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::Grey);
 	}

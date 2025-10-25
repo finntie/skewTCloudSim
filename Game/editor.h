@@ -18,7 +18,8 @@ public:
 	editor(envDebugData* _envDebugData);
 	~editor();
 	void setColors();
-	void setIsentropics(float* isentropicTemps, float* isentropicVapor);
+	//We also include m_pressures
+	void setIsentropics(float* isentropicTemps, float* isentropicVapor, float* m_pressures);
 
 	void update(float dt);
 	void panel();
@@ -67,7 +68,7 @@ private:
 	void addDataErasedGround(const int x, const int y);
 
 	//Helpers
-	void dataToSkewTData(float* temp, float* dew, float* pressures);
+	void dataToSkewTData(float* temp, float* dew);
 	glm::vec2 getMinMaxVaueParam(parameter param);
 	const char* getFormatParam(parameter param, int& flagOutput);
 	glm::vec2 getValueParam(const int index, parameter param);
@@ -139,4 +140,5 @@ struct envDebugData
 
 	float m_envTemp[GRIDSIZESKYY]{};
 	float m_envVapor[GRIDSIZESKYY]{};
+	float m_envPressure[GRIDSIZESKYY]{};
 };

@@ -42,7 +42,7 @@ void kerneltest()
 		h_idata[i] = (uint64_t)(i & 0xff);
 	}
 
-	printf("Parts of data we put in: [0]: %i, [1]: %i, [2]: %i, [3]: %i\n", h_idata[0], h_idata[1], h_idata[2], h_idata[3]);
+	printf("Parts of data we put in: [0]: %lli, [1]: %lli, [2]: %lli, [3]: %lli\n", h_idata[0], h_idata[1], h_idata[2], h_idata[3]);
 
 
 	uint64_t* d_input;
@@ -74,6 +74,6 @@ void kerneltest()
 	}
 	printf("Succesfully Received %i data\n", static_cast<int>(256 * 256 * sizeof(uint64_t)));
 
-	printf("Now our data is: [0]: %i, [1]: %i, [2]: %i, [3]: %i\n", h_odata[0], h_odata[1], h_odata[2], h_odata[3]);
+	printf("Now our data is: [0]: %lli, [1]: %lli, [2]: %lli, [3]: %lli\n", h_odata[0], h_odata[1], h_odata[2], h_odata[3]);
 
 }

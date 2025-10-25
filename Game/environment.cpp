@@ -57,7 +57,7 @@ environment::~environment()
 
 }
 
-void environment::init(double* potTemps, glm::vec2* velField, float* Qv, double* groundTemp, float* groundPres)
+void environment::init(double* potTemps, glm::vec2* velField, float* Qv, double* groundTemp, float* groundPres, float* pressures)
 {
 	memcpy(m_envGrid.potTemp, potTemps, GRIDSIZESKY * sizeof(double));
 	memcpy(m_envGrid.velField, velField, GRIDSIZESKY * sizeof(glm::vec2));
@@ -65,8 +65,8 @@ void environment::init(double* potTemps, glm::vec2* velField, float* Qv, double*
 
 	memcpy(m_groundGrid.T, groundTemp, GRIDSIZEGROUND * sizeof(double));
 	memcpy(m_groundGrid.P, groundPres, GRIDSIZEGROUND * sizeof(float));
-
-
+	memcpy(m_pressures, pressures, GRIDSIZESKYY * sizeof(float));
+		
 	//Init Isentropic temps
 	for (int i = 0; i < GRIDSIZESKYY; i++)
 	{
@@ -83,7 +83,7 @@ void environment::init(double* potTemps, glm::vec2* velField, float* Qv, double*
 		m_GHeight[i] = static_cast<int>(std::round(noise[i] * maxHeight));
 	}
 
-	Game.Editor().setIsentropics(m_isenTropicTemps, m_isenTropicVapor);
+	Game.Editor().setIsentropics(m_isenTropicTemps, m_isenTropicVapor, m_pressures);
 
 	//Reset values that are in ground
 	for (int x = 0; x < GRIDSIZEGROUND; x++)
@@ -148,14 +148,6 @@ void environment::Update(float dt)
 	
 	for (int s = 0; s < 1; s++) //Speed in cost of fps.
 	{
-
-		// Fill Pressures
-		for (int i = 0; i < GRIDSIZESKY; i++)
-		{
-			const float height = std::floorf(float(i) / GRIDSIZESKYX) * VOXELSIZE;
-			m_pressures[i] = meteoformulas::getStandardPressureAtHeight(float(m_groundGrid.T[i % GRIDSIZESKYX] - 273.15f), height);
-		}
-
 		// Update Ground
 		for (int i = 0; i < GRIDSIZEGROUND; i++)
 		{
@@ -175,9 +167,10 @@ void environment::Update(float dt)
 
 			// 4.
 			const int envGIdx = i + (m_GHeight[i] + 1) * GRIDSIZEGROUND;
-			const float T = float(m_envGrid.potTemp[envGIdx]) * glm::pow(m_pressures[envGIdx] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
+			const int y = i / GRIDSIZESKYX;
+			const float T = float(m_envGrid.potTemp[envGIdx]) * glm::pow(m_pressures[y] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
 			const float Tv = T * (0.608f * m_envGrid.Qv[envGIdx] + 1);
-			const float density = m_pressures[envGIdx] * 100 / (Rsd * Tv); //Convert Pha to Pa
+			const float density = m_pressures[y] * 100 / (Rsd * Tv); //Convert Pha to Pa
 			updateMicroPhysicsGround(dt, i, T, Irradiance * (1 - LC), LC, density);
 
 			// 5.
@@ -237,21 +230,22 @@ void environment::Update(float dt)
 				{
 					// we want not to update neighbouring cells, so we do the Red-Black Gauss-Seidel tactic
 					if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
+					const int y = i / GRIDSIZESKYX;
 
 					// 4.
-					const float T = float(m_envGrid.potTemp[i]) * glm::pow(m_pressures[i] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
+					const float T = float(m_envGrid.potTemp[i]) * glm::pow(m_pressures[y] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
 					const float Tv = T * (0.608f * m_envGrid.Qv[i] + 1);
-					const float density = m_pressures[i] * 100 / (Rsd * Tv); //Convert Pha to Pa
+					const float density = m_pressures[y] * 100 / (Rsd * Tv); //Convert Pha to Pa
 
 					//Debug values
-					//const float QWS = meteoformulas::ws((T - 273.15f), m_pressures[i]); //Maximum water vapor air can hold
+					//const float QWS = meteoformulas::ws((T - 273.15f), m_pressures[y]); //Maximum water vapor air can hold
 					//debugVector[i] = QWS - m_envGrid.Qv[i];
 					//
-					//const float T2 = float(m_envGrid.potTemp[i + GRIDSIZESKYX]) * glm::pow(m_pressures[i + GRIDSIZESKYX] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
-					//debugVector2[i] = (m_envGrid.Qv[i] - meteoformulas::ws((T2 - 273.15f), m_pressures[i + GRIDSIZESKYX]));
+					//const float T2 = float(m_envGrid.potTemp[i + GRIDSIZESKYX]) * glm::pow(m_pressures[y + 1] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
+					//debugVector2[i] = (m_envGrid.Qv[i] - meteoformulas::ws((T2 - 273.15f), m_pressures[y + 1]));
 
 					// 5.
-					updateMicroPhysics(dt, i, m_pressures, T, density);
+					updateMicroPhysics(dt, i, T, density);
 
 					debugVector[i] = m_condens * 1000;
 					//debugVector2[i] = m_freeze * 1000;
@@ -463,9 +457,9 @@ void environment::diffuseAndAdvectTemp(const float dt, double* array)
 					const int idxGD = j % GRIDSIZESKYX;
 
 					//TODO: could use a function inside this function which switches over the types, is faster.
-					const double l = m_NeighData[j].left == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].left  == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGL]) - 273.25f,  m_pressures[j], m_groundGrid.P[idxGL]) + 273.15f : dif[j - 1];
-					const double r = m_NeighData[j].right == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].right == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGR]) - 273.25f, m_pressures[j], m_groundGrid.P[idxGR]) + 273.15f : dif[j + 1];
-					const double d = m_NeighData[j].down == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGD]) - 273.25f, m_pressures[j], m_groundGrid.P[idxGD]) + 273.15f : dif[j - GRIDSIZESKYX];
+					const double l = m_NeighData[j].left == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].left  == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGL]) - 273.25f,  m_pressures[int(yPos)], m_groundGrid.P[idxGL]) + 273.15f : dif[j - 1];
+					const double r = m_NeighData[j].right == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].right == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGR]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGR]) + 273.15f : dif[j + 1];
+					const double d = m_NeighData[j].down == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGD]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGD]) + 273.15f : dif[j - GRIDSIZESKYX];
 					const double u = m_NeighData[j].up == OUTSIDE ? getIsentropicTemp(yPos) : dif[j + GRIDSIZESKYX];
 
 					dif[j] = (m_envGrid.potTemp[j] + k * (l + r + u + d)) / (1 + 4 * k);
@@ -486,7 +480,8 @@ void environment::diffuseAndAdvectTemp(const float dt, double* array)
 			//If at the ground, set to ground temp
 			if (isGround(i - GRIDSIZESKYX))
 			{
-				const float T = meteoformulas::potentialTemp(float(m_groundGrid.T[i % GRIDSIZESKYX]) - 273.15f, m_pressures[i], m_groundGrid.P[i % GRIDSIZESKYX]) + 273.15f;
+				int y = i / GRIDSIZESKYX;
+				const float T = meteoformulas::potentialTemp(float(m_groundGrid.T[i % GRIDSIZESKYX]) - 273.15f, m_pressures[y], m_groundGrid.P[i % GRIDSIZESKYX]) + 273.15f;
 				const double dif = array[i] - T;
 				array[i] -= dif * dt * 0.1f;
 				continue;
@@ -531,10 +526,10 @@ void environment::getInterpolValueTemp(double* array, const glm::vec2 Ppos, doub
 	const int idxG1 = int(coord1.x + 1);
 
 	//Use Isentropic Temp if outside of grid and also check for ground which we need to make potential temp
-	const double value00 = outside(coord1.x, coord1.y) ? getIsentropicTemp(coord1.y) : isGround(index00) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG0]) - 273.15f, m_pressures[index00], m_groundGrid.P[idxG0]) + 273.15f : array[index00];
-	const double value10 = outside(coord1.x + 1, coord1.y) ? getIsentropicTemp(coord1.y) : isGround(index10) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG1]) - 273.15f, m_pressures[index10], m_groundGrid.P[idxG1]) + 273.15f : array[index10];
-	const double value01 = outside(coord1.x, coord1.y + 1) ? getIsentropicTemp(coord1.y + 1) : isGround(index01) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG0]) - 273.15f, m_pressures[index01], m_groundGrid.P[idxG0]) + 273.15f : array[index01];
-	const double value11 = outside(coord1.x + 1, coord1.y + 1) ? getIsentropicTemp(coord1.y + 1) : isGround(index11) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG1]) - 273.15f, m_pressures[index11], m_groundGrid.P[idxG1]) + 273.15f : array[index11];
+	const double value00 = outside(coord1.x, coord1.y) ? getIsentropicTemp(coord1.y) : isGround(index00) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG0]) - 273.15f, m_pressures[index00 / GRIDSIZESKYX], m_groundGrid.P[idxG0]) + 273.15f : array[index00];
+	const double value10 = outside(coord1.x + 1, coord1.y) ? getIsentropicTemp(coord1.y) : isGround(index10) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG1]) - 273.15f, m_pressures[index10 / GRIDSIZESKYX], m_groundGrid.P[idxG1]) + 273.15f : array[index10];
+	const double value01 = outside(coord1.x, coord1.y + 1) ? getIsentropicTemp(coord1.y + 1) : isGround(index01) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG0]) - 273.15f, m_pressures[index01 / GRIDSIZESKYX], m_groundGrid.P[idxG0]) + 273.15f : array[index01];
+	const double value11 = outside(coord1.x + 1, coord1.y + 1) ? getIsentropicTemp(coord1.y + 1) : isGround(index11) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG1]) - 273.15f, m_pressures[index11 / GRIDSIZESKYX], m_groundGrid.P[idxG1]) + 273.15f : array[index11];
 		
 	//Interpolate using bilinear interpolation, could be compressed
 
@@ -665,6 +660,7 @@ void environment::interPolatePrecip(const float dt, float* array, const int fall
 		{
 			// we want not to update neighbouring cells, so we do the Red-Black Gauss-Seidel tactic
 			if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
+			int y = i / GRIDSIZESKYX;
 
 			float fallVel = 0.0f;
 			float fallVelUp = 0.0f;
@@ -673,17 +669,18 @@ void environment::interPolatePrecip(const float dt, float* array, const int fall
 			glm::vec3 fallVelocitiesPrecipUP{0.0f};
 
 			{
-				const float T = float(m_envGrid.potTemp[i]) * glm::pow(m_pressures[i] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
+				const float T = float(m_envGrid.potTemp[i]) * glm::pow(m_pressures[y] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
 				const float Tv = T * (0.608f * m_envGrid.Qv[i] + 1);
-				const float density = m_pressures[i] * 100 / (Rsd * Tv); //Convert Pha to Pa
+				const float density = m_pressures[y] * 100 / (Rsd * Tv); //Convert Pha to Pa
 				fallVelocitiesPrecip = calculateFallingVelocity(dt, i, density);
 			}
 			if (m_NeighData[i].up == SKY)
 			{
 				const int iUP = i + GRIDSIZESKYX;
-				const float T = float(m_envGrid.potTemp[iUP]) * glm::pow(m_pressures[iUP] / m_groundGrid.P[iUP % GRIDSIZESKYX], Rsd / Cpd);
+				const int yUP = iUP / GRIDSIZESKYX;
+				const float T = float(m_envGrid.potTemp[iUP]) * glm::pow(m_pressures[yUP] / m_groundGrid.P[iUP % GRIDSIZESKYX], Rsd / Cpd);
 				const float Tv = T * (0.608f * m_envGrid.Qv[iUP] + 1);
-				const float density = m_pressures[iUP] * 100 / (Rsd * Tv); //Convert Pha to Pa
+				const float density = m_pressures[yUP] * 100 / (Rsd * Tv); //Convert Pha to Pa
 				fallVelocitiesPrecipUP = calculateFallingVelocity(dt, iUP, density);
 			}
 			switch (fallVelType)
@@ -933,7 +930,7 @@ void environment::updateVelocityField(const float dt)
 			continue;
 		}
 	
-		float B = calculateBuoyancy(i, m_pressures);
+		float B = calculateBuoyancy(i);
 		glm::vec2 F = vorticityConfinement(i);
 		
 		debugVector[i] = F.x;
@@ -1041,17 +1038,18 @@ void environment::updateVelocityField(const float dt)
 	}
 
 	// 4.
-	pressureProjectVelField(dt);
+	pressureProjectVelField();
 }
 
-float environment::calculateBuoyancy(const int i, const float* ps)
+float environment::calculateBuoyancy(const int i)
 {
-	const float T = static_cast<float>(m_envGrid.potTemp[i]) * glm::pow(ps[i] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
-	const float T2 = static_cast<float>(m_envGrid.potTemp[i + GRIDSIZESKYX]) * glm::pow(ps[i + GRIDSIZESKYX] / m_groundGrid.P[i % GRIDSIZESKYX], Rsd / Cpd);
-
 	const float mDistance = 4096.0f / VOXELSIZE;
 	const int oX = i % GRIDSIZESKYX;
 	const int oY = int(float(i) / GRIDSIZESKYX);
+
+	const float T = static_cast<float>(m_envGrid.potTemp[i]) * glm::pow(m_pressures[oY] / m_groundGrid.P[oX], Rsd / Cpd);
+	const float T2 = static_cast<float>(m_envGrid.potTemp[i + GRIDSIZESKYX]) * glm::pow(m_pressures[oY + 1] / m_groundGrid.P[oX], Rsd / Cpd);
+
 
 	//Calculate min and maxY for our calculations.
 	const int checkSize = 1; //0 or lower is not suppported
@@ -1127,7 +1125,7 @@ float environment::calculateBuoyancy(const int i, const float* ps)
 
 
 		//First we calculate the parcel temps for each different heights
-		if (m_envGrid.Qv[i] >= meteoformulas::ws((T2 - 273.15f), ps[i + GRIDSIZESKYX])) //Air is saturated, thus use moist adiabatic
+		if (m_envGrid.Qv[i] >= meteoformulas::ws((T2 - 273.15f), m_pressures[oY + 1])) //Air is saturated, thus use moist adiabatic
 		{
 			for (int y = oY - checkSize; y <= oY + checkSize; y++)
 			{
@@ -1138,17 +1136,15 @@ float environment::calculateBuoyancy(const int i, const float* ps)
 					continue;
 				}
 
-				const int idx = oX + y * GRIDSIZESKYX;
-
 				if (y < oY) //Remove temp below
 				{
 					///meteoformulas::getMoistTemp()
 					//TODO: wrong and not very good if P change > 1
-					PTemps[PTempIdx++] = T - meteoformulas::MLR(T - 273.15f, ps[idx]) * (ps[i] - ps[idx]);
+					PTemps[PTempIdx++] = T - meteoformulas::MLR(T - 273.15f, m_pressures[y]) * (m_pressures[oY] - m_pressures[y]);
 				}
 				else if (y > oY) //Add temp above
 				{
-					PTemps[PTempIdx++] = meteoformulas::MLR(T - 273.15f, ps[idx]) * (ps[idx] - ps[i]) + T;
+					PTemps[PTempIdx++] = meteoformulas::MLR(T - 273.15f, m_pressures[y]) * (m_pressures[y] - m_pressures[oY]) + T;
 				}
 				else //Is temp at
 				{
@@ -1167,16 +1163,14 @@ float environment::calculateBuoyancy(const int i, const float* ps)
 					continue;
 				}
 
-				const int idx = oX + y * GRIDSIZESKYX;
-
 				if (y < oY) //Remove temp below
 				{
 					//TODO: I guess this is better then DLR?
-					PTemps[PTempIdx++] = T * glm::pow(ps[idx] / ps[i], Constants::Rsd / Constants::Cpd);//T - meteoformulas::DLR(T - 273.15f, ps[idx]) * (ps[i] - ps[idx]);
+					PTemps[PTempIdx++] = T * glm::pow(m_pressures[y] / m_pressures[oY], Constants::Rsd / Constants::Cpd);//T - meteoformulas::DLR(T - 273.15f, ps[idx]) * (ps[i] - ps[idx]);
 				}
 				else if (y > oY) //Add temp above
 				{
-					PTemps[PTempIdx++] = T * glm::pow(ps[idx] / ps[i], Constants::Rsd / Constants::Cpd);//meteoformulas::DLR(T - 273.15f, ps[idx]) * (ps[idx] - ps[i]) + T;
+					PTemps[PTempIdx++] = T * glm::pow(m_pressures[y] / m_pressures[oY], Constants::Rsd / Constants::Cpd);//meteoformulas::DLR(T - 273.15f, ps[idx]) * (ps[idx] - ps[i]) + T;
 				}
 				else //Is temp at
 				{
@@ -1302,7 +1296,7 @@ float environment::averageEnvironment(const int i, const int distanceFromidx, co
 		//Smoothing
 		cAmount = std::pow(cAmount, 5.0f);
 		amount += cAmount;
-		if (temp) average += (static_cast<float>(m_envGrid.potTemp[x + y * GRIDSIZESKYX]) * glm::pow(m_pressures[x + y * GRIDSIZESKYX] / m_groundGrid.P[x], Rsd / Cpd)) * cAmount;
+		if (temp) average += (static_cast<float>(m_envGrid.potTemp[x + y * GRIDSIZESKYX]) * glm::pow(m_pressures[y] / m_groundGrid.P[x], Rsd / Cpd)) * cAmount;
 		else average += m_envGrid.Qv[x + y * GRIDSIZESKYX] * cAmount;
 	}
 	for (int x = oX - 1; x > minLeft; x--)
@@ -1315,7 +1309,7 @@ float environment::averageEnvironment(const int i, const int distanceFromidx, co
 		//Smoothing
 		cAmount = std::pow(cAmount, 5.0f);
 		amount += cAmount;
-		if (temp) average += (static_cast<float>(m_envGrid.potTemp[x + y * GRIDSIZESKYX]) * glm::pow(m_pressures[x + y * GRIDSIZESKYX] / m_groundGrid.P[x], Rsd / Cpd)) * cAmount;
+		if (temp) average += (static_cast<float>(m_envGrid.potTemp[x + y * GRIDSIZESKYX]) * glm::pow(m_pressures[y] / m_groundGrid.P[x], Rsd / Cpd)) * cAmount;
 		else average += m_envGrid.Qv[x + y * GRIDSIZESKYX] * cAmount;
 	}
 	if (amount == 0) return 0.0f;
@@ -1439,7 +1433,7 @@ bool environment::getInterpolVel(glm::vec2 Ppos, bool U, float& output)
 	}
 }
 
-void environment::pressureProjectVelField(const float )
+void environment::pressureProjectVelField()
 {
 	std::vector<float> presProjections;
 	presProjections.resize(GRIDSIZESKY);
@@ -1793,15 +1787,16 @@ glm::vec3 environment::calculateFallingVelocity(const float , const int i, const
 	return glm::vec3(UR, US, UI);
 }
 
-void environment::updateMicroPhysics(const float dt, const int i, const float* ps, const float T, const float density)
+void environment::updateMicroPhysics(const float dt, const int i, const float T, const float density)
 {
 	const int idxX = i % GRIDSIZESKYX;
+	const int idxY = i / GRIDSIZESKYX;
 
 	glm::vec3 fallVel{ 0.0f };
 	if (m_envGrid.Qr[i] > 0.0f || m_envGrid.Qs[i] > 0.0f || m_envGrid.Qi[i] > 0.0f) fallVel = calculateFallingVelocity(dt, i, density);
 
 	microPhys::microPhysResult MResult = microPhys::microPhysResult(m_envGrid.Qv[i], m_envGrid.Qw[i], m_envGrid.Qc[i], m_envGrid.Qr[i], m_envGrid.Qs[i], m_envGrid.Qi[i],
-		dt, m_speed, T, ps[i], density, m_GHeight[idxX], fallVel);
+		dt, m_speed, T, m_pressures[idxY], density, m_GHeight[idxX], fallVel);
 
 	Game.mPhys().calculateEnvMicroPhysics(MResult);
 
@@ -2029,14 +2024,8 @@ void environment::computeNeighArray()
 	//Set correct ground temp for height using isentropic
 	for (int x = 0; x < GRIDSIZEGROUND; x++)
 	{
-		const float height = m_GHeight[x] * VOXELSIZE;
-		const float isenT = getIsentropicTemp(0);
-		const float pressure = meteoformulas::getStandardPressureAtHeight(isenT, height);
-		const float T = meteoformulas::potentialTemp(getIsentropicTemp(float(m_GHeight[x])), m_groundGrid.P[x], pressure);
-		//const float T = float(getIsentropicTemp(float(m_GHeight[x])) * glm::pow(pressure / m_groundGrid.P[x], Constants::Rsd / Constants::Cpd));
-		m_groundGrid.T[x] = T;
-		//m_groundGrid.T[x] = getIsentropicTemp(float(m_GHeight[x]));
-
+		const float T = meteoformulas::potentialTemp(getIsentropicTemp(float(m_GHeight[x])) - 273.15f, m_groundGrid.P[x], m_pressures[m_GHeight[x] + 1]);
+		m_groundGrid.T[x] = T + 273.15f;
 	}
 }
 
