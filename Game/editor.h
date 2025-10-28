@@ -33,6 +33,22 @@ public:
 	float getSpeed() { return m_simulationSpeed; }
 	bool changedGround() { return m_changedGround; }
 
+	void setTime(float sec) { m_time = sec; }
+	void setLongitude(float longitude) { m_longitude = longitude; }
+	void setDay(int day) { m_day = day; }
+	void getTime(float &time) 
+	{
+		if (m_timeChanged) 
+		{
+			m_timeChanged = false;
+			time = m_time;
+		}
+	}
+	float getLongitude() {return m_longitude;}
+	int getDay() {return m_day;}
+	bool getDiurnalCyclePaused() { return m_pauseDiurnal; }
+	float getSunStrength() { return m_sunStrength; }
+
 private:
 	//Main functions
 	void editMode();
@@ -44,11 +60,14 @@ private:
 	void viewParamInformation();
 	void setView();
 	void editModeParams();
+	void editModeParamsSun();
+	int chooseDateDay();
 	void vectorArrow();
 	void viewImguiData();
 	void setSkewTData();
 
 	//View
+	void viewBackground();
 	void viewSky();
 	void viewGround();
 	void viewSkewT();
@@ -72,6 +91,8 @@ private:
 	glm::vec2 getMinMaxVaueParam(parameter param);
 	const char* getFormatParam(parameter param, int& flagOutput);
 	glm::vec2 getValueParam(const int index, parameter param);
+	int getDaysInMonth(int month);
+	void dayToMonthDay(int dayOfYear, int& month, int& dayOfMonth);
 
 	//Variables
 	envDebugData* m_envData;
@@ -106,9 +127,9 @@ private:
 
 	//Select variables
 	glm::vec2 m_saveSelectPos{ 0,0 };
-	glm::vec2 m_toSelectPos{ 0,0 };
 	bool m_selectReset{ false };
 	bool m_selecting{ false };
+	glm::vec2 m_corners[2];
 
 
 	//Camera variables
@@ -118,6 +139,17 @@ private:
 	float roll = 0.0f, pitch = 0.0f;
 	float SaveRoll = 0.0f, SavePitch = 0.0f;
 	float MouseWheel = 0;
+
+	//Diurnal cycle variables
+	float m_time = 43200.0f; //0 to 86.400 time in seconds
+	const float m_dayLightDuration = 14.0f; //TODO: should be calculated using longitude and day
+	const float m_hourOfSunrise = 6.0f;
+	bool m_timeChanged = false;
+	float m_longitude = 52.37f; //Longitude on earth, 52.37 is Amsterdam
+	int m_day = 130; //Day of the year
+	float m_sunStrength = 1.0f;
+	bool m_pauseDiurnal = false;
+	glm::vec3 m_backGroundColor{};
 };
 
 //Stores all the refence variables from environment

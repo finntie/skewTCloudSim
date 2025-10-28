@@ -83,7 +83,11 @@ void environment::init(double* potTemps, glm::vec2* velField, float* Qv, double*
 		m_GHeight[i] = static_cast<int>(std::round(noise[i] * maxHeight));
 	}
 
+	//Init Editor
 	Game.Editor().setIsentropics(m_isenTropicTemps, m_isenTropicVapor, m_pressures);
+	Game.Editor().setTime(m_time);
+	Game.Editor().setLongitude(m_longitude);
+	Game.Editor().setDay(m_day);
 
 	//Reset values that are in ground
 	for (int x = 0; x < GRIDSIZEGROUND; x++)
@@ -135,6 +139,13 @@ bool environment::EditorData()
 		else return false;
 	}
 
+	m_pauseDiurnal = Game.Editor().getDiurnalCyclePaused();
+	m_longitude = Game.Editor().getLongitude();
+	m_day = Game.Editor().getDay();
+	m_sunStrength = Game.Editor().getSunStrength();
+	Game.Editor().getTime(m_time);
+	Game.Editor().setTime(m_time);
+
 	return true;
 }
 
@@ -144,7 +155,7 @@ void environment::Update(float dt)
 
 
 	// 1. Update total incoming solar radiation 
-	float Irradiance = irridianceAtLat(glm::radians(52.37f));
+	float Irradiance = irridiance();
 	
 	for (int s = 0; s < 1; s++) //Speed in cost of fps.
 	{
@@ -262,24 +273,25 @@ void environment::Update(float dt)
 			setDebugArray(debugVector3, 1);
 		}
 
-		m_time += m_speed * dt * 2.77778e-4f;
-		if (m_time > 24.0f) m_time = 0.0f;
+		m_time += m_speed * dt * int(!m_pauseDiurnal);
+		if (m_time > 86400.0f) m_time = 0.0f;
 	}
 }
 
-float environment::irridianceAtLat(const float latitude)
+float environment::irridiance()
 {
 	//Calculates the total energy from the sun at a specific spot
 	//Using formulas from https://tc.copernicus.org/articles/17/211/2023/
-	float Gs = 1361.0f; // Solar constant in W/m-2
-	float J = 130.0f; // Day number (1 = 1th of January)
-	float rd = 1 + 0.034f * cos(2 * PI * J / 365); //Relative distance to the sun
-	float sd = 0.409f * sin(2 * PI / 365 * (J - 81)); //Solar diclenation with spring equinox on day 81
+	float Gs = 1361.0f * m_sunStrength; // Solar constant in W/m-2
+	float rd = 1 + 0.034f * cos(2 * PI * m_day / 365); //Relative distance to the sun
+	float sd = 0.409f * sin(2 * PI / 365 * (m_day - 81)); //Solar diclenation with spring equinox on day 81
+	const float timeHour = m_time / 3600;
+	const float longitudeRad = glm::radians(m_longitude);
 
-	float solarRad = (m_time - (m_hourOfSunrise + m_dayLightDuration / 2.0f)) * (PI / 12.0f); //Convert time to noon to radians.
-
+	float solarRad = (timeHour - (m_hourOfSunrise + m_dayLightDuration / 2.0f)) * (PI / 12.0f); //Convert time to noon to radians.
+	printf("cos solarRad: %f\n", cos(solarRad));
 	//Get amount of W/m-2 at this time of the day.
-	return std::max(0.0f, Gs * rd * (sin(latitude) * sin(sd) + cos(latitude) * cos(sd) * cos(solarRad)));
+	return std::max(0.0f, Gs * rd * (sin(longitudeRad) * sin(sd) + cos(longitudeRad) * cos(sd) * cos(solarRad)));
 }
 
 float environment::groundCoverageFactor(const int i)
@@ -1799,61 +1811,6 @@ void environment::updateMicroPhysics(const float dt, const int i, const float T,
 		dt, m_speed, T, m_pressures[idxY], density, m_GHeight[idxX], fallVel);
 
 	Game.mPhys().calculateEnvMicroPhysics(MResult);
-
-
-	//Ground addition from mainly precip hitting ground
-	{
-		const bool atGround = i / GRIDSIZEGROUND - 1 == m_GHeight[idxX];
-		if (atGround)
-		{
-			float GR{ 0.0f };
-			float GS{ 0.0f };
-			float GI{ 0.0f };
-			float EG{ 0.0f };
-
-			GR = m_envGrid.Qr[i];
-			GS = m_envGrid.Qs[i];
-			GI = m_envGrid.Qi[i];
-
-			float BEG{ 200.0f };	//NotSure		  // Evaporation rate of dry ground
-			const float D_ = 1e-6f; // Weigthed mean diffusivity of the ground //TODO: hmm, could tripple check if right
-			const float secsInDay = 60 * 60 * 24;
-			const float O_ = 0.21f * secsInDay; // evaporative ground water storage coefficient (i.e. only part of the soil can be evaporated) https://en.wikipedia.org/wiki/Specific_storage
-
-			//Note that this is just picked from water storage coefficient which may not is the same as the evaporative soil water storage coefficient.
-			//Only if Qgj = 0 (Precip falling) and if we are at the ground
-
-			if (m_groundGrid.Qgr[idxX] == 0 && m_groundGrid.Qgs[idxX] == 0 && m_groundGrid.Qgi[idxX] == 0)
-			{
-				//https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/2013WR014872
-				const float waterA = m_groundGrid.Qrs[idxX];
-				const float time = m_groundGrid.t[idxX];
-				EG = BEG * D_ * waterA * exp(-time / O_);
-			}
-			else
-			{
-				m_groundGrid.t[idxX] = 0;
-			}
-
-
-			//Limit
-			GR = dt * std::min(GR * m_speed, m_envGrid.Qr[i]);
-			GS = dt * std::min(GS * m_speed, m_envGrid.Qs[i]);
-			GI = dt * std::min(GI * m_speed, m_envGrid.Qi[i]);
-			MResult.condens -= EG = dt * EG * m_speed; //No need to limit (yet)
-
-			//Add to ground
-			m_groundGrid.Qgr[idxX] += GR;
-			m_groundGrid.Qgs[idxX] += GS;
-			m_groundGrid.Qgi[idxX] += GI;
-
-			//Add to data
-			MResult.Qr -= GR;
-			MResult.Qs -= GS;
-			MResult.Qi -= GI;
-			MResult.Qv += EG;
-		}
-	}
 
 	//Set data
 	m_envGrid.Qv[i] += MResult.Qv;

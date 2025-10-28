@@ -5,12 +5,12 @@
 #include "half/half.hpp"
 #include <glm/glm.hpp>
 
-#define GRIDSIZESKYX 32
+#define GRIDSIZESKYX 64
 #define GRIDSIZESKYY 64
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY)
 #define GRIDSIZEGROUND (GRIDSIZESKYX)
-#define VOXELSIZE 32.0f //Meters
+#define VOXELSIZE 16.0f //Meters
 
 struct envDebugData;
 
@@ -55,7 +55,7 @@ public:
 	void Update(float dt);
 
 	//--------------------------------Ground---------------------------------
-	float irridianceAtLat(const float latitude);
+	float irridiance();
 	float groundCoverageFactor(const int index);
 	void updateGroundTemps(const float dt, const int index, const float Irradiance, const float cloudCoverage);
 	void advectMicroPhysicsGround(const float dt, const int index);
@@ -116,11 +116,14 @@ private:
 	gridDataSky m_envGrid;
 	gridDataGround m_groundGrid;
 
-	//TODO: Convert to 60 seconds, 3600 for minute and 86.400 for day
-	float m_time = 12.0f; //0 to 24
-	float m_dayLightDuration = 10.0f;
-	float m_hourOfSunrise = 6.0f;
+	float m_time = 43200.0f; //0 to 86.400 time in seconds
+	const float m_dayLightDuration = 14.0f;
+	const float m_hourOfSunrise = 6.0f;
 	float m_speed = 1.0f;
+	float m_longitude = 52.37f; //Longitude on earth, 52.37 is Amsterdam
+	int m_day = 130; //Day of the year
+	float m_sunStrength = 1.0f;
+	bool m_pauseDiurnal = false;
 
 	float m_condens = 0.0f; //Heat from condensation
 	float m_freeze = 0.0f; //Heat from freezing

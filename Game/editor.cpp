@@ -15,6 +15,8 @@
 #include "rendering/debug_render.hpp"
 #include "rendering/render.hpp"
 
+#include "platform/opengl/render_gl.hpp"
+
 #include "tools/inspector.hpp"
 
 #include "imgui/IconsFontAwesome.h"
@@ -24,6 +26,7 @@
 editor::editor(envDebugData* _envDebugData)
 {
 	m_envData = _envDebugData;
+	m_backGroundColor = { 0.35f, 0.55f, 0.9f };
 }
 
 editor::~editor()
@@ -114,6 +117,7 @@ void editor::panel()
 
 void editor::viewData()
 {
+	viewBackground();
 	viewSky();
 	viewGround();
 	viewSkewT();
@@ -159,7 +163,7 @@ void editor::cameraControl()
 	bool LeftShift = bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::LeftShift);
 
 	//If in view mode, just always be able to move.
-	if (!m_editMode)
+	if (!m_brushing && !m_selecting)
 	{
 		LeftShift = true;
 	}
@@ -438,77 +442,201 @@ void editor::editModeParams()
 		ImGui::SliderFloat("Simulation Speed", &m_simulationSpeed, 0.1f, 100.0f);
 		if (ImGui::Button("Reset Speed")) m_simulationSpeed = 1.0f;
 
-		ImGui::Text(std::string("Currently Editing: " + std::to_string(m_editParamSky)).c_str());
-		ImGui::Text("Edit parameter of:");
-		if (ImGui::Button("Temp")) m_editParamSky = POTTEMP;		ImGui::SameLine();
-		if (ImGui::Button("Wind")) m_editParamSky = WIND;		ImGui::SameLine();
-		if (ImGui::Button("Qv")) m_editParamSky = QV;		ImGui::SameLine();
-		if (ImGui::Button("Qw")) m_editParamSky = QW;
-		if (ImGui::Button("Qc")) m_editParamSky = QC;		ImGui::SameLine();
-		if (ImGui::Button("Qr")) m_editParamSky = QR;		ImGui::SameLine();
-		if (ImGui::Button("Qs")) m_editParamSky = QS;		ImGui::SameLine();
-		if (ImGui::Button("Qi")) m_editParamSky = QI;
-		if (ImGui::Button("Ground")) m_editParamSky = GROUND;
-
-		static int e = 0;
-		ImGui::RadioButton("Empty", &e, 0); ImGui::SameLine();
-		ImGui::RadioButton("Brush", &e, 1); ImGui::SameLine();
-		ImGui::RadioButton("Select", &e, 2);
-
-		if (e == 0)
+		if (ImGui::TreeNode("Diurnal Cycle"))
 		{
-			m_brushing = false;
-			m_selecting = false;
+			editModeParamsSun();
+			ImGui::TreePop();
 		}
-		else if (e == 1)//(ImGui::TreeNode("Brushing"))
+		if (ImGui::TreeNode("Environment"))
 		{
-			m_brushing = true;
-			m_selecting = false;
 
-			glm::vec2 minMax = getMinMaxVaueParam(m_editParamSky);
-			ImGuiSliderFlags sliderFlag = 0;
-			const char* format = getFormatParam(m_editParamSky, sliderFlag);
+			ImGui::Text(std::string("Currently Editing: " + std::to_string(m_editParamSky)).c_str());
+			ImGui::Text("Edit parameter of:");
+			if (ImGui::Button("Temp")) m_editParamSky = POTTEMP;		ImGui::SameLine();
+			if (ImGui::Button("Wind")) m_editParamSky = WIND;		ImGui::SameLine();
+			if (ImGui::Button("Qv")) m_editParamSky = QV;		ImGui::SameLine();
+			if (ImGui::Button("Qw")) m_editParamSky = QW;
+			if (ImGui::Button("Qc")) m_editParamSky = QC;		ImGui::SameLine();
+			if (ImGui::Button("Qr")) m_editParamSky = QR;		ImGui::SameLine();
+			if (ImGui::Button("Qs")) m_editParamSky = QS;		ImGui::SameLine();
+			if (ImGui::Button("Qi")) m_editParamSky = QI;
+			if (ImGui::Button("Ground")) m_editParamSky = GROUND;
 
-			ImGui::SliderFloat("Radius", &m_brushSize, 0.5f, 32.0f, "%.3f");
-			ImGui::SliderFloat("Smoothness", &m_brushSmoothness, 0.01f, 10.0f, "%.1f");
-			ImGui::Text("Value that will be applied every second:");
-			ImGui::SliderFloat("AppliedValue", &m_applyValue, minMax.x, minMax.y, format, sliderFlag);
-			ImGui::SliderFloat("Intensity", &m_brushIntensity, -1.0f, 1.0f, "%.7f", ImGuiSliderFlags_Logarithmic);
+			static int e = 0;
+			ImGui::RadioButton("Empty", &e, 0); ImGui::SameLine();
+			ImGui::RadioButton("Brush", &e, 1); ImGui::SameLine();
+			ImGui::RadioButton("Select", &e, 2);
 
-			//Vec2
-			if (m_editParamSky == 7)
+			if (e == 0)
 			{
-				vectorArrow();
+				m_brushing = false;
+				m_selecting = false;
 			}
-			else if (m_editParamSky == 8)
+			else if (e == 1)//(ImGui::TreeNode("Brushing"))
 			{
-				ImGui::Checkbox("erase", &m_groundErase);
-			}
+				m_brushing = true;
+				m_selecting = false;
 
-			//ImGui::TreePop();
+				glm::vec2 minMax = getMinMaxVaueParam(m_editParamSky);
+				ImGuiSliderFlags sliderFlag = 0;
+				const char* format = getFormatParam(m_editParamSky, sliderFlag);
+
+				ImGui::SliderFloat("Radius", &m_brushSize, 0.5f, 32.0f, "%.3f");
+				ImGui::SliderFloat("Smoothness", &m_brushSmoothness, 0.01f, 10.0f, "%.1f");
+				ImGui::Text("Value that will be applied every second:");
+				ImGui::SliderFloat("AppliedValue", &m_applyValue, minMax.x, minMax.y, format, sliderFlag);
+				ImGui::SliderFloat("Intensity", &m_brushIntensity, -1.0f, 1.0f, "%.7f", ImGuiSliderFlags_Logarithmic);
+
+				//Vec2
+				if (m_editParamSky == 7)
+				{
+					vectorArrow();
+				}
+				else if (m_editParamSky == 8)
+				{
+					ImGui::Checkbox("erase", &m_groundErase);
+				}
+
+				//ImGui::TreePop();
+			}
+			else if (e == 2)//(ImGui::TreeNode("Selecting"))
+			{
+				m_brushing = false;
+				m_selecting = true;
+
+				glm::vec2 minMax = getMinMaxVaueParam(m_editParamSky);
+				ImGuiSliderFlags sliderFlag = 0;
+				const char* format = getFormatParam(m_editParamSky, sliderFlag);
+
+				ImGui::SliderFloat("Value", &m_applyValue, minMax.x, minMax.y, format, sliderFlag);
+
+				//Vec2
+				if (m_editParamSky == 7)
+				{
+					vectorArrow();
+				}
+			}
+			ImGui::TreePop();
 		}
-		else if (e == 2)//(ImGui::TreeNode("Selecting"))
-		{
-			m_brushing = false;
-			m_selecting = true;
-
-			glm::vec2 minMax = getMinMaxVaueParam(m_editParamSky);
-			ImGuiSliderFlags sliderFlag = 0;
-			const char* format = getFormatParam(m_editParamSky, sliderFlag);
-
-			ImGui::SliderFloat("Value", &m_applyValue, minMax.x, minMax.y, format, sliderFlag);
-
-			//Vec2
-			if (m_editParamSky == 7)
-			{
-				vectorArrow();
-			}
-
-			//ImGui::TreePop();
-		}
-
 		ImGui::End();
 	}
+}
+
+void editor::editModeParamsSun()
+{
+	//Time sliderfloat
+	float timeHour = m_time / 3600.0f;
+	if (ImGui::SliderFloat("Time of day (H)", &timeHour, 0.0f, 24.0f))
+	{
+		m_timeChanged = true;
+	}
+	m_time = timeHour * 3600.0f;
+	//Pause day cyclus
+	ImGui::Checkbox("Pause Diurnal Cycle", &m_pauseDiurnal);
+	//Longitude sliderfloat
+	ImGui::SliderFloat("Longitude", &m_longitude, 0, 90);
+	//Day setting (day/month)
+	m_day = chooseDateDay();
+	
+	//--Extra settings--
+	ImGui::SliderFloat("Sun Strength", &m_sunStrength, 0.0f, 10.0f);
+}
+
+int editor::chooseDateDay()
+{
+	static int defaultDay = m_day;
+	int currentMonth = 6;
+	int currentDay = 1;
+	dayToMonthDay(m_day, currentMonth, currentDay);
+
+	ImGui::Text("Current Day: %i-%i", currentMonth + 1, currentDay);
+	ImVec2 buttonSize = { ImGui::CalcTextSize(" Choose Day ").x + 10, 40 };
+
+	if (ImGui::Button("Choose Day", buttonSize))
+	{
+		ImGui::OpenPopup("StartDate");
+	}
+	if (ImGui::BeginPopup("StartDate"))
+	{
+
+		static std::string Months[12] = {
+		"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"
+		};
+
+		ImVec2 windowSize = ImGui::GetWindowSize();
+		float textSize = ImGui::GetFontSize();
+		float currentTextSize = 0.0f;
+		ImVec2 largestMonthSize = ImGui::CalcTextSize(Months[8].c_str());
+
+		//Now using defaultDay to show edited day
+		dayToMonthDay(defaultDay, currentMonth, currentDay);
+
+		//Month
+		{
+			ImGui::SetCursorPosX(windowSize.x * 0.5f - largestMonthSize.x * 0.5f - textSize);
+			if (ImGui::Button("<##MonthBack") && currentMonth > 0)
+			{
+				currentMonth--;
+			}
+			ImGui::SameLine();
+			currentTextSize = ImGui::CalcTextSize(Months[currentMonth].c_str()).x;
+			ImGui::SetCursorPosX(windowSize.x * 0.5f - currentTextSize * 0.5f);
+			ImGui::Text("%s", Months[currentMonth].c_str());
+			ImGui::SameLine();
+
+			ImGui::SetCursorPosX(windowSize.x * 0.5f + largestMonthSize.x * 0.5f + textSize);
+			if (ImGui::Button(">##MonthForward") && currentMonth < 11)
+			{
+				currentMonth++;
+			}
+		}
+
+		//Day
+		{
+			buttonSize = { 40,40 };
+			int daysInMonth = getDaysInMonth(currentMonth);
+
+			for (int i = 1; i < daysInMonth + 1; i++)
+			{
+				char label[8];
+				std::snprintf(label, sizeof(label), "%i", i);
+				if (ImGui::Button(label, buttonSize))
+				{
+					currentDay = i;
+				}
+				if ((i % 7 != 0 || i == 0) && i != daysInMonth)
+				{
+					ImGui::SameLine();
+				}
+			}
+		}
+
+		ImGui::Text("Selected Start Date: %i-%i", currentMonth + 1, currentDay);
+
+		ImGui::SameLine();
+
+		//Confirm
+		int confirmDay = m_day;
+
+		defaultDay = 0;
+		for (int i = 0; i < currentMonth; i++)
+		{
+			for (int j = 0; j < getDaysInMonth(i); j++)
+			{
+				defaultDay++;
+			}
+		}
+		defaultDay += currentDay;
+
+		if (ImGui::Button("Ok"))
+		{
+			confirmDay = defaultDay;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+		return confirmDay;
+	}
+	return m_day;
 }
 
 void editor::vectorArrow()
@@ -579,6 +707,17 @@ void editor::setSkewTData()
 
 }
 
+
+void editor::viewBackground()
+{
+	//Set background color based on time;
+	const float relativeTime = std::clamp((m_time / 3600 - m_hourOfSunrise) / m_dayLightDuration, 0.0f, 1.0f);
+	const float multiplier = std::sin(Constants::PI * relativeTime) + 0.2f;
+	bee::Engine.ECS().GetSystem<bee::Renderer>().setBackGroundColor(
+		m_backGroundColor[0] * multiplier,
+		m_backGroundColor[1] * multiplier,
+		m_backGroundColor[2] * multiplier);
+}
 
 void editor::viewSky()
 {
@@ -708,7 +847,6 @@ void editor::viewSelection()
 		if (bee::Engine.Input().GetMouseButtonOnce(bee::Input::MouseButton::Left))
 		{
 			m_saveSelectPos = { (MousePos3D.x), (MousePos3D.y) };
-			m_toSelectPos = m_saveSelectPos;
 			m_selectReset = true;
 		}
 		else if (bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left))
@@ -717,48 +855,30 @@ void editor::viewSelection()
 			{
 				//Impossible (too precise), meaning went from tab to playfield
 				m_saveSelectPos = { (MousePos3D.x), (MousePos3D.y) };
-				m_toSelectPos = m_saveSelectPos;
 			}
 
-			//Choose correct ceil or floor
-			if (MousePos3D.x < m_saveSelectPos.x)
-			{
-				m_toSelectPos.x = std::floor(MousePos3D.x);
-				m_saveSelectPos.x = std::ceil(m_saveSelectPos.x);
-			}
-			else if(MousePos3D.x > m_saveSelectPos.x)
-			{
-				m_toSelectPos.x = std::ceil(MousePos3D.x);
-				m_saveSelectPos.x = std::floor(m_saveSelectPos.x);
-			}
-			if (MousePos3D.y < m_saveSelectPos.y)
-			{
-				m_toSelectPos.y = std::floor(MousePos3D.y);
-				m_saveSelectPos.y = std::ceil(m_saveSelectPos.y);
-			}
-			else if (MousePos3D.y > m_saveSelectPos.y)
-			{
-				m_toSelectPos.y = std::ceil(MousePos3D.y);
-				m_saveSelectPos.y = std::floor(m_saveSelectPos.y);
-			}
+			m_corners[0].x = MousePos3D.x < m_saveSelectPos.x ? ceil(m_saveSelectPos.x) : floor(m_saveSelectPos.x);
+			m_corners[0].y = MousePos3D.y < m_saveSelectPos.y ? ceil(m_saveSelectPos.y) : floor(m_saveSelectPos.y);
+
+			m_corners[1].x = MousePos3D.x < m_saveSelectPos.x ? floor(MousePos3D.x) : ceil(MousePos3D.x);
+			m_corners[1].y = MousePos3D.y < m_saveSelectPos.y ? floor(MousePos3D.y) : ceil(MousePos3D.y);
+
 			m_selectReset = false;
 		}
 		else if (m_selectReset)
 		{
-			m_toSelectPos = { 0,0 };
 			m_saveSelectPos = { 0,0 };
 		}
 	}
 	else if (bee::Engine.Inspector().IsSelected())
 	{
-		m_toSelectPos = { 0,0 };
 		m_saveSelectPos = { 0,0 };
 		m_selectReset = true;
 	}
 	//Render selection
-	if (m_toSelectPos != m_saveSelectPos)
+	if (m_selecting && glm::vec2(MousePos3D.x, MousePos3D.y) != m_saveSelectPos)
 	{
-		bee::Engine.DebugRenderer().AddRectangle(bee::DebugCategory::All, glm::vec3(m_saveSelectPos, 0.015f), glm::vec3(m_toSelectPos, 0.015f), glm::vec3(0, 0, 1), bee::Colors::White);
+		bee::Engine.DebugRenderer().AddRectangle(bee::DebugCategory::All, glm::vec3(m_corners[0], 0.015f), glm::vec3(m_corners[1], 0.015f), glm::vec3(0, 0, 1), bee::Colors::White);
 	}
 
 }
@@ -881,12 +1001,12 @@ void editor::applyBrush()
 
 void editor::applySelect()
 {
-	if (m_selecting && m_toSelectPos != m_saveSelectPos && !bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left))
+	if (m_selecting && m_saveSelectPos != glm::vec2(0) && !bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left))
 	{
-		int minX = int(std::min(m_toSelectPos.x, m_saveSelectPos.x));
-		int minY = int(std::min(m_toSelectPos.y, m_saveSelectPos.y));
-		int maxX = int(std::max(m_toSelectPos.x, m_saveSelectPos.x));
-		int maxY = int(std::max(m_toSelectPos.y, m_saveSelectPos.y));
+		int minX = int(std::min(m_corners[0].x, m_corners[1].x));
+		int minY = int(std::min(m_corners[0].y, m_corners[1].y));
+		int maxX = int(std::max(m_corners[0].x, m_corners[1].x));
+		int maxY = int(std::max(m_corners[0].y, m_corners[1].y));
 
 		for (int y = minY; y < maxY; y++)
 		{
@@ -913,9 +1033,6 @@ void editor::applySelect()
 				}
 			}
 		}
-
-
-
 	}
 }
 
@@ -1146,4 +1263,24 @@ glm::vec2 editor::getValueParam(const int i, parameter param)
 		break;
 	}
 	return { 0,0 };
+}
+
+int editor::getDaysInMonth(int month)
+{
+	int output = month % 2 ? 30 : 31; //0 = January.
+	return month == 1 ? 28 : output;
+}
+
+void editor::dayToMonthDay(int dayOfYear, int& month, int& dayOfMonth)
+{
+	int count = 0;
+	for (int i = 0; i < 12; i++)
+	{
+		dayOfMonth = dayOfYear - count;
+		count += getDaysInMonth(i);
+		if (count > dayOfYear - 1) {
+			month = i;
+			return;
+		}
+	}
 }

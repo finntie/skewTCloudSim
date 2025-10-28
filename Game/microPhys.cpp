@@ -1030,6 +1030,7 @@ float microPhys::FPGMLT(const float PGACW, const float PGACR)
 
 float microPhys::FPGWET(const float PGACI, const float PGACS)
 {
+    //TODO: fix issue with filling sky with hail
     if (m_Qi > 0.0f)
     {
         const float PGACI1 = PGACI * 10.0f; //Multiplying by 10 is the same as re-calculating PGACI with EGI as 1.0f
