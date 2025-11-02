@@ -131,7 +131,7 @@ void microPhys::calculateEnvMicroPhysics(microPhysResult& data)
     //If PGACR1 >= 0, we remove from rain, because some will be frozen
     //IF PGACR1 < 0, we add to rain, since water will be sheded from hail
     float WTerm = 0.0f;
-    if (PGDRY > PGWET || PGDRY == 0.0f) WTerm = 1.0f; 
+    if (PGDRY > PGWET) WTerm = 1.0f; 
 
 
     //Limit by speed and add to heat latency.
@@ -1030,7 +1030,6 @@ float microPhys::FPGMLT(const float PGACW, const float PGACR)
 
 float microPhys::FPGWET(const float PGACI, const float PGACS)
 {
-    //TODO: fix issue with filling sky with hail
     if (m_Qi > 0.0f)
     {
         const float PGACI1 = PGACI * 10.0f; //Multiplying by 10 is the same as re-calculating PGACI with EGI as 1.0f
@@ -1047,9 +1046,9 @@ float microPhys::FPGWET(const float PGACI, const float PGACS)
         const float dQv = meteoformulas::DQVair(m_Tc, m_ps); //Diffusivity of water vapor in air
         const float kv = meteoformulas::ViscAir(m_Tc); //Kinematic viscosity of air
         float Sc = kv / dQv; // Schmidt number (kv /dQv)
-        const float Drs = meteoformulas::ws(0.0f, m_ps) - m_Qv;
+        const float Drs = meteoformulas::ws(0.0f, m_ps) - m_Qv; //In kg/kg or g/g
 
-        const float density = pow(4 * g * 100 * densI / (3 * CD), 0.25f);
+        const float density = pow(4 * g * 100.0f * densI / (3 * CD), 0.25f);
 
         return 2 * PI * N0I * (m_Dair * 0.001f * E0v * dQv * Drs - Ka * m_Tc) / (m_Dair * 0.001f * (Lf + Cvl * m_Tc)) *
             (0.78f * powf(m_slopeI, -2) + 0.31f * powf(Sc, 1.0f / 3.0f) * m_gammaRI * density * powf(kv, -0.5f) * powf(m_slopeI, -2.75f)) +

@@ -5,12 +5,12 @@
 #include "half/half.hpp"
 #include <glm/glm.hpp>
 
-#define GRIDSIZESKYX 64
-#define GRIDSIZESKYY 64
+#define GRIDSIZESKYX 32 
+#define GRIDSIZESKYY 32
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY)
 #define GRIDSIZEGROUND (GRIDSIZESKYX)
-#define VOXELSIZE 16.0f //Meters
+#define VOXELSIZE 32.0f //Meters
 
 struct envDebugData;
 
@@ -86,8 +86,9 @@ public:
 	void applyPreconditioner(std::vector<float>& precon, std::vector<float>& r, std::vector<glm::ivec3>& A, std::vector<float>& storageQ, std::vector<float>& output);
 	void applyA(std::vector<float>& s, std::vector<glm::ivec3>& A, std::vector<float>& output);
 	/// <summary>Calculates the mass-weighted mean terminal velocity of all types of precip</summary>
+	/// <param name = "type"> 1 = rain, 2 = snow, 3 = hail, 4 = all</param>
 	/// <returns>x: rain, y: snow, z: ice</returns>
-	glm::vec3 calculateFallingVelocity(const float dt, const int index, const float density);
+	glm::vec3 calculateFallingVelocity(const int index, const float density, const int type);
 	void updateMicroPhysics(const float dt, const int index, const float T, const float density);
 	float calculateSumPhaseHeat(const float dt, const int index, const float Temp);
 	void computeHeatTransfer(const int index, const float sumHeat);
@@ -104,6 +105,8 @@ public:
 	bool outside(const float x, const float y); //For coords
 	bool isGround(int i);
 	bool isGround(int x, int y);
+	bool isGroundLevel(int i);
+	bool isGroundLevel(int x, int y);
 
 	void computeNeighArray();
 	void setDebugArray(std::vector<float>& s, const int index = 0);
@@ -131,7 +134,7 @@ private:
 
 	float m_isenTropicTemps[GRIDSIZESKYY]{ 0.0f };
 	float m_isenTropicVapor[GRIDSIZESKYY]{ 0.0f };
-	float m_pressures[GRIDSIZESKY]{ 0.0f };
+	float m_pressures[GRIDSIZESKYY]{ 0.0f };
 	int m_GHeight[GRIDSIZEGROUND]{ 0 };
 
 	//Storage array for setting boundary conditions easier.

@@ -337,6 +337,14 @@ void readTable::readDWDFile(const char* _file)
 	heightToPressureCalculate();
 }
 
+static float lerpEnvValue(const float H1, const float H2, const float HC, const float V1, const float V2)
+{
+	if (HC == H1) return V1;
+	else if (HC == H2) return V2;
+	const float t = (HC - H1) / (H2 - H1);
+	return V1 + t * (V2 - V1);
+}
+
 void readTable::initEnvironment()
 {
 
@@ -363,9 +371,12 @@ void readTable::initEnvironment()
 	int j = 0;
 	for (float y = 0; y < GRIDSIZESKYY * VOXELSIZE; y += VOXELSIZE)
 	{
-		int i = getIndexAtHeight(y + skewTData.data.altitude[0]);
-		pressures[j] = skewTData.data.pressure[i];
-		potTempSmall[j] = skewTData.data.temperature[i];
+		const float H0 = skewTData.data.altitude[0];
+		int i = getIndexAtHeight(y + H0);
+		int Pi = i == 0 ? 0 : i - 1;
+		pressures[j] = lerpEnvValue(skewTData.data.altitude[Pi] - H0, skewTData.data.altitude[i] - H0, y, skewTData.data.pressure[Pi], skewTData.data.pressure[i]);
+		potTempSmall[j] = lerpEnvValue(skewTData.data.altitude[Pi] - H0, skewTData.data.altitude[i] - H0, y, skewTData.data.temperature[Pi], skewTData.data.temperature[i]);
+		//potTempSmall[j] = skewTData.data.temperature[i];
 		indices[j] = i;
 		j++;
 	}
@@ -383,8 +394,13 @@ void readTable::initEnvironment()
 	//Converting 2D into 1D: 90degrees = -1, 270 degrees = 1
 	for (int i = 0; i < GRIDSIZESKYY; i++)
 	{
-		float velFieldValue = std::sinf((skewTData.data.windDir[indices[i]] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[indices[i]];
-		float QvValue = meteoformulas::ws(skewTData.data.dewPoint[indices[i]], skewTData.data.pressure[indices[i]]);
+		const float H0 = skewTData.data.altitude[0];
+		const int idx = indices[i];
+		int Pidx = idx == 0 ? 0 : idx - 1;
+
+		float velFieldValue = std::sinf((skewTData.data.windDir[idx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[idx];
+		float QvValue = meteoformulas::ws(lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, skewTData.data.dewPoint[Pidx], skewTData.data.dewPoint[idx]), 
+			pressures[idx]);
 
 		for (int x = 0; x < GRIDSIZESKYX; x++)
 		{

@@ -171,7 +171,7 @@ glm::vec2 skewTer::convertToPlottingCoordinates(const float temp, const float va
 {
 	//Respect hPa for height in meter using standard pressure
 	float height = value;
-	if (!pressure) height = meteoformulas::getStandardPressureAtHeight(0, value); //TODO: use standard height/pressure?
+	if (!pressure) height = meteoformulas::getStandardPressureAtHeight(0, value); //Could use pressure from data.
 
 
 	//---------------------Log()----------------------

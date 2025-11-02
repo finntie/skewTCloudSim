@@ -185,7 +185,7 @@ private:
 	float m_Tc{ 0.0f };
 	float m_Ta{ 0.0f }; //Temp of air above
 	float m_ps{ 1000.0f }; //Pressure in hPa
-	float m_Dair{ 1.0f };
+	float m_Dair{ 1.0f }; // In kg/m3
 	int   m_GHeight{ 0 };
 	glm::vec3 m_fallVel{ 0.0f };
 	float m_time{ 0.0f };
