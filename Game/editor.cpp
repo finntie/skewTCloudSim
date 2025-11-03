@@ -16,6 +16,7 @@
 #include "rendering/render.hpp"
 
 #include "platform/opengl/render_gl.hpp"
+#include "platform/opengl/draw_image.hpp"
 
 #include "tools/inspector.hpp"
 
@@ -111,7 +112,7 @@ void editor::panel()
 	ImGui::End();
 	editModeParams();
 	setSkewTData();
-
+	skewTTexture();
 	viewImguiData();
 }
 
@@ -705,6 +706,25 @@ void editor::setSkewTData()
 		ImGui::End();
 	}
 
+}
+
+void editor::skewTTexture()
+{
+	ImGui::Begin("SkewT Draw");
+
+	//Draw onto texture
+	glm::vec2 first{ -85, -5 };
+	glm::vec2 second{ 5,100 };
+	Game.SkewT().getSkewTImage()->getDrawnImage(first, second, texture);
+
+	//Display texture in ImGui
+	ImVec2 max = ImGui::GetContentRegionMax();
+	max.x = std::min(max.x - 16.0f, max.y - 50.0f);
+	max.y = max.x;
+	ImTextureID ITID = static_cast<ImTextureID>(texture);
+	ImGui::Image(ITID, max, ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
+
+	ImGui::End();
 }
 
 

@@ -7,10 +7,28 @@
 #include "core/engine.hpp"
 #include "rendering/colors.hpp"
 #include "rendering/debug_render.hpp"
+#include "platform/opengl/draw_image.hpp"
+
 #include "core/input.hpp"
 #include "math/geometry.hpp"
 #include <glm/glm.hpp>
 
+
+skewTer::skewTer()
+{
+	skewTImage = new bee::DrawImage();
+}
+
+skewTer::~skewTer()
+{
+	delete[] m_skewT.temps;
+	delete[] m_skewT.dewPoints;
+	delete[] m_skewT.pressures;
+	if (skewTImage)
+	{
+		delete skewTImage;
+	}
+}
 
 void skewTer::setSkewT(skewTInfo skewT)
 {
@@ -81,7 +99,6 @@ void skewTer::setAllArrays(float* T, float* D, float* Ps)
 //-------------------------------------------------------------------------------------------------------------------------------------------
 //------------------------------------               Drawing                     ------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------------------------------------------------
-
 void skewTer::drawBackground()
 {
 	const float scaleX = skewTSize.x / normalSkewTSize.x, scaleY = skewTSize.y / normalSkewTSize.y;
@@ -90,17 +107,17 @@ void skewTer::drawBackground()
 	{
 		glm::vec2 coords = convertToPlottingCoordinates(0, h, true, skewTSize.x, skewTSize.y);
 		coords += skewTPos;
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40 * scaleX + skewTPos.x, coords.y, 0), glm::vec3(40 * scaleX + skewTPos.x, coords.y, 0), bee::Colors::Grey);
+		skewTImage->AddLine(glm::vec3(-40 * scaleX + skewTPos.x, coords.y, 0), glm::vec3(40 * scaleX + skewTPos.x, coords.y, 0), bee::Colors::Grey);
 	}
 	for (float i = -100; i < 40; i += 10)
 	{
 		glm::vec2 coords = convertToPlottingCoordinates(i, 100, true, skewTSize.x, skewTSize.y);
 		coords += skewTPos;
 
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(i * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(coords, 0), bee::Colors::Grey);
+		skewTImage->AddLine(glm::vec3(i * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(coords, 0), bee::Colors::Grey);
 	}
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), bee::Colors::Black);
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(-40 * scaleX + skewTPos.x, 100 * scaleY + skewTPos.y, 0), bee::Colors::Black);
+	skewTImage->AddLine(glm::vec3(-40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), bee::Colors::Black);
+	skewTImage->AddLine(glm::vec3(-40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(-40 * scaleX + skewTPos.x, 100 * scaleY + skewTPos.y, 0), bee::Colors::Black);
 }
 
 void skewTer::drawEnvironment()
@@ -119,8 +136,8 @@ void skewTer::drawEnvironment()
 			dewCoords += skewTPos;
 			dewPrevCoords += skewTPos;
 
-			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(tempCoords, 0.0f), glm::vec3(tempPrevCoords, 0.0f), bee::Colors::Red);
-			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(dewCoords, 0.0f), glm::vec3(dewPrevCoords, 0.0f), bee::Colors::Green);
+			skewTImage->AddLine(glm::vec3(tempCoords, 0.0f), glm::vec3(tempPrevCoords, 0.0f), bee::Colors::Red);
+			skewTImage->AddLine(glm::vec3(dewCoords, 0.0f), glm::vec3(dewPrevCoords, 0.0f), bee::Colors::Green);
 		}
 	}
 }
@@ -142,7 +159,7 @@ void skewTer::drawDryAndMoist()
 			coords += skewTPos;
 			coordsPrev += skewTPos;
 
-			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
+			skewTImage->AddLine(glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
 		}
 
 		//Moist adiabatic at LCL
@@ -159,7 +176,7 @@ void skewTer::drawDryAndMoist()
 				coords += skewTPos;
 				coordsPrev += skewTPos;
 
-				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
+				skewTImage->AddLine(glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
 			}
 		}
 	}

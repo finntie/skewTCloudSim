@@ -400,7 +400,7 @@ void readTable::initEnvironment()
 
 		float velFieldValue = std::sinf((skewTData.data.windDir[idx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[idx];
 		float QvValue = meteoformulas::ws(lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, skewTData.data.dewPoint[Pidx], skewTData.data.dewPoint[idx]), 
-			pressures[idx]);
+			pressures[i]);
 
 		for (int x = 0; x < GRIDSIZESKYX; x++)
 		{

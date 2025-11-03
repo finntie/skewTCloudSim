@@ -2,18 +2,16 @@
 #include <glm/glm.hpp>
 #include <memory>
 
+namespace bee {
+	class DrawImage;
+}
 class skewTer
 {
 public:
 	
-	skewTer() {};
-	~skewTer() 
-	{
-		delete[] m_skewT.temps;
-		delete[] m_skewT.dewPoints;
-		delete[] m_skewT.pressures;
+	skewTer();
+	~skewTer();
 
-	};
 
 	struct skewTInfo
 	{
@@ -54,6 +52,7 @@ public:
 	void setArray(skewTInfo::skewTParam param, const float* input);
 	void setStartIdx(const int idx);
 	void setAllArrays(float* T, float* D, float* Ps);
+	bee::DrawImage* getSkewTImage() { return skewTImage; };
 
 	//How skewed is the SkewT
 	float tanTheta = glm::tan(glm::radians(45.0f));
@@ -75,5 +74,6 @@ private:
 	
 	const glm::vec2 normalSkewTSize{ 100,100 };
 	int startHeight = 0;
+	bee::DrawImage* skewTImage = nullptr;
 };
 

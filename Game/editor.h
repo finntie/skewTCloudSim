@@ -65,6 +65,7 @@ private:
 	void vectorArrow();
 	void viewImguiData();
 	void setSkewTData();
+	void skewTTexture();
 
 	//View
 	void viewBackground();
@@ -129,7 +130,7 @@ private:
 	glm::vec2 m_saveSelectPos{ 0,0 };
 	bool m_selectReset{ false };
 	bool m_selecting{ false };
-	glm::vec2 m_corners[2];
+	glm::vec2 m_corners[2]{};
 
 
 	//Camera variables
@@ -150,6 +151,10 @@ private:
 	float m_sunStrength = 1.0f;
 	bool m_pauseDiurnal = false;
 	glm::vec3 m_backGroundColor{};
+
+	//Temp
+	unsigned int texture = 0;
+
 };
 
 //Stores all the refence variables from environment

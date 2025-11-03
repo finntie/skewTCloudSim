@@ -215,7 +215,6 @@ void environment::Update(float dt)
 
 
 			// 1.
-			//pressureProjectVelField(dt);
 			calculateDivergence(debugVector3);
 			diffuseAndAdvectTemp(m_speed * dt, m_envGrid.potTemp);
 
@@ -590,10 +589,6 @@ void environment::diffuseAndAdvect(const float dt, float* array, bool vapor, con
 						const float up = m_NeighData[j].up == OUTSIDE ? getIsentropicVapor(yPos) : dif[j + GRIDSIZESKYX]; //Neumann due to being diffusion
 					
 						dif[j] = (array[j] + k * (left + right + up + down)) / (1 + 4 * k);
-						if (dif[j] != dif[j] || dif[j] < 0)
-						{
-							__debugbreak();
-						}
 					}
 					else // Else use nuemann
 					{
@@ -603,10 +598,6 @@ void environment::diffuseAndAdvect(const float dt, float* array, bool vapor, con
 						const float up = m_NeighData[j].up == OUTSIDE ? 0.0f : dif[j + GRIDSIZESKYX];
 	
 						dif[j] = (array[j] + k * (left + right + up + down)) / (1 + 4 * k);
-						if (dif[j] != dif[j] || dif[j] < 0)
-						{
-							__debugbreak();
-						}
 					}
 	
 				}
@@ -927,6 +918,7 @@ void environment::updateVelocityField(const float dt)
 	//Full Navier-Stroke formula
 	//u[t+1] = u + deltaTime * ( -(u * ∇)u - (1/ρ)∇p + v*(∇^2u) + b + f ); 
 	//We advect and add forces based on the Eulerian fluid solver of Hädrich et al. [2020]:
+	//But formulas from [Bridsone and Müller-Fischer 2007]
 	//• Set uA = advect(un, ∆t, un)
 	//• Add uB = uA + ∆t*g
 	
@@ -1069,7 +1061,7 @@ void environment::updateVelocityField(const float dt)
 
 float environment::calculateBuoyancy(const int i)
 {
-	const float mDistance = 4096.0f / VOXELSIZE;
+	const float mDistance = 4096.0f / VOXELSIZE; //Distance buoyancy will be taken into account.
 	const int oX = i % GRIDSIZESKYX;
 	const int oY = int(float(i) / GRIDSIZESKYX);
 
