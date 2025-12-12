@@ -407,7 +407,7 @@ void microPhys::calculateMicroPhysicsGround(microPhysGroundResult& data)
 
     data.Qrs = PGFLW - PGDEVP;
     data.Qv = PGREVP + PGDEVP;
-    data.Qr = PGSMLT + PGGMLT - PGREVP - PGGFR - PGSFR;
+    data.Qr = PGSMLT + PGGMLT - PGREVP - PGGFR - PGSFR - PGFLW;
     data.Qs = PGSFR - PGSMLT;
     data.Qi = PGGFR - PGGMLT;
     data.time = m_time;
@@ -1073,31 +1073,6 @@ float microPhys::FPGACR1(const float PGWET, const float PGACW, const float PGACI
     return 0.0f;
 }
 
-
-float microPhys::FPGEVP()
-{
-    if (m_Qrs > 0.0f)
-    {
-        const float BEG{ 200.0f }; // Evaporation rate of dry ground
-
-        const float D_ = 1e-6f; // Weigthed mean diffusivity of the ground //TODO: hmm, could tripple check if right
-        const float O_ = 0.1f; // evaporative ground water storage coefficient (i.e. only part of the soil can be evaporated) 
-        const float time = m_time;
-        //Only if Qgj = 0 (Precip falling)
-        if (m_Qr == 0 && m_Qs == 0 && m_Qi == 0)
-        {
-            m_time += dt;
-            return std::min(BEG * D_ * m_Qrs * exp(-time / 86400 * O_), m_Qrs);
-        }
-        else
-        {
-            m_time = 0;
-            return 0.0f;
-        }
-    }
-    return 0.0f;
-}
-
 float microPhys::FPGFLW()
 {
     if (m_Qr > 0.0f)
@@ -1244,7 +1219,14 @@ float microPhys::FPGREVP()
         const float Em = (m * RnG + m_Dair * Constants::Cpd * VPD * ga) / (Constants::E0v * (m + y));
 
         //Divide by density of air to get kg/kg*s since our grid is of 1:1 scale.
-        return std::max(0.0f, Em / m_Dair);
+        const float EmD = std::max(0.0f, Em / m_Dair);
+        
+        //Now we need to assume, since our whole land is not one big pool, water is gathered in pools
+        //Assuming random formula to calculate area of water
+        //This formula will result in: Qr:0.05 = 0.002m2 | Qr:0.1 = 0.003m2 | Qr:1 = 0.01m2 | Qr:100 = 0.1m2/m2
+        const float areaW = std::min(1.0f, 0.01f * sqrt(m_Qr));
+
+        return EmD * areaW;
     }
     return 0.0f;
 }

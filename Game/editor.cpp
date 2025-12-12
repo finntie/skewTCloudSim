@@ -65,6 +65,12 @@ void editor::setColors()
 	colorScheme.addColor("debugColor", 0.001f, bee::Colors::Orange);
 	colorScheme.addColor("debugColor", 0.01f, bee::Colors::Red);
 	colorScheme.addColor("debugColor", 0.1f, bee::Colors::Pink + glm::vec4(0, 0.8f, 0, 0));
+
+	colorScheme.createColorScheme("realistic", 0.0f, bee::Colors::Blue, 1.0f, bee::Colors::Black);
+	colorScheme.addColor("realistic", 0.0005f, glm::vec4(0.6f, 0.9f, 1.0f, 1.0f));
+	colorScheme.addColor("realistic", 0.001f, bee::Colors::White);
+	colorScheme.addColor("realistic", 0.005f, glm::vec4(0.8f, 0.8f, 0.8f, 1.0f));
+	colorScheme.addColor("realistic", 0.01f, glm::vec4(0.4f, 0.4f, 0.4f, 1.0f));
 }
 
 void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressures)
@@ -88,7 +94,6 @@ void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, floa
 	memcpy(m_envData->m_envTemp, isentropicTemps, GRIDSIZESKYY * sizeof(float));
 	memcpy(m_envData->m_envVapor, isentropicVapor, GRIDSIZESKYY * sizeof(float));
 	memcpy(m_envData->m_envPressure, pressures, GRIDSIZESKYY * sizeof(float));
-
 }
 
 void editor::update(float dt)
@@ -142,7 +147,7 @@ void editor::editMode()
 void editor::cameraControl()
 {
 	//Reset state until we de-selected the inspector
-#ifdef BEE_INSPECTOR
+//#ifdef BEE_INSPECTOR
 	if (bee::Engine.Inspector().IsSelected())
 	{
 		SaveMousePos = MousePos3D;
@@ -154,7 +159,7 @@ void editor::cameraControl()
 		MousePos3D = bee::screenToGround(bee::Engine.Input().GetMousePosition());
 		return;
 	}
-#endif
+//#endif
 
 	//At cursor
 	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::General, MousePos3D, 0.5f, glm::vec4(0, 0, 1, 1), glm::vec4(1.0));
@@ -784,13 +789,21 @@ void editor::viewSky()
 				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qi[int(x) + int(y) * GRIDSIZESKYX], color);
 				break;
 			case editor::WIND:
-				const glm::vec2 VelUV = m_envData->m_envView.velField[x + y * GRIDSIZESKYX];// getUV(int(x) + int(y) * GRIDSIZESKYX);
+				const glm::vec2 VelUV = Game.Environment().getUV(x + y * GRIDSIZESKYX);
+				// = m_envData->m_envView.velField[x + y * GRIDSIZESKYX];// getUV(int(x) + int(y) * GRIDSIZESKYX);
 				colorScheme.getColor("velField", glm::length(VelUV), color);
 				bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, 0.1f), glm::vec3(0.0f, 0.0f, 1.0f), VelUV, 0.9f, bee::Colors::Black);
 				break;
 			case editor::DEBUG1:
-				colorScheme.getColor("debugColor", m_envData->m_debugArray0[int(x) + int(y) * GRIDSIZESKYX], color);
+			{
+				//Currently for realistic view
+				const int idx = int(x) + int(y) * GRIDSIZESKYX;
+				const float allValues = m_envData->m_envView.Qw[idx] + m_envData->m_envView.Qc[idx] +
+					m_envData->m_envView.Qr[idx] + m_envData->m_envView.Qs[idx] + m_envData->m_envView.Qi[idx];
+
+				colorScheme.getColor("realistic", allValues, color);
 				break;
+			}
 			case editor::DEBUG2:
 				colorScheme.getColor("debugColor", m_envData->m_debugArray1[int(x) + int(y) * GRIDSIZESKYX], color);
 				break;
@@ -801,7 +814,7 @@ void editor::viewSky()
 				break;
 			}
 
-			bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.0f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
+			//bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.0f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
 			bee::Engine.DebugRenderer().AddFilledSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.01f), 1.0f, glm::vec3(0, 0, 1), { color, 1.0f });
 		}
 	}

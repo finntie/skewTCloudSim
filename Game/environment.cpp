@@ -72,6 +72,7 @@ void environment::init(double* potTemps, glm::vec2* velField, float* Qv, double*
 	{
 		m_isenTropicTemps[i] = float(potTemps[i * GRIDSIZESKYX]);
 		m_isenTropicVapor[i] = float(Qv[i * GRIDSIZESKYX]);
+		m_defaultVel[i] = 0.0f;// velField[i * GRIDSIZESKYX].x;
 	}
 
 	//Init ground
@@ -634,8 +635,8 @@ void environment::diffuseAndAdvect(const float dt, float* array, bool vapor, con
 			if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
 
 			//Advection
-			if (!vapor) PPMWAdvect(array, i, dt);
-			else
+			/*if (!vapor) PPMWAdvect(array, i, dt);
+			else*/
 			{
 				// Current Position of value
 				const glm::vec2 CPos = { i % GRIDSIZESKYX, int(i / GRIDSIZESKYX) };
@@ -791,6 +792,8 @@ void environment::PPMWAdvect(float* array, const int i, const float dt)
 	//Formula based on https://gmd.copernicus.org/preprints/gmd-2023-78/gmd-2023-78-manuscript-version5.pdf and https://gmd.copernicus.org/articles/13/5707/2020
 	//https://mom6.readthedocs.io/en/main/api/generated/pages/PPM.html and help from chat-GPT 
 
+	if (m_NeighData[i].right == OUTSIDE) return;
+
 	//Second-order in time in 2D
 	PPMWAdvectLR(array, i, dt / 2, true);
 	PPMWAdvectLR(array, i, dt, false);
@@ -816,7 +819,7 @@ float environment::PPMWAdvectFlux(float* array, const int idx, const float dt, c
 	if (!right && ((x && m_NeighData[idx].left != SKY) || (!x && m_NeighData[idx].down != SKY))) veli = (x ? m_envGrid.velField[idx].x : m_envGrid.velField[idx].y);
 	else veli = right ? (x ? m_envGrid.velField[idx].x : m_envGrid.velField[idx].y) : (x ? m_envGrid.velField[idx - 1].x : m_envGrid.velField[idx - GRIDSIZESKYX].y);
 
-	//Calculate C
+	//Calculate C (Courant number)
 	float C = veli * dt / VOXELSIZE;
 	C = C > 1.0f ? 1.0f : (C < -1.0f ? -1.0f : C);
 
@@ -854,12 +857,43 @@ float environment::PPMWAdvectFlux(float* array, const int idx, const float dt, c
 
 	//Slope limiter: van Leer
 	float s = 0.0f;
-	if ((qi - qLeft) * (qRight - qi) > 0.0f) s = glm::sign(qRight - qi) * std::min(0.5f * fabs(qRight - qLeft), std::min(2 * fabs(qRight - qi), 2 * fabs(qi - qLeft)));
-	const float qLS = qi - 0.5f * s;
-	const float qRS = qi + 0.5f * s;
+	const float diffLeft = qi - qLeft;
+	const float diffRight = qRight - qi;
 
+	//Check if qi is NOT a local extremum (higher or lower then both neighbours)
+	//Meaning, if (1,2,3), this would be true. In the case (1,2,1), it would be false.
+	if (diffLeft * diffRight > 0.0f)
+	{
+		//This we do to make sure the slope does not overshoot left or right.
+		//       
+		//    Overshoot  
+		//        /-\______
+		//       /
+		//      /
+		//---\_/
+		//  Undershoot
+		//     
+		const float diffBoth = qRight - qLeft;
+		const float absLeft = fabsf(diffLeft);
+		const float absRight = fabsf(diffRight);
+		const float absBoth = fabsf(diffBoth);
+
+		const float minDiff = std::min(2 * absRight, 2 * absLeft);
+		const float slopeLimit = std::min(0.5f * absBoth, minDiff);
+
+		//Sign
+		s = diffBoth >= 0.0f ? slopeLimit : -slopeLimit;
+	}
+
+	//Set initial parabolic edges
+	const float qLS = qi - 0.5f * s; //Left edge
+	const float qRS = qi + 0.5f * s; //Right edge
+
+	//Monotonicity constrained from Walcek
 	float B = 1.0f;
 
+	//If right edge is bigger then max or left edge is smaller then minimum.
+	//Can only happen if qi is NOT a local extremum (s = 0.0)
 	if (qRS > qMax)
 	{
 		const float denominator = qRS - qi;
@@ -881,7 +915,8 @@ float environment::PPMWAdvectFlux(float* array, const int idx, const float dt, c
 	float qR = qi + B * (qRS - qi);
 	float qL = qi + B * (qLS - qi);
 
-	//Fix extremum
+	//Fix extremum (qi is higher/lower then neighbours) i.e. (1,2,1)
+	//We just flatten it...
 	if ((qR - qi) * (qi - qL) <= 0.0f)
 	{
 		qR = qL = qi;
@@ -891,11 +926,13 @@ float environment::PPMWAdvectFlux(float* array, const int idx, const float dt, c
 	float flux = 0.0f;
 	if (C > 0.0f)
 	{
+		//a + bx + cx^2 (C being the variable (x))
 		const float qq = qR + C * (-qL - 2 * qR + 3 * qi) + C * C * (qL + qR - 2 * qi);
 		flux = veli * qq;
 	}
 	else
 	{
+		//a + bx + cx^2 (C being the variable (x))
 		const float qq = qR + C * (-2 * qL - qR + 3 * qi) + C * C * (qL + qR - 2 * qi);
 		flux = veli * qq;
 	}
@@ -1037,12 +1074,7 @@ void environment::updateVelocityField(const float dt)
 			//---V---
 			if (!getInterpolVel(PposV, false, valueV))
 			{
-				if (y == GRIDSIZESKYY - 1)
-				{
-					valueV = 0.0f; //Set to 0 at ceiling, because of free-slip
-					//TODO: make a solid solution by implementing it into the interpolation
-				}
-				else valueV = m_envGrid.velField[i].y;
+				 valueV = m_envGrid.velField[i].y;
 			}
 	
 			//----New Value------ = ----------Advection------ 
@@ -1401,20 +1433,20 @@ bool environment::getInterpolVel(glm::vec2 Ppos, bool U, float& output)
 		indexFull = { (std::round(Ppos.x) - 1), std::floor(Ppos.y) };
 		coord1 = { indexFull.x + 0.5f, indexFull.y };
 
-		if (indexFull.x < 0 || indexFull.x >= GRIDSIZESKYX - 1 || indexFull.y < 0 || indexFull.y >= GRIDSIZESKYY - 1 || isGround(int(indexFull.x), int(indexFull.y)))
-		{
-			return false;
-		}
+		//if (indexFull.x < 0 || indexFull.x >= GRIDSIZESKYX - 1 || indexFull.y < 0 || indexFull.y >= GRIDSIZESKYY - 1 || isGround(int(indexFull.x), int(indexFull.y)))
+		//{
+		//	return false;
+		//}
 	}
 	else
 	{
 		indexFull = { std::floor(Ppos.x), (std::round(Ppos.y) - 1) };
 		coord1 = { indexFull.x, indexFull.y + 0.5f };
 
-		if (indexFull.x < 0 || indexFull.x >= GRIDSIZESKYX - 1 || indexFull.y < 0 || indexFull.y >= GRIDSIZESKYY - 1 || isGround(int(indexFull.x), int(indexFull.y)))
-		{
-			return false;
-		}
+		//if (indexFull.x < 0 || indexFull.x >= GRIDSIZESKYX - 1 || indexFull.y < 0 || indexFull.y >= GRIDSIZESKYY - 1 || isGround(int(indexFull.x), int(indexFull.y)))
+		//{
+		//	return false;
+		//}
 	}
 
 	//If mainpoint is outside the barrier, we just use Neumann on the old value, thus returned false here already.
@@ -1423,11 +1455,15 @@ bool environment::getInterpolVel(glm::vec2 Ppos, bool U, float& output)
 	const int index10 = index00 + 1;
 	const int index01 = index00 + GRIDSIZESKYX; 
 	const int index11 = index01 + 1;
+	const float x = indexFull.x;
+	const float y = indexFull.y;
 
-	const glm::vec2 v00 = outside(index00) || isGround(int(indexFull.x), int(indexFull.y))     ? glm::vec2(0.0f) : m_envGrid.velField[index00];
-	const glm::vec2 v10 = outside(index10) || isGround(int(indexFull.x) + 1, int(indexFull.y)) ? glm::vec2(0.0f) : m_envGrid.velField[index10];
-	const glm::vec2 v01 = outside(index01) ? glm::vec2(m_envGrid.velField[index01].x, 0.0f) : isGround(int(indexFull.x), int(indexFull.y + 1)) ? glm::vec2(0.0f) : m_envGrid.velField[index01];
-	const glm::vec2 v11 = outside(index11) ? glm::vec2(m_envGrid.velField[index11].x, 0.0f) : isGround(int(indexFull.x) + 1, int(indexFull.y + 1)) ? glm::vec2(0.0f) : m_envGrid.velField[index11];
+	//TODO: when at top, use free-slip, not no-slip.
+
+	const glm::vec2 v00 = outside(x, y)			|| isGround(int(x), int(y))			|| m_NeighData[index00].right == OUTSIDE ? glm::vec2(m_defaultVel[int(y)], 0.0f) : m_envGrid.velField[index00];
+	const glm::vec2 v10 = outside(x + 1, y)		|| isGround(int(x) + 1, int(y))		|| m_NeighData[index10].right == OUTSIDE ? glm::vec2(m_defaultVel[int(y)], 0.0f) : m_envGrid.velField[index10];
+	const glm::vec2 v01 = outside(x, y + 1)		|| isGround(int(x), int(y) + 1)		|| m_NeighData[index01].right == OUTSIDE ? glm::vec2(m_defaultVel[int(y)], 0.0f) : m_envGrid.velField[index01];
+	const glm::vec2 v11 = outside(x + 1, y + 1) || isGround(int(x) + 1, int(y) + 1) || m_NeighData[index11].right == OUTSIDE ? glm::vec2(m_defaultVel[int(y)], 0.0f) : m_envGrid.velField[index11];
 
 
 	//Interpolate using bilinear interpolation, could be compressed
@@ -1461,11 +1497,11 @@ void environment::pressureProjectVelField()
 {
 	for (int i = 0; i < GRIDSIZESKY; i++)
 	{
-		if (i + GRIDSIZESKYX > GRIDSIZESKY)
+		if (m_NeighData[i].up != SKY)
 		{
 			m_envGrid.velField[i].y = 0.0f;
 		}
-		if (m_NeighData[i].right == GROUND)
+		if (m_NeighData[i].right != SKY)
 		{
 			m_envGrid.velField[i].x = 0.0f;
 		}
@@ -1484,7 +1520,8 @@ void environment::pressureProjectVelField()
 	{
 		if (isGround(i)) continue;
 
-		const float NxPresProj = m_NeighData[i].right == OUTSIDE ? 0.0f : m_NeighData[i].right == GROUND ? presProjections[i] : presProjections[i + 1];
+		//If at the right or upper cell, we don't add any value
+		const float NxPresProj = m_NeighData[i].right != SKY ? presProjections[i] : presProjections[i + 1];
 		const float NyPresProj = m_NeighData[i].up != SKY ? presProjections[i] : presProjections[i + GRIDSIZESKYX];
 
 		const float scale = 1.0f;
@@ -1546,16 +1583,18 @@ void environment::calculatePresProj(std::vector<float>& p)
 			A[idx].y = 0;
 			A[idx].x = 0;
 
+			//Right and Left side are neumann, thus we include it into the matrix
+			//Ceiling, and any ground will not be counted
+
 			if (isGround(x, y)) continue; 
-			//Set -1 for all x direction for neumann
-			A[idx].x = x == GRIDSIZESKYX - 1 || !isGround(x + 1, y) ? -1 : 0; //If outside or is not ground, set -1. 
-			A[idx].y = y < GRIDSIZESKYY - 1 && !isGround(x, y + 1) ? -1 : 0;
+			A[idx].x = m_NeighData[idx].right != GROUND ? -1 : 0;
+			A[idx].y = m_NeighData[idx].up == SKY ? -1 : 0;
 			A[idx].z = 0; 
 
-			if (x == GRIDSIZESKYX - 1 || !isGround(x + 1, y)) A[idx].z++;
-			if (y < GRIDSIZESKYY - 1 && !isGround(x, y + 1)) A[idx].z++;
-			if (x == 0 || !isGround(x - 1, y)) A[idx].z++;
-			if (y > 0 && !isGround(x, y - 1))  A[idx].z++;
+			if (m_NeighData[idx].right != GROUND) A[idx].z++;
+			if (m_NeighData[idx].up == SKY) A[idx].z++;
+			if (m_NeighData[idx].left != GROUND) A[idx].z++;
+			if (m_NeighData[idx].down == SKY)  A[idx].z++;
 		}
 	}
 
@@ -1575,7 +1614,7 @@ void environment::calculatePresProj(std::vector<float>& p)
 	}
 
 	calculatePrecon(precon, A);
-	setDebugArray(precon, 0);
+	setDebugArray(divergence, 1);
 	applyPreconditioner(precon, r, A, q, z);
 
 	//setDebugArray(s, 1);
@@ -1658,16 +1697,18 @@ void environment::calculateDivergence(std::vector<float>& output)
 {
 	for (int i = 0; i < GRIDSIZESKY; i++)
 	{
-		if (isGround(i)) continue;
-		float LRout = 1.0f;
-		const float Ucurr = m_NeighData[i].right == OUTSIDE ? m_envGrid.velField[i].x : m_NeighData[i].right == GROUND ? 0.0f : m_envGrid.velField[i].x; //Using Neumann boundary condition (or no-slip if ground)
-		const float Umin1 = m_NeighData[i].left == OUTSIDE || i == 0 ? LRout = 0.0f : m_NeighData[i].left == GROUND ? 0.0f : m_envGrid.velField[i - 1].x; //Using Neumann boundary condition (or no-slip if ground)
-		const float Vcurr = m_envGrid.velField[i].y; //Using free-slip boundary condition for Sky (this will be 0, because this velocity should be already set to 0)
-		const float Vmin1 = (m_NeighData[i].down == SKY && i - GRIDSIZESKYX >= 0) ? m_envGrid.velField[i - GRIDSIZESKYX].y : 0.0f; //Using no-slip boundary condition for ground
+		//If Right or Left at the outside cell. We make sure that the U-divergence will be 0 using U-Negate variable.
+		//If At Ceiling, we don't have to do anything: y is already set to 0, and ceiling is free-slip
+		//If at Ground, we set velocity to 0, creating divergence, making sure this is no-slip.
 
-		//Note that we set divergence to 0 if on the left boundary, this essentially just says: if divergence on boundary, add or subtract flux from the boundary so that divergence will be none.
-		//Essentially just making the program decide how much it needs to pull from the left or right side
-		output[i] = ((Ucurr - Umin1) + (Vcurr - Vmin1)) * LRout;
+		if (isGround(i)) continue;
+		float Uneg = 1.0f;
+		const float Ucurr = (m_NeighData[i].right == OUTSIDE && i != 0) ? Uneg = 0.0f : (m_NeighData[i].right == GROUND ? 0.0f : m_envGrid.velField[i].x);
+		const float Umin1 = (m_NeighData[i].left == OUTSIDE || i == 0) ? Uneg = 0.0f : (m_NeighData[i].left == GROUND ? 0.0f : m_envGrid.velField[i - 1].x);
+		const float Vcurr = m_envGrid.velField[i].y;
+		const float Vmin1 = (m_NeighData[i].down == SKY && i - GRIDSIZESKYX >= 0) ? m_envGrid.velField[i - GRIDSIZESKYX].y : 0.0f;
+
+		output[i] = ((Ucurr - Umin1) * Uneg + (Vcurr - Vmin1));
 	}
 }
 
@@ -1759,7 +1800,7 @@ void environment::applyPreconditioner(std::vector<float>& precon, std::vector<fl
 	}
 	//setDebugArray(output);
 	//setDebugArray(q, 0);
-	setDebugArray(output, 1);
+	//setDebugArray(output, 1);
 
 }
 
@@ -1837,6 +1878,7 @@ glm::vec3 environment::calculateFallingVelocity(const int i, const float densAir
 
 void environment::updateMicroPhysics(const float dt, const int i, const float T, const float density)
 {
+	if (m_NeighData[i].right == OUTSIDE) return;
 	const int idxX = i % GRIDSIZESKYX;
 	const int idxY = i / GRIDSIZESKYX;
 

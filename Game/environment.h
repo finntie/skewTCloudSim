@@ -5,12 +5,12 @@
 #include "half/half.hpp"
 #include <glm/glm.hpp>
 
-#define GRIDSIZESKYX 32 
-#define GRIDSIZESKYY 32
+#define GRIDSIZESKYX 64 
+#define GRIDSIZESKYY 64
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY)
 #define GRIDSIZEGROUND (GRIDSIZESKYX)
-#define VOXELSIZE 32.0f //Meters
+#define VOXELSIZE 256.0f //Meters
 
 struct envDebugData;
 
@@ -135,6 +135,7 @@ private:
 	float m_isenTropicTemps[GRIDSIZESKYY]{ 0.0f };
 	float m_isenTropicVapor[GRIDSIZESKYY]{ 0.0f };
 	float m_pressures[GRIDSIZESKYY]{ 0.0f };
+	float m_defaultVel[GRIDSIZESKYY]{ 0.0f };
 	int m_GHeight[GRIDSIZEGROUND]{ 0 };
 
 	//Storage array for setting boundary conditions easier.

@@ -19,7 +19,7 @@ public:
 	~editor();
 	void setColors();
 	//We also include m_pressures
-	void setIsentropics(float* isentropicTemps, float* isentropicVapor, float* m_pressures);
+	void setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressures);
 
 	void update(float dt);
 	void panel();
