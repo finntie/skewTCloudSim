@@ -19,6 +19,7 @@
 #include "core/input.hpp"
 #include "tools/log.hpp"
 #include "imgui/imgui.h"
+#include "environment.cuh"
 #include "game.h"
 
 
@@ -57,9 +58,9 @@ environment::~environment()
 
 }
 
-void environment::init(double* potTemps, glm::vec2* velField, float* Qv, double* groundTemp, float* groundPres, float* pressures)
+void environment::init(float* potTemps, glm::vec2* velField, float* Qv, double* groundTemp, float* groundPres, float* pressures)
 {
-	memcpy(m_envGrid.potTemp, potTemps, GRIDSIZESKY * sizeof(double));
+	memcpy(m_envGrid.potTemp, potTemps, GRIDSIZESKY * sizeof(float));
 	memcpy(m_envGrid.velField, velField, GRIDSIZESKY * sizeof(glm::vec2));
 	memcpy(m_envGrid.Qv, Qv, GRIDSIZESKY * sizeof(float));
 
@@ -72,7 +73,8 @@ void environment::init(double* potTemps, glm::vec2* velField, float* Qv, double*
 	{
 		m_isenTropicTemps[i] = float(potTemps[i * GRIDSIZESKYX]);
 		m_isenTropicVapor[i] = float(Qv[i * GRIDSIZESKYX]);
-		m_defaultVel[i] = 0.0f;// velField[i * GRIDSIZESKYX].x;
+		m_defaultVel[i] = velField[i * GRIDSIZESKYX].x;
+		m_dummyArray[i] = 1.0f;
 	}
 
 	//Init ground
@@ -217,8 +219,7 @@ void environment::Update(float dt)
 
 			// 1.
 			calculateDivergence(debugVector3);
-			diffuseAndAdvectTemp(m_speed * dt, m_envGrid.potTemp);
-
+			diffuseAndAdvectTemp(m_speed * dt);
 
 
 			// 2.
@@ -228,12 +229,38 @@ void environment::Update(float dt)
 
 
 			// 3.
-			diffuseAndAdvect(m_speed * dt, m_envGrid.Qv, true);
-			diffuseAndAdvect(m_speed * dt, m_envGrid.Qw);
-			diffuseAndAdvect(m_speed * dt, m_envGrid.Qc);
-			diffuseAndAdvect(m_speed * dt, m_envGrid.Qr, false, 1);
-			diffuseAndAdvect(m_speed * dt, m_envGrid.Qs, false, 2);
-			diffuseAndAdvect(m_speed * dt, m_envGrid.Qi, false, 3);
+			{
+				//std::vector<float> density;
+				//density.resize(GRIDSIZESKY);
+				//for (int i = 0; i < GRIDSIZESKY; i++)
+				//{
+				//	velocityX[i] = m_envGrid.velField[i].x;
+				//	velocityY[i] = m_envGrid.velField[i].y;
+				//	density[i] = 1.0f;
+				//}
+				//
+				//Game.EnvGPU().advectPPMWGPU(density.data(), m_dummyArray, velocityX, velocityY, m_NeighData, dt * m_speed);
+
+				////for (int loop = 0; loop < 2; loop++)
+				////{
+				////	for (int i = 0; i < GRIDSIZESKY; i++)
+				////	{
+				////		if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
+				////		PPMWAdvect(density.data(), m_dummyArray, i, dt * m_speed);
+				////	}
+				////}
+				//diffuseAndAdvect(m_speed * dt, m_envGrid.Qv, density, true);
+				//diffuseAndAdvect(m_speed * dt, m_envGrid.Qw, density);
+				//diffuseAndAdvect(m_speed * dt, m_envGrid.Qc, density);
+				//diffuseAndAdvect(m_speed * dt, m_envGrid.Qr, density, false, 1);
+				//diffuseAndAdvect(m_speed * dt, m_envGrid.Qs, density, false, 2);
+				//diffuseAndAdvect(m_speed * dt, m_envGrid.Qi, density, false, 3);
+				//for (int i = 0; i < GRIDSIZESKY; i++)
+				//{
+				//	density[i] -= 1;
+				//}
+				//setDebugArray(density, 1);
+			}
 
 			// --	Loop 	--
 			for (int loop = 0; loop < 2; loop++)
@@ -274,7 +301,7 @@ void environment::Update(float dt)
 			//setDebugArray(debugVector3, 1);
 		}
 
-		m_time += m_speed * dt * int(!m_pauseDiurnal);
+		m_time += m_speed * dt * float(!m_pauseDiurnal);
 		if (m_time > 86400.0f) m_time = 0.0f;
 	}
 }
@@ -444,87 +471,111 @@ float environment::calculateSumPhaseHeatGround(const int i)
 	return sumPhaseheat;
 }
 
-void environment::diffuseAndAdvectTemp(const float dt, double* array)
+void environment::diffuseAndAdvectTemp(const float dt)
 {
 	// Diffuse
 	// For temperature, we use ambient as boundary condition
+
+	std::vector<float> dif;
+	dif.resize(GRIDSIZESKY);
+	std::memcpy(dif.data(), m_envGrid.potTemp, GRIDSIZESKY * sizeof(float));
+
+	const float k = 0.005f * dt / (VOXELSIZE * VOXELSIZE); //Viscosity value
+	const int LOOPS = 20; //Total loops for the Gauss-Seidel method
+	for (int loop = 0; loop < 2; loop++)
 	{
-		std::vector<double> dif;
-		dif.resize(GRIDSIZESKY);
-		std::memcpy(dif.data(), m_envGrid.potTemp, GRIDSIZESKY * sizeof(double));
-
-		const float k = 0.005f * dt / (VOXELSIZE * VOXELSIZE); //Viscosity value
-		const int LOOPS = 20; //Total loops for the Gauss-Seidel method
-		for (int loop = 0; loop < 2; loop++)
+		for (int L = 0; L < LOOPS; L++)
 		{
-			for (int L = 0; L < LOOPS; L++)
+			for (int j = 0; j < GRIDSIZESKY; j++)
 			{
-				for (int j = 0; j < GRIDSIZESKY; j++)
-				{
-					if ((j + loop + int(float(j) / GRIDSIZESKYX)) % 2 == 0 || isGround(j)) continue;
+				if ((j + loop + int(float(j) / GRIDSIZESKYX)) % 2 == 0 || isGround(j)) continue;
 
-					const float yPos = floor(float(j) / GRIDSIZESKYX);
-					const int idxGL = (j - 1) % GRIDSIZESKYX;
-					const int idxGR = (j + 1) % GRIDSIZESKYX;
-					const int idxGD = j % GRIDSIZESKYX;
+				const float yPos = floor(float(j) / GRIDSIZESKYX);
+				const int idxGL = (j - 1) % GRIDSIZESKYX;
+				const int idxGR = (j + 1) % GRIDSIZESKYX;
+				const int idxGD = j % GRIDSIZESKYX;
 
-					//TODO: could use a function inside this function which switches over the types, is faster.
-					const double l = m_NeighData[j].left == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].left == GROUND && isGroundLevel(idxGL, int(yPos)) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGL]) - 273.25f,  m_pressures[int(yPos)], m_groundGrid.P[idxGL]) + 273.15f : dif[j - 1];
-					const double r = m_NeighData[j].right == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].right == GROUND && isGroundLevel(idxGR, int(yPos)) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGR]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGR]) + 273.15f : dif[j + 1];
-					const double d = m_NeighData[j].down == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGD]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGD]) + 273.15f : dif[j - GRIDSIZESKYX];
-					const double u = m_NeighData[j].up == OUTSIDE ? getIsentropicTemp(yPos) : dif[j + GRIDSIZESKYX];
+				//TODO: could use a function inside this function which switches over the types, is faster.
+				const float l = m_NeighData[j].left == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].left == GROUND && isGroundLevel(idxGL, int(yPos)) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGL]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGL]) + 273.15f : dif[j - 1];
+				const float r = m_NeighData[j].right == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].right == GROUND && isGroundLevel(idxGR, int(yPos)) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGR]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGR]) + 273.15f : dif[j + 1];
+				const float d = m_NeighData[j].down == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGD]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGD]) + 273.15f : dif[j - GRIDSIZESKYX];
+				const float u = m_NeighData[j].up == OUTSIDE ? getIsentropicTemp(yPos) : dif[j + GRIDSIZESKYX];
 
-					dif[j] = (m_envGrid.potTemp[j] + k * (l + r + u + d)) / (1 + 4 * k);
-				}
+				dif[j] = (m_envGrid.potTemp[j] + k * (l + r + u + d)) / (1 + 4 * k);
 			}
 		}
-		std::memcpy(m_envGrid.potTemp, dif.data(), GRIDSIZESKY * sizeof(double));
+	}
+	std::memcpy(m_envGrid.potTemp, dif.data(), GRIDSIZESKY * sizeof(float));
+
+	float density[GRIDSIZESKY];
+
+	for (int i = 0; i < GRIDSIZESKY; i++)
+	{
+		velocityX[i] = m_envGrid.velField[i].x;
+		velocityY[i] = m_envGrid.velField[i].y;
+		density[i] = 1.0f;
 	}
 
+
+
+
 	//Advection
-	for (int loop = 0; loop < 2; loop++)
+	//for (int loop = 0; loop < 2; loop++)
 	{
 		for (int i = 0; i < GRIDSIZESKY; i++)
 		{
 			// we want not to update neighbouring cells, so we do the Red-Black Gauss-Seidel tactic
-			if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
-
+			//if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
+			if (isGround(i)) continue;
 			//If at the ground, set to ground temp
 			if (isGround(i - GRIDSIZESKYX))
 			{
 				int y = i / GRIDSIZESKYX;
 				const float T = meteoformulas::potentialTemp(float(m_groundGrid.T[i % GRIDSIZESKYX]) - 273.15f, m_pressures[y], m_groundGrid.P[i % GRIDSIZESKYX]) + 273.15f;
-				const double dif = array[i] - T;
-				array[i] -= dif * dt * 0.1f;
+				const float dif2 = m_envGrid.potTemp[i] - T;
+				m_envGrid.potTemp[i] -= dif2 * std::min(1.0f, dt / m_speed);
 				continue;
 			}
+			
+			//PPMWAdvect(density, m_dummyArray, i, dt);
 
-			// Current Position of value
-			const glm::vec2 CPos = { i % GRIDSIZESKYX, int(i / GRIDSIZESKYX) };
+			//PPMWAdvect(m_envGrid.potTemp, m_isenTropicTemps, i, dt);
 
-			// Current Velocity of the exact cell, also applying falling velocity
-			const glm::vec2 CVel = getUV(i);
-			// Previous Position of value
-			const glm::vec2 PPos = CPos - dt * CVel / VOXELSIZE; //Get previous position of particle
 
-			double value = 0.0f;
-			//Get current value of previous position
-			getInterpolValueTemp(array, PPos, value);
+			//// Current Position of value
+			//const glm::vec2 CPos = { i % GRIDSIZESKYX, int(i / GRIDSIZESKYX) };
 
-			array[i] = value;
+			//// Current Velocity of the exact cell, also applying falling velocity
+			//const glm::vec2 CVel = getUV(i);
+			//// Previous Position of value
+			//const glm::vec2 PPos = CPos - dt * CVel / VOXELSIZE; //Get previous position of particle
 
-			if (array[i] != array[i] || array[i] < 0)
-			{
-				array[i] = 0;
-			}
+			//float value = 0.0f;
+			////Get current value of previous position
+			//getInterpolValueTemp(m_envGrid.potTemp, PPos, value);
+
+			//m_envGrid.potTemp[i] = value;
+
+			//if (m_envGrid.potTemp[i] != m_envGrid.potTemp[i] || m_envGrid.potTemp[i] < 0)
+			//{
+			//	m_envGrid.potTemp[i] = 0;
+			//}
 		}
 	}
 
+	Game.EnvGPU().advectPPMWGPU(density, m_dummyArray, velocityX, velocityY, m_NeighData, dt);
+	Game.EnvGPU().advectPPMWGPU(m_envGrid.potTemp, m_isenTropicTemps, velocityX, velocityY, m_NeighData, dt);
 
-
+	for (int i = 0; i < GRIDSIZESKY; i++)
+	{
+		m_envGrid.potTemp[i] /= density[i];
+		density[i] -= 1.0f;
+		//m_debugArray1[i] = density[i];
+	}
+	//setDebugArray(density, 1);
 }
 
-void environment::getInterpolValueTemp(double* array, const glm::vec2 Ppos, double& output)
+void environment::getInterpolValueTemp(float* array, const glm::vec2 Ppos, float& output)
 {
 	//Get surrounding values 
 	glm::vec2 coord1 = { (std::floor(Ppos.x)), std::floor(Ppos.y) };
@@ -538,16 +589,16 @@ void environment::getInterpolValueTemp(double* array, const glm::vec2 Ppos, doub
 	const int idxG1 = int(coord1.x + 1);
 
 	//Use Isentropic Temp if outside of grid and also check for ground which we need to make potential temp
-	const double value00 = outside(coord1.x, coord1.y) ? getIsentropicTemp(coord1.y) : isGround(index00) && isGroundLevel(index00) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG0]) - 273.15f, m_pressures[index00 / GRIDSIZESKYX], m_groundGrid.P[idxG0]) + 273.15f : array[index00];
-	const double value10 = outside(coord1.x + 1, coord1.y) ? getIsentropicTemp(coord1.y) : isGround(index10) && isGroundLevel(index10) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG1]) - 273.15f, m_pressures[index10 / GRIDSIZESKYX], m_groundGrid.P[idxG1]) + 273.15f : array[index10];
-	const double value01 = outside(coord1.x, coord1.y + 1) ? getIsentropicTemp(coord1.y + 1) : isGround(index01) && isGroundLevel(index01) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG0]) - 273.15f, m_pressures[index01 / GRIDSIZESKYX], m_groundGrid.P[idxG0]) + 273.15f : array[index01];
-	const double value11 = outside(coord1.x + 1, coord1.y + 1) ? getIsentropicTemp(coord1.y + 1) : isGround(index11) && isGroundLevel(index11) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG1]) - 273.15f, m_pressures[index11 / GRIDSIZESKYX], m_groundGrid.P[idxG1]) + 273.15f : array[index11];
+	const float value00 = outside(coord1.x, coord1.y) ? getIsentropicTemp(coord1.y) : isGround(index00) && isGroundLevel(index00) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG0]) - 273.15f, m_pressures[index00 / GRIDSIZESKYX], m_groundGrid.P[idxG0]) + 273.15f : array[index00];
+	const float value10 = outside(coord1.x + 1, coord1.y) ? getIsentropicTemp(coord1.y) : isGround(index10) && isGroundLevel(index10) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG1]) - 273.15f, m_pressures[index10 / GRIDSIZESKYX], m_groundGrid.P[idxG1]) + 273.15f : array[index10];
+	const float value01 = outside(coord1.x, coord1.y + 1) ? getIsentropicTemp(coord1.y + 1) : isGround(index01) && isGroundLevel(index01) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG0]) - 273.15f, m_pressures[index01 / GRIDSIZESKYX], m_groundGrid.P[idxG0]) + 273.15f : array[index01];
+	const float value11 = outside(coord1.x + 1, coord1.y + 1) ? getIsentropicTemp(coord1.y + 1) : isGround(index11) && isGroundLevel(index11) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxG1]) - 273.15f, m_pressures[index11 / GRIDSIZESKYX], m_groundGrid.P[idxG1]) + 273.15f : array[index11];
 		
 	//Interpolate using bilinear interpolation, could be compressed
 
-	double interpX = ((coord1.x + 1) - Ppos.x) / ((coord1.x + 1) - coord1.x) * value00 +
+	float interpX = ((coord1.x + 1) - Ppos.x) / ((coord1.x + 1) - coord1.x) * value00 +
 		(Ppos.x - coord1.x) / ((coord1.x + 1) - coord1.x) * value10;
-	double interpX2 = ((coord1.x + 1) - Ppos.x) / ((coord1.x + 1) - coord1.x) * value01 +
+	float interpX2 = ((coord1.x + 1) - Ppos.x) / ((coord1.x + 1) - coord1.x) * value01 +
 		(Ppos.x - coord1.x) / ((coord1.x + 1) - coord1.x) * value11;
 	output = ((coord1.y + 1) - Ppos.y) / ((coord1.y + 1) - coord1.y) * interpX +
 		(Ppos.y - coord1.y) / ((coord1.y + 1) - coord1.y) * interpX2;
@@ -558,7 +609,7 @@ void environment::getInterpolValueTemp(double* array, const glm::vec2 Ppos, doub
 	}
 }
 
-void environment::diffuseAndAdvect(const float dt, float* array, bool vapor, const int fallVelType)
+void environment::diffuseAndAdvect(const float dt, float* array, std::vector<float>& density, bool vapor, const int fallVelType)
 {
 
 	// Diffuse
@@ -581,7 +632,7 @@ void environment::diffuseAndAdvect(const float dt, float* array, bool vapor, con
 					const float yPos = floor(float(j) / GRIDSIZESKYX);
 	
 					//TODO: could use a function inside this function which switches over the types, is faster.
-					if (vapor) //If vapor, we wrap the edges
+					if (vapor) //If vapor, we use default value
 					{
 						if (m_NeighData[j].down == GROUND) { dif[j] = array[j]; continue; }
 						const float left = m_NeighData[j].left == OUTSIDE ? getIsentropicVapor(yPos) : m_NeighData[j].left == GROUND ? dif[j] : dif[j - 1];
@@ -626,41 +677,65 @@ void environment::diffuseAndAdvect(const float dt, float* array, bool vapor, con
 		interPolatePrecip(dt, array, fallVelType);
 	}
 
+	if (vapor)
+	{
+		Game.EnvGPU().advectPPMWGPU(array, m_isenTropicVapor, velocityX, velocityY, m_NeighData, dt);
+	}
+	else
+	{
+		Game.EnvGPU().advectPPMWGPU(array, nullptr, velocityX, velocityY, m_NeighData, dt);
+	}
+
+
+
 	//Advect using wind field
-	for (int loop = 0; loop < 2; loop++)
+	//for (int loop = 0; loop < 2; loop++)
 	{
 		for (int i = 0; i < GRIDSIZESKY; i++)
 		{
 			// we want not to update neighbouring cells, so we do the Red-Black Gauss-Seidel tactic
-			if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
+			if (isGround(i)) continue;
 
 			//Advection
-			/*if (!vapor) PPMWAdvect(array, i, dt);
-			else*/
-			{
-				// Current Position of value
-				const glm::vec2 CPos = { i % GRIDSIZESKYX, int(i / GRIDSIZESKYX) };
-				// Current Velocity of the exact cell, also applying falling velocity
-				const glm::vec2 CVel = getUV(i);
-				// Previous Position of value
-				const glm::vec2 PPos = CPos - dt * CVel / VOXELSIZE; //Get previous position of particle
-				
-				float value = 0.0f;
-				//Get current value of previous position
-				if (!getInterpolValue(array, PPos, vapor, value))
-				{
-					value = array[i];
-				}
-				
-				array[i] = value;
-			}
+			//if (vapor)
+			//{
+			//	PPMWAdvect(array, m_isenTropicVapor, i, dt);
+			//}
+			//else
+			//{
+			//	PPMWAdvect(array, nullptr, i, dt);
+			//}
+			//else
+			//{
+			//	// Current Position of value
+			//	const glm::vec2 CPos = { i % GRIDSIZESKYX, int(i / GRIDSIZESKYX) };
+			//	// Current Velocity of the exact cell, also applying falling velocity
+			//	const glm::vec2 CVel = getUV(i);
+			//	// Previous Position of value
+			//	const glm::vec2 PPos = CPos - dt * CVel / VOXELSIZE; //Get previous position of particle
+			//	
+			//	float value = 0.0f;
+			//	//Get current value of previous position
+			//	if (!getInterpolValue(array, PPos, vapor, value))
+			//	{
+			//		value = array[i];
+			//	}
+			//	
+			//	array[i] = value;
+			//}
 
-			if (array[i] != array[i] || array[i] < 0)
-			{
-				array[i] = 0;
-			}
+			//if (array[i] != array[i] || array[i] < 0)
+			//{
+			//	array[i] = 0;
+			//}
 		}
 	}
+
+	for (int i = 0; i < GRIDSIZESKY; i++)
+	{
+		array[i] /= density[i];
+	}
+	
 	//if (fallVelType == 3) setDebugArray(debugVector, 0);
 }
 
@@ -786,41 +861,58 @@ bool environment::getInterpolValue(float* array, const glm::vec2 Ppos, const boo
 	return true;
 }
 
-void environment::PPMWAdvect(float* array, const int i, const float dt)
+void environment::PPMWAdvect(float* array, float* defaultVal, const int i, const float dt)
 {
 	//Using PPM (Piecewise Parabolic Method) advection with Walcek. 
 	//Formula based on https://gmd.copernicus.org/preprints/gmd-2023-78/gmd-2023-78-manuscript-version5.pdf and https://gmd.copernicus.org/articles/13/5707/2020
-	//https://mom6.readthedocs.io/en/main/api/generated/pages/PPM.html and help from chat-GPT 
+	//Parabolic Flux formula substituted from https://mom6.readthedocs.io/en/main/api/generated/pages/PPM.html 
+	//And help from chat-GPT 
 
-	if (m_NeighData[i].right == OUTSIDE) return;
-
+	if (m_NeighData[i].right == OUTSIDE)
+	{
+		return;
+	}
 	//Second-order in time in 2D
-	PPMWAdvectLR(array, i, dt / 2, true);
-	PPMWAdvectLR(array, i, dt, false);
-	PPMWAdvectLR(array, i, dt / 2, true);
+	PPMWAdvectLR(array, defaultVal, i, dt / 2, true);
+	PPMWAdvectLR(array, defaultVal, i, dt, false);
+	PPMWAdvectLR(array, defaultVal, i, dt / 2, true);
 }
 
-void environment::PPMWAdvectLR(float* array, const int idx, const float dt, const bool x)
+void environment::PPMWAdvectLR(float* array, float* defaultVal, const int idx, const float dt, const bool x)
 {
-	const float fluxRight = PPMWAdvectFlux(array, idx, dt, x, true);
-	const float fluxLeft = PPMWAdvectFlux(array, idx, dt, x, false);
+	const float fluxRight = PPMWAdvectFlux(array, defaultVal, idx, dt, x, true);
+	const float fluxLeft = PPMWAdvectFlux(array, defaultVal, idx, dt, x, false);
 
 	array[idx] = array[idx] - dt / VOXELSIZE * (fluxRight - fluxLeft);
 }
 
-float environment::PPMWAdvectFlux(float* array, const int idx, const float dt, const bool x, const bool right)
+float environment::PPMWAdvectFlux(float* array, float* defaultVal, const int idx, const float dt, const bool x, const bool right)
 {
 	//Down/up = dirichlet, otherwise is Neumann
 	//Can't check left face or down face if it is none existing. 
 
 	const int dirX = right ? 1 : -1;
 	const int dirY = right ? GRIDSIZESKYX : -GRIDSIZESKYX;
+	const int idxY = idx / GRIDSIZESKYX;
+
 	float veli = 0.0f;
-	if (!right && ((x && m_NeighData[idx].left != SKY) || (!x && m_NeighData[idx].down != SKY))) veli = (x ? m_envGrid.velField[idx].x : m_envGrid.velField[idx].y);
-	else veli = right ? (x ? m_envGrid.velField[idx].x : m_envGrid.velField[idx].y) : (x ? m_envGrid.velField[idx - 1].x : m_envGrid.velField[idx - GRIDSIZESKYX].y);
+	if (!right && ((x && m_NeighData[idx].left != SKY) || (!x && m_NeighData[idx].down != SKY)))
+	{
+		//If there is no left or down, use center
+		veli = (x ? m_envGrid.velField[idx].x : m_envGrid.velField[idx].y);
+	}
+	else
+	{
+		//Else if right or up, use the current ones, else use the one to the left or down
+		veli = right ? (x ? m_envGrid.velField[idx].x : m_envGrid.velField[idx].y) : (x ? m_envGrid.velField[idx - 1].x : m_envGrid.velField[idx - GRIDSIZESKYX].y);
+	}
 
 	//Calculate C (Courant number)
 	float C = veli * dt / VOXELSIZE;
+	if (C > 1.0f || C < -1.0f)
+	{
+		__debugbreak();
+	}
 	C = C > 1.0f ? 1.0f : (C < -1.0f ? -1.0f : C);
 
 	//Depending on upwind/downwind, we use i or i + 1
@@ -837,7 +929,17 @@ float environment::PPMWAdvectFlux(float* array, const int idx, const float dt, c
 	if (right && downWind && ((x && m_NeighData[idx].right != SKY) || (!x && m_NeighData[idx].up != SKY)) ||
 		!right && downWind && ((x && m_NeighData[idx].left != SKY) || (!x && m_NeighData[idx].down != SKY)))
 	{
-		qi = qRight = qLeft = array[idx]; // Set to 0 if dirichlet
+		if (defaultVal == nullptr)
+		{
+			//qi = qRight = qLeft = 0;
+			return 0.0f;
+		}
+		else
+		{
+			qi = qRight = qLeft = defaultVal[idxY]; // Set to 0 if dirichlet
+		}
+
+		//qi = qRight = qLeft = array[idx]; // Set to 0 if dirichlet
 	}
 	else if (x)
 	{
@@ -878,7 +980,7 @@ float environment::PPMWAdvectFlux(float* array, const int idx, const float dt, c
 		const float absRight = fabsf(diffRight);
 		const float absBoth = fabsf(diffBoth);
 
-		const float minDiff = std::min(2 * absRight, 2 * absLeft);
+		const float minDiff = std::min(absRight, absLeft);
 		const float slopeLimit = std::min(0.5f * absBoth, minDiff);
 
 		//Sign
@@ -945,11 +1047,7 @@ void environment::updateVelocityField(const float dt)
 {
 	//--------DEBUG--------
 	std::vector<float> debugVector;
-	std::vector<float> debugVector2;
-	std::vector<float> debugVector3;
 	debugVector.resize(GRIDSIZESKY);
-	debugVector2.resize(GRIDSIZESKY);
-	debugVector3.resize(GRIDSIZESKY);
 
 
 	//Full Navier-Stroke formula
@@ -980,11 +1078,10 @@ void environment::updateVelocityField(const float dt)
 		}
 	
 		float B = calculateBuoyancy(i);
-		glm::vec2 F = vorticityConfinement(i);
+		glm::vec2 F = { 0,0 };
+		//glm::vec2 F = vorticityConfinement(i); TODO: Fix on sides
 		
-		debugVector[i] = F.x;
-		debugVector2[i] = F.y;
-		debugVector3[i] = B;
+		debugVector[i] = B;
 		//F.x = 0.0f;
 		//F.y = 0.0f;
 		//B = 0.0f;
@@ -992,10 +1089,7 @@ void environment::updateVelocityField(const float dt)
 		m_envGrid.velField[i].y += m_speed * dt * (B + F.y);
 	}
 	
-	
-	//setDebugArray(debugVector);
-	//setDebugArray(debugVector2, 1);
-	setDebugArray(debugVector3, 2);
+	setDebugArray(debugVector, 2);
 	
 	
 	//2. TODO: could make use of same matrix projection() uses.
@@ -1005,7 +1099,7 @@ void environment::updateVelocityField(const float dt)
 		dif.resize(GRIDSIZESKY);
 		std::memcpy(dif.data(), m_envGrid.velField, GRIDSIZESKY * sizeof(glm::vec2));
 	
-		const float k = 0.01f / (VOXELSIZE * VOXELSIZE); //Viscosity value
+		const float k = 1.0f * dt / (VOXELSIZE * VOXELSIZE); //Viscosity value
 		const int LOOPS = 20; //Total loops for the Gauss-Seidel method
 		for (int loop = 0; loop < 2; loop++)
 		{
@@ -1033,57 +1127,100 @@ void environment::updateVelocityField(const float dt)
 	//---Advection of velocity using Semi-Langrasian Advection---
 	//We use the old value to simulate where the particle was, we get the velocity from that exact location and use that velocity for our next step
 	//If our value lies outside the grid, we just use our old velocity.
-	for (int loop = 0; loop < 2; loop++)
 	{
+		float density[GRIDSIZESKY];
+
+
 		for (int i = 0; i < GRIDSIZESKY; i++)
 		{
-			const int y = i / GRIDSIZESKYX;
-			if ((i + loop + y) % 2 == 0 || isGround(i)) continue;
-	
-	
-			int divisionBy = 4;
-			if (m_NeighData[i].left == GROUND) divisionBy--;
-			if (m_NeighData[i].right == GROUND) divisionBy--;
-			if (m_NeighData[i].up != SKY) divisionBy--;
-			if (m_NeighData[i].down != SKY) divisionBy--;
+			if (m_NeighData[i].up != SKY)
+			{
+				m_envGrid.velField[i].y = 0.0f;
+			}
+			if (m_NeighData[i].right != SKY)
+			{
+				m_envGrid.velField[i].x = m_defaultVel[i / GRIDSIZESKYX];
+			}
+		}
 
-			const glm::vec2 center = m_envGrid.velField[i];
-			const glm::vec2 left  = m_NeighData[i].left  == OUTSIDE ? center : m_NeighData[i].left == GROUND ? glm::vec2(0.0f) : m_envGrid.velField[i - 1];	// Neumann (Or no slip)
-			const glm::vec2 right = m_NeighData[i].right == OUTSIDE ? center : m_NeighData[i].right == GROUND ? glm::vec2(0.0f) : m_envGrid.velField[i + 1];	// Neumann (Or no slip)
-			const glm::vec2 up    = m_NeighData[i].up    != SKY ? glm::vec2(m_envGrid.velField[i].x, 0.0f) : m_envGrid.velField[i + GRIDSIZESKYX]; // Free slip
-			const glm::vec2 down  = m_NeighData[i].down  != SKY ? glm::vec2(0.0f) : m_envGrid.velField[i - GRIDSIZESKYX]; // no slip
-	
-			// Current Position of U and V 
-			const glm::vec2 CposU = { i % GRIDSIZESKYX + 0.5f, int(i / GRIDSIZESKYX) };
-			const glm::vec2 CposV = { i % GRIDSIZESKYX, int(i / GRIDSIZESKYX) + 0.5f };
-			// Current Velocity of U and V
-			const glm::vec2 CVelU = { center.x, (left.y + right.y + up.y + down.y) / divisionBy };
-			const glm::vec2 CVelV = { (left.x + right.x + up.x + down.x) / divisionBy, center.y };
-			// Previous Position of U and V
-			const glm::vec2 PposU = CposU - m_speed * dt * CVelU / VOXELSIZE; //Get previous position of particle
-			const glm::vec2 PposV = CposV - m_speed * dt * CVelV / VOXELSIZE; //Get previous position of particle
-	
-			float valueU = 0.0f;
-			float valueV = 0.0f;
-	
-			//---U---
-			if (!getInterpolVel(PposU, true, valueU))
+		for (int i = 0; i < GRIDSIZESKY; i++) 
+		{
+			velocityX[i] = m_envGrid.velField[i].x;
+			velocityY[i] = m_envGrid.velField[i].y;
+			density[i] = 1.0f;
+		}
+
+
+		Game.EnvGPU().advectPPMWGPU(density, m_dummyArray,   velocityX, velocityY, m_NeighData, dt * m_speed);
+		Game.EnvGPU().advectPPMWGPU(velocityX, m_defaultVel, velocityX, velocityY, m_NeighData, dt * m_speed);
+		Game.EnvGPU().advectPPMWGPU(velocityY, m_dummyArray, velocityX, velocityY, m_NeighData, dt * m_speed);
+
+		//for (int loop = 0; loop < 2; loop++)
+		{
+			for (int i = 0; i < GRIDSIZESKY; i++)
 			{
-				valueU = m_envGrid.velField[i].x;
+				//const int y = i / GRIDSIZESKYX;
+				//if (isGround(i)) continue;
+				//if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0) continue;
+
+
+				//PPMWAdvect(density, m_dummyArray, i, dt * m_speed);
+				//PPMWAdvect(velocityX, m_defaultVel, i, dt * m_speed);
+				//PPMWAdvect(velocityY, m_dummyArray, i, dt * m_speed);
+
+
+
+				//int divisionBy = 4;
+				//if (m_NeighData[i].left == GROUND) divisionBy--;
+				//if (m_NeighData[i].right == GROUND) divisionBy--;
+				//if (m_NeighData[i].up != SKY) divisionBy--;
+				//if (m_NeighData[i].down != SKY) divisionBy--;
+
+				//const glm::vec2 center = m_envGrid.velField[i];
+				//const glm::vec2 left = m_NeighData[i].left == OUTSIDE ? center : m_NeighData[i].left == GROUND ? glm::vec2(0.0f) : m_envGrid.velField[i - 1];	// Neumann (Or no slip)
+				//const glm::vec2 right = m_NeighData[i].right == OUTSIDE ? center : m_NeighData[i].right == GROUND ? glm::vec2(0.0f) : m_envGrid.velField[i + 1];	// Neumann (Or no slip)
+				//const glm::vec2 up = m_NeighData[i].up != SKY ? glm::vec2(m_envGrid.velField[i].x, 0.0f) : m_envGrid.velField[i + GRIDSIZESKYX]; // Free slip
+				//const glm::vec2 down = m_NeighData[i].down != SKY ? glm::vec2(0.0f) : m_envGrid.velField[i - GRIDSIZESKYX]; // no slip
+
+				//// Current Position of U and V 
+				//const glm::vec2 CposU = { i % GRIDSIZESKYX + 0.5f, int(i / GRIDSIZESKYX) };
+				//const glm::vec2 CposV = { i % GRIDSIZESKYX, int(i / GRIDSIZESKYX) + 0.5f };
+				//// Current Velocity of U and V
+				//const glm::vec2 CVelU = { center.x, (left.y + right.y + up.y + down.y) / divisionBy };
+				//const glm::vec2 CVelV = { (left.x + right.x + up.x + down.x) / divisionBy, center.y };
+				//// Previous Position of U and V
+				//const glm::vec2 PposU = CposU - m_speed * dt * CVelU / VOXELSIZE; //Get previous position of particle
+				//const glm::vec2 PposV = CposV - m_speed * dt * CVelV / VOXELSIZE; //Get previous position of particle
+
+				//float valueU = 0.0f;
+				//float valueV = 0.0f;
+
+				////---U---
+				//if (!getInterpolVel(PposU, true, valueU))
+				//{
+				//	valueU = m_envGrid.velField[i].x;
+				//}
+				////---V---
+				//if (!getInterpolVel(PposV, false, valueV))
+				//{
+				//	valueV = m_envGrid.velField[i].y;
+				//}
+
+				////----New Value------ = ----------Advection------ 
+				//m_envGrid.velField[i] = glm::vec2(valueU, valueV);
+
+				//if (m_envGrid.velField[i] != m_envGrid.velField[i] || m_envGrid.velField[i].x > 100 || m_envGrid.velField[i].y > 100 || m_envGrid.velField[i].x < -100 || m_envGrid.velField[i].y < -100)
+				//{
+				//	m_envGrid.velField[i].x = 0;
+				//}
 			}
-			//---V---
-			if (!getInterpolVel(PposV, false, valueV))
-			{
-				 valueV = m_envGrid.velField[i].y;
-			}
-	
-			//----New Value------ = ----------Advection------ 
-			m_envGrid.velField[i] = glm::vec2(valueU, valueV);
-	
-			if (m_envGrid.velField[i] != m_envGrid.velField[i] || m_envGrid.velField[i].x > 100 || m_envGrid.velField[i].y > 100 || m_envGrid.velField[i].x < -100 || m_envGrid.velField[i].y < -100)
-			{
-				m_envGrid.velField[i].x = 0;
-			}
+		}
+		for (int i = 0; i < GRIDSIZESKY; i++)
+		{
+			m_envGrid.velField[i].x = velocityX[i] / density[i];
+			m_envGrid.velField[i].y = velocityY[i] / density[i];
+			//density[i] -= 1.0f;
+			//m_debugArray1[i] = density[i];
 		}
 	}
 
@@ -1316,6 +1453,7 @@ float environment::calculateBuoyancy(const int i)
 		//Cleanup
 		delete[] PTemps;
 		delete[] QvEnv;
+		delete[] QvP;
 		delete[] buoyancies;
 	}
 	return BuoyancyFinal / 3; //Take the average
@@ -1503,7 +1641,7 @@ void environment::pressureProjectVelField()
 		}
 		if (m_NeighData[i].right != SKY)
 		{
-			m_envGrid.velField[i].x = 0.0f;
+			m_envGrid.velField[i].x = m_defaultVel[i / GRIDSIZESKYX];
 		}
 	}
 
@@ -1521,18 +1659,18 @@ void environment::pressureProjectVelField()
 		if (isGround(i)) continue;
 
 		//If at the right or upper cell, we don't add any value
-		const float NxPresProj = m_NeighData[i].right != SKY ? presProjections[i] : presProjections[i + 1];
+		const float NxPresProj = (m_NeighData[i].right != SKY) ? presProjections[i] : presProjections[i + 1];
 		const float NyPresProj = m_NeighData[i].up != SKY ? presProjections[i] : presProjections[i + GRIDSIZESKYX];
 
 		const float scale = 1.0f;
 
-		m_envGrid.velField[i].x += scale * (NxPresProj - presProjections[i]) ;
+		m_envGrid.velField[i].x += scale * (NxPresProj - presProjections[i]);	
 		m_envGrid.velField[i].y += scale * (NyPresProj - presProjections[i]) ;
 		presProjectionsDebug[i] = scale * (NyPresProj - presProjections[i]) ; //Debug
 		presProjections[i] = scale * (NxPresProj - presProjections[i]) ; //Debug
 	}
 	//setDebugArray(presProjections, 1); // X
-	//setDebugArray(presProjectionsDebug, 0); // Y
+	//setDebugArray(presProjectionsDebug, 2); // Y
 }
 
 void environment::calculatePresProj(std::vector<float>& p)
@@ -1591,8 +1729,8 @@ void environment::calculatePresProj(std::vector<float>& p)
 			A[idx].y = m_NeighData[idx].up == SKY ? -1 : 0;
 			A[idx].z = 0; 
 
-			if (m_NeighData[idx].right != GROUND) A[idx].z++;
-			if (m_NeighData[idx].up == SKY) A[idx].z++;
+			if (A[idx].x) A[idx].z++;
+			if (A[idx].y) A[idx].z++;
 			if (m_NeighData[idx].left != GROUND) A[idx].z++;
 			if (m_NeighData[idx].down == SKY)  A[idx].z++;
 		}
@@ -1614,10 +1752,9 @@ void environment::calculatePresProj(std::vector<float>& p)
 	}
 
 	calculatePrecon(precon, A);
-	setDebugArray(divergence, 1);
 	applyPreconditioner(precon, r, A, q, z);
+	setDebugArray(divergence, 1);
 
-	//setDebugArray(s, 1);
 	s = z;
 
 	//Dotproduct
@@ -1703,8 +1840,8 @@ void environment::calculateDivergence(std::vector<float>& output)
 
 		if (isGround(i)) continue;
 		float Uneg = 1.0f;
-		const float Ucurr = (m_NeighData[i].right == OUTSIDE && i != 0) ? Uneg = 0.0f : (m_NeighData[i].right == GROUND ? 0.0f : m_envGrid.velField[i].x);
-		const float Umin1 = (m_NeighData[i].left == OUTSIDE || i == 0) ? Uneg = 0.0f : (m_NeighData[i].left == GROUND ? 0.0f : m_envGrid.velField[i - 1].x);
+		const float Ucurr = ((m_NeighData[i].right == OUTSIDE) && i != 0) ? m_defaultVel[i / GRIDSIZESKYX] : (m_NeighData[i].right == GROUND ? 0.0f : m_envGrid.velField[i].x);
+		const float Umin1 = (m_NeighData[i].left == OUTSIDE || i == 0) ? m_defaultVel[i / GRIDSIZESKYX] : (m_NeighData[i].left == GROUND ? 0.0f : m_envGrid.velField[i - 1].x);
 		const float Vcurr = m_envGrid.velField[i].y;
 		const float Vmin1 = (m_NeighData[i].down == SKY && i - GRIDSIZESKYX >= 0) ? m_envGrid.velField[i - GRIDSIZESKYX].y : 0.0f;
 
@@ -1742,7 +1879,6 @@ void environment::calculatePrecon(std::vector<float>& output, std::vector<glm::i
 					Aminxx * Aminxy * (Preconi * Preconi) +
 					Aminyy * Aminyx * (Preconj * Preconj));
 			output[x + y * GRIDSIZESKYX] = (1 / sqrtf(e + 1e-30f)); //Prevent division by 0 using small number;
-
 		}
 	}
 }
@@ -1798,8 +1934,8 @@ void environment::applyPreconditioner(std::vector<float>& precon, std::vector<fl
 			output[x + y * GRIDSIZESKYX] = t * preconCenter;	
 		}
 	}
-	//setDebugArray(output);
-	//setDebugArray(q, 0);
+	/*setDebugArray(output, 2);
+	setDebugArray(q, 1);*/
 	//setDebugArray(output, 1);
 
 }

@@ -350,7 +350,7 @@ void readTable::initEnvironment()
 
 	std::vector<int> indices;
 	std::vector<float> potTempSmall;
-	std::vector<double> potTemp;
+	std::vector<float> potTemp;
 	std::vector<glm::vec2> velField;
 	std::vector<float> Qv;
 
@@ -387,7 +387,7 @@ void readTable::initEnvironment()
 	{
 		for (int x = 0; x < GRIDSIZESKYX; x++)
 		{
-			potTemp[x + i * int(GRIDSIZESKYX)] = static_cast<double>(potTempSmall[i] + 273.15f);
+			potTemp[x + i * int(GRIDSIZESKYX)] = static_cast<float>(potTempSmall[i] + 273.15f);
 		}
 	}
 

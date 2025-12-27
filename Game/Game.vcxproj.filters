@@ -69,8 +69,10 @@
     <ClInclude Include="microPhys.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="environment.cuh" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="kernelTest.cu" />
+    <CudaCompile Include="environment.cu" />
   </ItemGroup>
 </Project>

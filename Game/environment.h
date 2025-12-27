@@ -1,18 +1,28 @@
 #pragma once
-#include "core/ecs.hpp"
-#include "tools/inspectable.hpp"
-
+#include <vector>
 #include "half/half.hpp"
 #include <glm/glm.hpp>
 
-#define GRIDSIZESKYX 64 
-#define GRIDSIZESKYY 64
+#define GRIDSIZESKYX 32 
+#define GRIDSIZESKYY 32
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY)
 #define GRIDSIZEGROUND (GRIDSIZESKYX)
-#define VOXELSIZE 256.0f //Meters
+#define VOXELSIZE 64.0f //Meters
+
+
+//Storage array for setting boundary conditions easier.
+enum envType
+{
+	SKY, OUTSIDE, GROUND
+};
+struct Neigh
+{
+	envType left, right, up, down;
+};
 
 struct envDebugData;
+class environmentGPU;
 
 class environment
 {
@@ -27,7 +37,7 @@ public:
 		/*half_float::half*/float Qr[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Rain
 		/*half_float::half*/float Qs[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Snow
 		/*half_float::half*/float Qi[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Ice (precip)
-		double potTemp[GRIDSIZESKY]{ 1.0f };			 // Potential temperature
+		float potTemp[GRIDSIZESKY]{ 1.0f };			 // Potential temperature
 		glm::vec2 velField[GRIDSIZESKY]{};				 // Velocity field (fluid sim) needs to be changed to vec3 later
 
 		//float dummy{ 0.0f }; //Room for 4 bytes?		
@@ -48,7 +58,7 @@ public:
 	environment();
 	~environment();
 
-	void init(double* potTemps, glm::vec2* velField, float* Qv, double* groundTemp, float* groundPres, float* pressures);
+	void init(float* potTemps, glm::vec2* velField, float* Qv, double* groundTemp, float* groundPres, float* pressures);
 
 	bool EditorData();
 
@@ -64,15 +74,15 @@ public:
 
 
 	//----------------------------------Sky----------------------------------
-	void diffuseAndAdvectTemp(const float dt, double* array);
-	void getInterpolValueTemp(double* arrayFull, const glm::vec2 Ppos, double& output);
+	void diffuseAndAdvectTemp(const float dt);
+	void getInterpolValueTemp(float* arrayFull, const glm::vec2 Ppos, float& output);
 	//type: rain = 1, snow = 2, ice = 3
-	void diffuseAndAdvect(const float dt, float* array, bool vapor = false, const int fallVelocityType = 0);
+	void diffuseAndAdvect(const float dt, float* array, std::vector<float>& density, bool vapor = false, const int fallVelocityType = 0);
 	void interPolatePrecip(const float dt, float* array, const int fallVelocityType);
 	bool getInterpolValue(float* array,const glm::vec2 Ppos, const bool Vapor, float& output);
-	void PPMWAdvect(float* array, const int i, const float dt);
-	void PPMWAdvectLR(float* array, const int i, const float dt, const bool x);
-	float PPMWAdvectFlux(float* array, const int i, const float dt, const bool x, const bool right);
+	void PPMWAdvect(float* array, float* defaultVal, const int i, const float dt);
+	void PPMWAdvectLR(float* array, float* defaultVal, const int i, const float dt, const bool x);
+	float PPMWAdvectFlux(float* array, float* defaultVal, const int i, const float dt, const bool x, const bool right);
 	void updateVelocityField(const float dt);
 	float calculateBuoyancy(const int index);
 	float averageEnvironment(const int index, const int distanceFromidx, const float maxDistance, const bool temp);
@@ -111,11 +121,10 @@ public:
 	void computeNeighArray();
 	void setDebugArray(std::vector<float>& s, const int index = 0);
 
+	Neigh m_NeighData[GRIDSIZESKY]; //Neighbour data
 	envDebugData* getDebugData();
 
 private:
-	
-
 	gridDataSky m_envGrid;
 	gridDataGround m_groundGrid;
 
@@ -137,18 +146,10 @@ private:
 	float m_pressures[GRIDSIZESKYY]{ 0.0f };
 	float m_defaultVel[GRIDSIZESKYY]{ 0.0f };
 	int m_GHeight[GRIDSIZEGROUND]{ 0 };
+	float m_dummyArray[GRIDSIZESKYY]{ 0 };
 
-	//Storage array for setting boundary conditions easier.
-	enum envType
-	{
-		SKY, OUTSIDE, GROUND
-	};
-	struct Neigh 
-	{
-		envType left, right, up, down;
-	};
-	Neigh m_NeighData[GRIDSIZESKY]; //Neighbour data
-
+	float velocityX[GRIDSIZESKY];
+	float velocityY[GRIDSIZESKY];
 
 	float m_debugArray0[GRIDSIZESKY]{ 0.0f };
 	float m_debugArray1[GRIDSIZESKY]{ 0.0f };

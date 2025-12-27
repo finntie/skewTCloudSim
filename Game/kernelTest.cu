@@ -8,6 +8,7 @@
 
 #include <CUDA/include/cuda_runtime.h>
 #include <CUDA/include/cuda.h>
+#include <CUDA/cmath>
 #include "kernelTest.cuh"
 
 
@@ -22,8 +23,9 @@ __global__ void addOne(uint64_t* data, int size) {
 void kerneltest()
 {
 
-	int blockSize = 256;  // Number of threads per block
-	int numBlocks = (256 * 256 + blockSize - 1) / blockSize;  // Calculate number of blocks
+	int threads = 256;  // Number of threads per block
+	//int numBlocks = (256 * 256 + threads - 1) / threads;  // Calculate number of blocks
+	int numBlocks = cuda::ceil_div(256 * 256, threads); //Using CUDA function to do the same calculation
 
 	// Allocate and copy data to device
 	//uint64_t data[256 * 256][64];
@@ -58,7 +60,7 @@ void kerneltest()
 	printf("Succesfully send %i data\n", static_cast<int>(256 * 256 * sizeof(uint64_t)));
 
 	printf("Adding 10 to each item on the GPU...\n");
-	addOne << <numBlocks, blockSize >> > (d_input, 256 * 256 * sizeof(uint64_t));
+	addOne << <numBlocks, threads >> > (d_input, 256 * 256 * sizeof(uint64_t));
 
 	for (unsigned int i = 0; i < 64; i++) {
 		cudaMemcpyAsync(h_odata, d_input, 256 * 256 * sizeof(uint64_t),

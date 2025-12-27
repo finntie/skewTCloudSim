@@ -5,6 +5,8 @@ class editor;
 class readTable;
 class skewTer;
 class microPhys;
+class environmentGPU;;
+
 
 class game
 {
@@ -21,6 +23,7 @@ public:
 	editor& Editor() { return *m_editorObj; }
 	skewTer& SkewT() { return *m_skewTerObj; }
 	microPhys& mPhys() { return *m_microPhysObj; }
+	environmentGPU& EnvGPU() { return *m_envGPUObj; }
 
 private:
 
@@ -29,6 +32,7 @@ private:
 	editor* m_editorObj = nullptr;
 	skewTer* m_skewTerObj = nullptr;
 	microPhys* m_microPhysObj = nullptr;
+	environmentGPU* m_envGPUObj = nullptr;
 };
 
 extern game Game;

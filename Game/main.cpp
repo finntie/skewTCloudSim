@@ -17,12 +17,15 @@
 //Game includes
 #include "gameSystem.h"
 #include "environment.h"
+#include "kernelTest.cuh"
 
 using namespace bee;
 using namespace std;
 
 int main(int, char**)
 {
+    //kerneltest();
+
     //_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
     Engine.Initialize();
      
