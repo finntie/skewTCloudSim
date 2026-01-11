@@ -1,4 +1,5 @@
 #include "environment.h"
+#include "environment.cuh"
 #include "editor.h"
 #include "skewTer.h"
 #include "game.h"
@@ -22,6 +23,10 @@
 
 #include "imgui/IconsFontAwesome.h"
 #include "imgui/imgui.h"
+
+#if USE_GPU
+#include <cuda_runtime.h>
+#endif
 
 
 editor::editor(envDebugData* _envDebugData)
@@ -79,21 +84,34 @@ void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, floa
 	{
 		float* temps = new float[GRIDSIZESKYY];
 		float* dewPoints = new float[GRIDSIZESKYY];
+		float* ps = new float[GRIDSIZESKYY];
+
+#if USE_GPU
+		cudaMemcpy(ps, pressures, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
+#else
+		memcpy(ps, pressures, GRIDSIZESKYY * sizeof(float));
+#endif
 
 		dataToSkewTData(temps, dewPoints);
 
 		skewTer::skewTInfo skewT;
-		skewT.init(GRIDSIZESKYY, temps, dewPoints, pressures);
+		skewT.init(GRIDSIZESKYY, temps, dewPoints, ps);
 		m_skewTidx = (m_envData->m_groundHeight[0] + 1) * GRIDSIZESKYX;
 		Game.SkewT().setSkewT(skewT);
 
 		delete[] temps;
 		delete[] dewPoints;
+		delete[] ps;
 	}
-
+#if USE_GPU
+	cudaMemcpy(m_envData->m_envTemp, isentropicTemps, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_envVapor, isentropicVapor, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_envPressure, pressures, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
+#else
 	memcpy(m_envData->m_envTemp, isentropicTemps, GRIDSIZESKYY * sizeof(float));
 	memcpy(m_envData->m_envVapor, isentropicVapor, GRIDSIZESKYY * sizeof(float));
 	memcpy(m_envData->m_envPressure, pressures, GRIDSIZESKYY * sizeof(float));
+#endif
 }
 
 void editor::update(float dt)
@@ -127,6 +145,75 @@ void editor::viewData()
 	viewSky();
 	viewGround();
 	viewSkewT();
+}
+
+void editor::setDebugValueNum(const float* array, const int num)
+{
+#if USE_GPU
+	switch (num)
+	{
+	case 0:
+		cudaMemcpy(m_envData->m_debugArray0, array, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+		break;
+	case 1:
+		cudaMemcpy(m_envData->m_debugArray1, array, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+		break;
+	case 2:
+		cudaMemcpy(m_envData->m_debugArray2, array, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+		break;
+	default:
+		break;
+	}
+
+#else
+	switch (num)
+	{
+	case 0:
+		memcpy(m_envData->m_debugArray0, array, GRIDSIZESKY * sizeof(float));
+		break;
+	case 1:
+		memcpy(m_envData->m_debugArray1, array, GRIDSIZESKY * sizeof(float));
+		break;
+	case 2:
+		memcpy(m_envData->m_debugArray2, array, GRIDSIZESKY * sizeof(float));
+		break;
+	default:
+		break;
+	}
+#endif
+}
+
+void editor::GPUSetEnv(void* _sky, void* _ground)
+{
+	auto* sky = static_cast<environmentGPU::gridDataSkyGPU*>(_sky);
+	auto* ground = static_cast<environmentGPU::gridDataGroundGPU*>(_ground);
+
+	//Set sky values.
+	cudaMemcpy(m_envData->m_envView.potTemp, sky->potTemp, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_envView.Qv, sky->Qv, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_envView.Qw, sky->Qw, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_envView.Qc, sky->Qc, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_envView.Qr, sky->Qr, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_envView.Qs, sky->Qs, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_envView.Qi, sky->Qi, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	
+	static float velX[GRIDSIZESKY];
+	static float velY[GRIDSIZESKY];
+	cudaMemcpy(velX, sky->velfieldX, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(velY, sky->velfieldY, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	for (int i = 0; i < GRIDSIZESKY; i++)
+	{
+		m_envData->m_envView.velField[i] = { velX[i], velY[i] };
+	}
+
+	//Set Ground values	
+	cudaMemcpy(m_envData->m_groundView.T, ground->T, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_groundView.Qrs, ground->Qrs, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_groundView.Qgr, ground->Qgr, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_groundView.Qgs, ground->Qgs, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_groundView.Qgi, ground->Qgi, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_groundView.P, ground->P, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_groundView.t, ground->t, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
 void editor::editMode()

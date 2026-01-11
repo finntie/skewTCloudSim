@@ -19,7 +19,6 @@
 #include "core/input.hpp"
 #include "tools/log.hpp"
 #include "imgui/imgui.h"
-#include "environment.cuh"
 #include "game.h"
 
 
@@ -58,13 +57,13 @@ environment::~environment()
 
 }
 
-void environment::init(float* potTemps, glm::vec2* velField, float* Qv, double* groundTemp, float* groundPres, float* pressures)
+void environment::init(float* potTemps, glm::vec2* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures)
 {
 	memcpy(m_envGrid.potTemp, potTemps, GRIDSIZESKY * sizeof(float));
 	memcpy(m_envGrid.velField, velField, GRIDSIZESKY * sizeof(glm::vec2));
 	memcpy(m_envGrid.Qv, Qv, GRIDSIZESKY * sizeof(float));
 
-	memcpy(m_groundGrid.T, groundTemp, GRIDSIZEGROUND * sizeof(double));
+	memcpy(m_groundGrid.T, groundTemp, GRIDSIZEGROUND * sizeof(float));
 	memcpy(m_groundGrid.P, groundPres, GRIDSIZEGROUND * sizeof(float));
 	memcpy(m_pressures, pressures, GRIDSIZESKYY * sizeof(float));
 		
@@ -79,7 +78,7 @@ void environment::init(float* potTemps, glm::vec2* velField, float* Qv, double* 
 
 	//Init ground
 	float noise[GRIDSIZEGROUND];
-	bee::PNoise1D(100, noise, GRIDSIZEGROUND, GRIDSIZEGROUND);
+	PNoise1D(100, noise, GRIDSIZEGROUND, GRIDSIZEGROUND);
 	for (int i = 0; i < GRIDSIZEGROUND; i++)
 	{
 		const float maxHeight = 0;
@@ -121,41 +120,25 @@ void environment::init(float* potTemps, glm::vec2* velField, float* Qv, double* 
 using namespace half_float;
 using namespace Constants;
 
-bool environment::EditorData()
+void environment::EditorData()
 {
-	m_speed = Game.Editor().getSpeed();
 	if (Game.Editor().changedGround())
 	{
 		computeNeighArray();
 	}
-
-	//Play data
-	if (!Game.Editor().getSimulate())
-	{
-		int step = Game.Editor().getStep();
-		if (step > 0) Game.Editor().setStep(--step);
-		else if (step < 0)
-		{
-			Game.Editor().setStep(++step);
-			m_speed *= -1;
-		}
-		else return false;
-	}
-
+	
 	m_pauseDiurnal = Game.Editor().getDiurnalCyclePaused();
 	m_longitude = Game.Editor().getLongitude();
 	m_day = Game.Editor().getDay();
 	m_sunStrength = Game.Editor().getSunStrength();
 	Game.Editor().getTime(m_time);
-	Game.Editor().setTime(m_time);
-
-	return true;
+	Game.Editor().setTime(m_time); //For if time did not change
 }
 
-void environment::Update(float dt)
+void environment::Update(float dt, float speed)
 {
-	if (!EditorData()) return;
-
+	EditorData();
+	m_speed = speed;
 
 	// 1. Update total incoming solar radiation 
 	float Irradiance = irridiance();
@@ -230,35 +213,34 @@ void environment::Update(float dt)
 
 			// 3.
 			{
-				//std::vector<float> density;
-				//density.resize(GRIDSIZESKY);
-				//for (int i = 0; i < GRIDSIZESKY; i++)
-				//{
-				//	velocityX[i] = m_envGrid.velField[i].x;
-				//	velocityY[i] = m_envGrid.velField[i].y;
-				//	density[i] = 1.0f;
-				//}
-				//
-				//Game.EnvGPU().advectPPMWGPU(density.data(), m_dummyArray, velocityX, velocityY, m_NeighData, dt * m_speed);
+				std::vector<float> density;
+				density.resize(GRIDSIZESKY);
+				for (int i = 0; i < GRIDSIZESKY; i++)
+				{
+					velocityX[i] = m_envGrid.velField[i].x;
+					velocityY[i] = m_envGrid.velField[i].y;
+					density[i] = 1.0f;
+				}
+				
+				//Game.EnvGPU().advectPPMWGPU(density.data(), m_dummyArray, dt * m_speed);
 
-				////for (int loop = 0; loop < 2; loop++)
-				////{
-				////	for (int i = 0; i < GRIDSIZESKY; i++)
-				////	{
-				////		if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
-				////		PPMWAdvect(density.data(), m_dummyArray, i, dt * m_speed);
-				////	}
-				////}
-				//diffuseAndAdvect(m_speed * dt, m_envGrid.Qv, density, true);
-				//diffuseAndAdvect(m_speed * dt, m_envGrid.Qw, density);
-				//diffuseAndAdvect(m_speed * dt, m_envGrid.Qc, density);
-				//diffuseAndAdvect(m_speed * dt, m_envGrid.Qr, density, false, 1);
-				//diffuseAndAdvect(m_speed * dt, m_envGrid.Qs, density, false, 2);
-				//diffuseAndAdvect(m_speed * dt, m_envGrid.Qi, density, false, 3);
-				//for (int i = 0; i < GRIDSIZESKY; i++)
-				//{
-				//	density[i] -= 1;
-				//}
+				
+				for (int i = 0; i < GRIDSIZESKY; i++)
+				{
+					if (isGround(i)) continue;
+					PPMWAdvect(density.data(), m_dummyArray, i, dt * m_speed);
+				}
+				
+				diffuseAndAdvect(m_speed * dt, m_envGrid.Qv, density, true);
+				diffuseAndAdvect(m_speed * dt, m_envGrid.Qw, density);
+				diffuseAndAdvect(m_speed * dt, m_envGrid.Qc, density);
+				diffuseAndAdvect(m_speed * dt, m_envGrid.Qr, density, false, 1);
+				diffuseAndAdvect(m_speed * dt, m_envGrid.Qs, density, false, 2);
+				diffuseAndAdvect(m_speed * dt, m_envGrid.Qi, density, false, 3);
+				for (int i = 0; i < GRIDSIZESKY; i++)
+				{
+					density[i] -= 1;
+				}
 				//setDebugArray(density, 1);
 			}
 
@@ -328,13 +310,13 @@ float environment::groundCoverageFactor(const int i)
 	for (int y = 0; y < GRIDSIZESKYY; y++) totalCloudContent += (m_envGrid.Qc[i + y * GRIDSIZESKYX] + m_envGrid.Qw[i + y * GRIDSIZESKYX]) * VOXELSIZE;
 	return std::min(totalCloudContent / qfull, 1.0f);
 }
-
+	
 void environment::updateGroundTemps(const float dt, const int i, const float Irradiance, const float LC)
 {
 	const float absorbedRadiationAlbedo = 0.25f;  //How much light is reflected back? 0 = absorbes all, 1 = reflects all
 	const float groundThickness = 1.0f; //Just used 1 meter
 	const float densityGround = 1500.0f;
-	const double T4 = m_groundGrid.T[i] * m_groundGrid.T[i] * m_groundGrid.T[i] * m_groundGrid.T[i];
+	const float T4 = m_groundGrid.T[i] * m_groundGrid.T[i] * m_groundGrid.T[i] * m_groundGrid.T[i];
 	
 	m_groundGrid.T[i] += m_speed * dt * ((1 - LC) * (((1 - absorbedRadiationAlbedo) * Irradiance - Constants::ge * Constants::oo * T4) / (groundThickness * densityGround * Constants::Cpds)));
 }
@@ -537,9 +519,9 @@ void environment::diffuseAndAdvectTemp(const float dt)
 				continue;
 			}
 			
-			//PPMWAdvect(density, m_dummyArray, i, dt);
+			PPMWAdvect(density, m_dummyArray, i, dt);
 
-			//PPMWAdvect(m_envGrid.potTemp, m_isenTropicTemps, i, dt);
+			PPMWAdvect(m_envGrid.potTemp, m_isenTropicTemps, i, dt);
 
 
 			//// Current Position of value
@@ -562,9 +544,6 @@ void environment::diffuseAndAdvectTemp(const float dt)
 			//}
 		}
 	}
-
-	Game.EnvGPU().advectPPMWGPU(density, m_dummyArray, velocityX, velocityY, m_NeighData, dt);
-	Game.EnvGPU().advectPPMWGPU(m_envGrid.potTemp, m_isenTropicTemps, velocityX, velocityY, m_NeighData, dt);
 
 	for (int i = 0; i < GRIDSIZESKY; i++)
 	{
@@ -677,14 +656,14 @@ void environment::diffuseAndAdvect(const float dt, float* array, std::vector<flo
 		interPolatePrecip(dt, array, fallVelType);
 	}
 
-	if (vapor)
-	{
-		Game.EnvGPU().advectPPMWGPU(array, m_isenTropicVapor, velocityX, velocityY, m_NeighData, dt);
-	}
-	else
-	{
-		Game.EnvGPU().advectPPMWGPU(array, nullptr, velocityX, velocityY, m_NeighData, dt);
-	}
+	//if (vapor)
+	//{
+	//	Game.EnvGPU().advectPPMWGPU(array, m_isenTropicVapor, velocityX, velocityY, m_NeighData, dt);
+	//}
+	//else
+	//{
+	//	Game.EnvGPU().advectPPMWGPU(array, nullptr, velocityX, velocityY, m_NeighData, dt);
+	//}
 
 
 
@@ -697,14 +676,14 @@ void environment::diffuseAndAdvect(const float dt, float* array, std::vector<flo
 			if (isGround(i)) continue;
 
 			//Advection
-			//if (vapor)
-			//{
-			//	PPMWAdvect(array, m_isenTropicVapor, i, dt);
-			//}
-			//else
-			//{
-			//	PPMWAdvect(array, nullptr, i, dt);
-			//}
+			if (vapor)
+			{
+				PPMWAdvect(array, m_isenTropicVapor, i, dt);
+			}
+			else
+			{
+				PPMWAdvect(array, nullptr, i, dt);
+			}
 			//else
 			//{
 			//	// Current Position of value
@@ -1151,9 +1130,9 @@ void environment::updateVelocityField(const float dt)
 		}
 
 
-		Game.EnvGPU().advectPPMWGPU(density, m_dummyArray,   velocityX, velocityY, m_NeighData, dt * m_speed);
-		Game.EnvGPU().advectPPMWGPU(velocityX, m_defaultVel, velocityX, velocityY, m_NeighData, dt * m_speed);
-		Game.EnvGPU().advectPPMWGPU(velocityY, m_dummyArray, velocityX, velocityY, m_NeighData, dt * m_speed);
+		//Game.EnvGPU().advectPPMWGPU(density, m_dummyArray,   velocityX, velocityY, m_NeighData, dt * m_speed);
+		//Game.EnvGPU().advectPPMWGPU(velocityX, m_defaultVel, velocityX, velocityY, m_NeighData, dt * m_speed);
+		//Game.EnvGPU().advectPPMWGPU(velocityY, m_dummyArray, velocityX, velocityY, m_NeighData, dt * m_speed);
 
 		//for (int loop = 0; loop < 2; loop++)
 		{
@@ -1164,9 +1143,9 @@ void environment::updateVelocityField(const float dt)
 				//if ((i + loop + int(float(i) / GRIDSIZESKYX)) % 2 == 0) continue;
 
 
-				//PPMWAdvect(density, m_dummyArray, i, dt * m_speed);
-				//PPMWAdvect(velocityX, m_defaultVel, i, dt * m_speed);
-				//PPMWAdvect(velocityY, m_dummyArray, i, dt * m_speed);
+				PPMWAdvect(density, m_dummyArray, i, dt * m_speed);
+				PPMWAdvect(velocityX, m_defaultVel, i, dt * m_speed);
+				PPMWAdvect(velocityY, m_dummyArray, i, dt * m_speed);
 
 
 
@@ -1326,7 +1305,7 @@ float environment::calculateBuoyancy(const int i)
 
 				if (y < oY) //Remove temp below
 				{
-					///meteoformulas::getMoistTemp()
+					//meteoformulas::getMoistTemp()
 					//TODO: wrong and not very good if P change > 1
 					PTemps[PTempIdx++] = T - meteoformulas::MLR(T - 273.15f, m_pressures[y]) * (m_pressures[oY] - m_pressures[y]);
 				}
@@ -1693,7 +1672,7 @@ void environment::calculatePresProj(std::vector<float>& p)
 	float B = 0;
 	float maxr = 0;
 	float tolValue = 1e-6f;
-	const int MAXITERATION = 100;
+	const int MAXITERATION = 500;
 
 	divergence.resize(GRIDSIZESKY);
 	precon.resize(GRIDSIZESKY);
@@ -1740,7 +1719,7 @@ void environment::calculatePresProj(std::vector<float>& p)
 	calculateDivergence(divergence);
 	r = divergence; 
 
-
+	setDebugArray(divergence, 1);
 	//Checking max residual 
 	{
 		for (int i = 0; i < GRIDSIZESKY; i++)
@@ -1802,6 +1781,7 @@ void environment::calculatePresProj(std::vector<float>& p)
 		}
 		if (maxr < tolValue)
 		{
+			std::cout << "iteration amount: " << i << std::endl;
 			return;
 		}
 
@@ -1826,6 +1806,7 @@ void environment::calculatePresProj(std::vector<float>& p)
 		sigma = sigmaNew;
 
 	}
+	std::cout << "iteration amount: " << MAXITERATION << std::endl;
 
 	//P is filled as max as MAXITERATIONS could.
 }
@@ -1885,8 +1866,9 @@ void environment::calculatePrecon(std::vector<float>& output, std::vector<glm::i
 
 void environment::applyPreconditioner(std::vector<float>& precon, std::vector<float>& r, std::vector<glm::ivec3>& A, std::vector<float>& q, std::vector<float>& output)
 {
-	q.assign(q.size(), 0.0f);
+	//q.assign(q.size(), 0.0f);
 	output.assign(output.size(), 0.0f);
+
 
 	//Solve Lq = d
 	for (int y = 0; y < GRIDSIZESKYY; y++)
@@ -1896,6 +1878,8 @@ void environment::applyPreconditioner(std::vector<float>& precon, std::vector<fl
 			if (isGround(x, y)) continue;
 
 			const int idx = x + y * GRIDSIZESKYX;
+			//float ADiag = 1.0f / A[idx].z;
+			//output[idx] = r[idx] * precon[idx];
 
 			const int Aminxx = x == 0 ? 0 : A[idx - 1].x; //Minus X looking at x
 			const int Aminyy = y == 0 ? 0 : A[idx - GRIDSIZESKYX].y; //Minus Y looking at y

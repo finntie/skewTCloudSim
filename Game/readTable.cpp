@@ -18,7 +18,7 @@
 
 #include <CUDA/include/cuda_runtime.h>
 #include <CUDA/include/cuda.h>
-#include "kernelTest.cuh"
+#include "environment.cuh"
 
 using namespace Constants;
 using namespace bee;
@@ -360,7 +360,7 @@ void readTable::initEnvironment()
 	velField.resize(GRIDSIZESKY);
 	Qv.resize(GRIDSIZESKY);
 
-	std::vector<double> groundTemp;
+	std::vector<float> groundTemp;
 	std::vector<float>  groundPressure;
 	std::vector<float>  pressures;
 
@@ -424,11 +424,15 @@ void readTable::initEnvironment()
 
 	for (int x = 0; x < GRIDSIZEGROUND; x++)
 	{
-		groundTemp[x] = static_cast<double>(skewTData.data.temperature[0] + 273.15f);
+		groundTemp[x] = skewTData.data.temperature[0] + 273.15f;
 		groundPressure[x] = skewTData.data.pressure[0];
 	}
 
+#if USE_GPU
+	Game.EnvGPU().init(potTemp.data(), velField.data(), Qv.data(), groundTemp.data(), groundPressure.data(), pressures.data());
+#else
 	Game.Environment().init(potTemp.data(), velField.data(), Qv.data(), groundTemp.data(), groundPressure.data(), pressures.data());
+#endif
 }
  
 

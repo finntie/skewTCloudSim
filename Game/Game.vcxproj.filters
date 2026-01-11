@@ -13,6 +13,12 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Cuda Header">
+      <UniqueIdentifier>{f6a2dd86-7bd1-4b7b-818a-82c1d87315ce}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Cuda">
+      <UniqueIdentifier>{48edef4b-3d1c-4819-8905-7cb1c7eda65f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -56,7 +62,6 @@
     <ClInclude Include="environment.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="kernelTest.cuh" />
     <ClInclude Include="editor.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -69,10 +74,46 @@
     <ClInclude Include="microPhys.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="environment.cuh" />
+    <ClInclude Include="meteoformulas.cuh">
+      <Filter>Cuda Header</Filter>
+    </ClInclude>
+    <ClInclude Include="meteoconstants.cuh">
+      <Filter>Cuda Header</Filter>
+    </ClInclude>
+    <ClInclude Include="kernelTest.cuh">
+      <Filter>Cuda Header</Filter>
+    </ClInclude>
+    <ClInclude Include="kernelSky.cuh">
+      <Filter>Cuda Header</Filter>
+    </ClInclude>
+    <ClInclude Include="environment.cuh">
+      <Filter>Cuda Header</Filter>
+    </ClInclude>
+    <ClInclude Include="microPhysics.cuh">
+      <Filter>Cuda Header</Filter>
+    </ClInclude>
+    <ClInclude Include="kernelGround.cuh">
+      <Filter>Cuda Header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="kernelTest.cu" />
-    <CudaCompile Include="environment.cu" />
+    <CudaCompile Include="environment.cu">
+      <Filter>Cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="kernelTest.cu">
+      <Filter>Cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="meteoformulas.cu">
+      <Filter>Cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="kernelSky.cu">
+      <Filter>Cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="microPhysics.cu">
+      <Filter>Cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="kernelGround.cu">
+      <Filter>Cuda</Filter>
+    </CudaCompile>
   </ItemGroup>
 </Project>

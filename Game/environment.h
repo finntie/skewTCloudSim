@@ -52,17 +52,17 @@ public:
 		/*half_float::half*/float Qgi[GRIDSIZEGROUND]{0.01f }; // Ice content
 		/*half_float::half*/float P[GRIDSIZEGROUND]{ 1000.0f }; // Ground Pressure
 		/*half_float::half*/float t[GRIDSIZEGROUND]{ 0.0f }; // Time since ground was wet
-		double T[GRIDSIZEGROUND]{ 0.0f };  // Ground temperature
+		float T[GRIDSIZEGROUND]{ 0.0f };  // Ground temperature
 	};
 
 	environment();
 	~environment();
 
-	void init(float* potTemps, glm::vec2* velField, float* Qv, double* groundTemp, float* groundPres, float* pressures);
+	void init(float* potTemps, glm::vec2* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures);
 
-	bool EditorData();
+	void EditorData();
 
-	void Update(float dt);
+	void Update(float dt, float speed);
 
 	//--------------------------------Ground---------------------------------
 	float irridiance();

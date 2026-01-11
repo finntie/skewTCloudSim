@@ -12,6 +12,7 @@
 // Make the game a global variable on free store memory.
 game Game;
 
+
 game::game()
 {
 }
@@ -40,7 +41,36 @@ void game::Initialize()
 //Update function 
 void game::Update(float dt)
 {
-	m_environmentObj->Update(dt);
+	float speed = 1.0f;
+	if (playSettings(speed))
+	{
+#if USE_GPU
+		//Also sets editor data afterwards
+		m_envGPUObj->updateGPU(dt, speed);
+#else
+		m_environmentObj->Update(dt, speed);
+#endif
+	}
 	m_editorObj->update(dt);
 	m_editorObj->viewData();
+}
+
+
+bool game::playSettings(float& speed)
+{
+	speed = Game.Editor().getSpeed();
+
+	//Play data
+	if (!Game.Editor().getSimulate())
+	{
+		int step = Game.Editor().getStep();
+		if (step > 0) Game.Editor().setStep(--step);
+		else if (step < 0)
+		{
+			Game.Editor().setStep(++step);
+			speed *= -1;
+		}
+		else return false;
+	}
+	return true;
 }

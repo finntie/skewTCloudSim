@@ -5,6 +5,7 @@ class environment;
 struct gridDataSky;
 struct gridDataGround;
 struct gridDataBounds;
+
 class editor
 {
 public:
@@ -33,6 +34,8 @@ public:
 	float getSpeed() { return m_simulationSpeed; }
 	bool changedGround() { return m_changedGround; }
 
+	void setDebugValueNum(const float* array, const int num);
+	void GPUSetEnv(void* _sky, void* _ground);
 	void setTime(float sec) { m_time = sec; }
 	void setLongitude(float longitude) { m_longitude = longitude; }
 	void setDay(int day) { m_day = day; }

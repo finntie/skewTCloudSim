@@ -1,5 +1,9 @@
 #pragma once
 
+//Do we want to use the GPU?
+#define USE_GPU 1
+
+
 class environment;
 class editor;
 class readTable;
@@ -17,6 +21,8 @@ public:
 	void Initialize();
 
 	void Update(float dt);
+
+	bool playSettings(float& speed);
 
 	environment& Environment() { return *m_environmentObj; }
 	readTable& ReadTable() { return *m_readTableObj; }

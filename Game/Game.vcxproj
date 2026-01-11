@@ -173,19 +173,28 @@
     <ClInclude Include="external\odeint.hpp" />
     <ClInclude Include="game.h" />
     <ClInclude Include="gameSystem.h" />
+    <ClInclude Include="kernelGround.cuh" />
+    <ClInclude Include="kernelSky.cuh" />
     <ClInclude Include="kernelTest.cuh">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
     </ClInclude>
+    <ClInclude Include="meteoconstants.cuh" />
+    <ClInclude Include="meteoformulas.cuh" />
     <ClInclude Include="microPhys.h" />
+    <ClInclude Include="microPhysics.cuh" />
     <ClInclude Include="readTable.h" />
     <ClInclude Include="skewTer.h" />
     <ClInclude Include="zip_file.hpp" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="environment.cu" />
+    <CudaCompile Include="kernelGround.cu" />
+    <CudaCompile Include="kernelSky.cu" />
     <CudaCompile Include="kernelTest.cu">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
     </CudaCompile>
+    <CudaCompile Include="meteoformulas.cu" />
+    <CudaCompile Include="microPhysics.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
