@@ -3,7 +3,6 @@
 //Do we want to use the GPU?
 #define USE_GPU 1
 
-
 class environment;
 class editor;
 class readTable;

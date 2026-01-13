@@ -383,7 +383,7 @@ __global__ void advectPPMX(const float* __restrict__ arrayIn,
 	const float dt)
 {
 
-	if (isGroundGPU()) return;
+	//if (isGroundGPU()) return;
 
 	__shared__ float sArray[GRIDSIZESKYX];
 	__shared__ float sVelX[GRIDSIZESKYX];
@@ -435,7 +435,7 @@ __global__ void advectPPMY(const float* __restrict__ arrayIn,
 	const Neigh* __restrict__  neighbour,
 	const float dt)
 {
-	if (isGroundGPU()) return;
+	//if (isGroundGPU()) return;
 
 	__shared__ float sArray[GRIDSIZESKYY];
 	__shared__ float sVelY[GRIDSIZESKYY];
@@ -631,7 +631,7 @@ __global__ void advectPrecipBlack(float* array, const Neigh* neigh, const float*
 	array[idx] -= dt * fmin((fallVel / VOXELSIZE) * array[idx], array[idx]); //Remove % of precip
 }
 
-__device__ void applyPreconditionerGPU(float* output, const float precon, const float div)
+__global__ void applyPreconditionerGPU(float* output, const float* precon, const float* div)
 {
 	const int tX = threadIdx.x;
 	const int tY = blockIdx.x;
@@ -642,10 +642,10 @@ __device__ void applyPreconditionerGPU(float* output, const float precon, const 
 		return;
 	}
 
-	output[idx] = div * precon;
+	output[idx] = div[idx] * precon[idx];
 }
 
-__device__ void dotProductGPU(float* result, const float* a, const float* b)
+__global__ void dotProductGPU(float* result, const float* a, const float* b)
 {
 	//To speed up dot product, we make all blocks sum up their values and then connect them together.
 	//This is faster than 1 thead doing all the work.
@@ -654,7 +654,14 @@ __device__ void dotProductGPU(float* result, const float* a, const float* b)
 	const int tY = blockIdx.x;
 	const int idx = tX + tY * GRIDSIZESKYX;
 
-	sresult[tX] = a[idx] * b[idx];
+	if (isGroundGPU(tX, tY))
+	{
+		sresult[tX] = 0.0f;
+	}
+	else
+	{
+		sresult[tX] = a[idx] * b[idx];
+	}
 	__syncthreads();
 
 	//Basically, we grab half of the block, add all the values on the other side and repeat the process.
@@ -670,12 +677,11 @@ __device__ void dotProductGPU(float* result, const float* a, const float* b)
 	//Using atomicAdd(), we can safely add all block values to a singular value
 	if (tX == 0)
 	{
-		printf("result1[%i] = %f\n", tY, sresult[0]);
 		atomicAdd(result, sresult[0]);
 	}
 }
 
-__device__ void applyAGPU(float* output, const float* input, const char3 A, const char3 ADo, const char3 ALe)
+__global__ void applyAGPU(float* output, const float* input, const Neigh* neigh, const char3* A)
 {
 	const int tX = threadIdx.x;
 	const int tY = blockIdx.x;
@@ -690,177 +696,40 @@ __device__ void applyAGPU(float* output, const float* input, const char3 A, cons
 	const float SDo = tY == 0 ? input[idx] : input[idx - GRIDSIZESKYX];
 	const float SLe = tX == 0 ? input[idx] : input[idx - 1];
 
-	output[idx] = A.z * input[idx] +
-					((ALe.x * SLe +
-						ADo.y * SDo +
-						A.x * SRi +
-						A.y * SUp)
+	char ALeft = (neigh[idx].left == SKY) ? A[idx - 1].x : 0;
+	char ADown = (neigh[idx].down == SKY) ? A[idx - GRIDSIZESKYX].y : 0;
+	char3 ACur = A[idx];
+
+	output[idx] = ACur.z * input[idx] +
+					((ALeft * SLe +
+						ADown * SDo +
+						ACur.x * SRi +
+						ACur.y * SUp)
 					);
 }
 
-__device__ float calculateDivergenceGPU(const Neigh neigh, const float* velX, const float* velY)
+__global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, const float* velX, const float* velY)
 {
 	const int tX = threadIdx.x;
 	const int tY = blockIdx.x;
 	const int idx = tX + tY * GRIDSIZESKYX;
 
-	if (isGroundGPU(tX, tY)) return 0.0f;
+	if (isGroundGPU(tX, tY))
+	{
+		divergence[idx] = 0.0f;
+		return;
+	}
 
 	//If Right or Left at the outside cell. We use the default values.
 	//If At Ceiling, we don't have to do anything: y is already set to 0, and ceiling is free-slip
 	//If at Ground, we set velocity to 0, creating divergence, making sure this is no-slip.
 
-	const float Ucurr = (neigh.right == OUTSIDE && idx != 0) ? defaultVel[tY] : (neigh.right == GROUND ? 0.0f : velX[idx]);
-	const float Umin1 = (neigh.left == OUTSIDE || idx == 0) ? defaultVel[tY] : (neigh.left == GROUND ? 0.0f : velX[idx - 1]);
+	const float Ucurr = (neigh[idx].right == OUTSIDE && idx != 0) ? defaultVel[tY] : (neigh[idx].right == GROUND ? 0.0f : velX[idx]);
+	const float Umin1 = (neigh[idx].left == OUTSIDE || idx == 0) ? defaultVel[tY] : (neigh[idx].left == GROUND ? 0.0f : velX[idx - 1]);
 	const float Vcurr = velY[idx];
-	const float Vmin1 = (neigh.down == SKY && idx - GRIDSIZESKYX >= 0) ? velY[idx - GRIDSIZESKYX] : 0.0f;
+	const float Vmin1 = (neigh[idx].down == SKY && idx - GRIDSIZESKYX >= 0) ? velY[idx - GRIDSIZESKYX] : 0.0f;
 
-	return ((Ucurr - Umin1) + (Vcurr - Vmin1));
-}
-
-__global__ void calculatePresProjGPU(float* outputArray, const Neigh* neigh, const float* velX, const float* velY, const float* precon, float* divergence, 
-	float* z, float* s, const char3* A, float* Sresult1, float* Sresult2)
-{
-	const int tX = threadIdx.x;
-	const int tY = blockIdx.x;
-	const int idx = tX + tY * GRIDSIZESKYX;
-
-	const float tolValue = 1e-6f;
-	const int MAXITERATION = 200;
-	__shared__ bool done;
-
-	//Reset values
-	z[idx] = 0.0f;
-	s[idx] = 0.0f;
-	outputArray[idx] = 0.0f;
-
-	if (idx == 0)
-	{
-		*Sresult1 = 0.0f;
-		*Sresult2 = 0.0f;
-		done = false;
-	}
-	__syncthreads();
-
-	//Prevent more lookups by already getting the A's we need.
-	char3 ALeft = (neigh[idx].left == SKY) ? A[idx - 1] : char3{ 0, 0, 0 };
-	char3 ADown = (neigh[idx].down == SKY) ? A[idx - GRIDSIZESKYX] : char3{ 0, 0, 0 };
-	char3 ACur = A[idx];
-
-	divergence[idx] = calculateDivergenceGPU(neigh[idx], velX, velY);
-
-	applyPreconditionerGPU(z, precon[idx], divergence[idx]);
-
-	//Checking max residual (first thread)
-	if (idx == 0)
-	{
-		float maxr = 0.0f;
-		for (int y = 0; y < GRIDSIZESKYY; y++)
-		{
-			for (int x = 0; x < GRIDSIZESKYX; x++)
-			{
-				if (isGroundGPU(x, y)) continue;
-				maxr = fmax(maxr, fabsf(divergence[x + y * GRIDSIZESKYX]));
-			}
-		}
-		if (maxr == 0) done = true;
-	}
-	if (idx == 0) *Sresult1 = 0.0f;
-	__syncthreads();
-
-	dotProductGPU(Sresult1, z, divergence);
-	s[idx] = z[idx];
-
-	//Lets re-ensemble
-	__syncthreads();
-
-	if (done)
-	{
-		return;
-	}
-
-	for (int i = 0; i < 1; i++)
-	{
-		applyAGPU(z, s, ACur, ADown, ALeft);
-		__syncthreads();
-
-		if (idx == 0)
-		{
-			*Sresult2 = 0.0f;
-		}
-		__syncthreads();
-
-		//Dotproduct
-		dotProductGPU(Sresult2, z, s);
-		__syncthreads();
-		if (idx == 0)
-		{
-			printf("sresult = %4.20f\n", *Sresult2);
-		}
-		//if (idx == 0) {
-		//	printf("Iter %d: Sresult1=%f, Sresult2=%f\n",
-		//		i, *Sresult1, *Sresult2);
-		//}
-		if (idx == 0)
-		{		
-			*Sresult2 = *Sresult1 / *Sresult2;
-		}
-		__syncthreads();
-
-		//Adding up pressure value and reducing residual value
-		if (!isGroundGPU(tX, tY))
-		{
-			outputArray[idx] += *Sresult2 * s[idx];
-			divergence[idx] -= *Sresult2 * z[idx];
-		}
-
-		//Checking max residual (first thread)
-		if (idx == 0)
-		{
-			float maxr = 0.0f;
-			for (int y = 0; y < GRIDSIZESKYY; y++)
-			{
-				for (int x = 0; x < GRIDSIZESKYX; x++)
-				{
-					if (isGroundGPU(x, y)) continue;
-					maxr = fmax(maxr, fabsf(divergence[x + y * GRIDSIZESKYX]));
-				}
-			}
-			if (maxr < tolValue) done = true;
-		}
-		__syncthreads();
-
-		if (done) return;
-
-		applyPreconditionerGPU(z, precon[idx], divergence[idx]);
-		__syncthreads();
-
-		if (idx == 0)
-		{
-			*Sresult2 = 0.0f;
-		}		
-		__syncthreads();
-
-		//Dotproduct
-		dotProductGPU(Sresult2, z, divergence);
-		__syncthreads();
-
-		if (idx == 0)
-		{
-			*Sresult1 = *Sresult2 / *Sresult1;
-		}
-		__syncthreads();
-
-		//Setting search vector s
-		s[idx] = z[idx] + *Sresult1 * s[idx];
-
-		if (idx == 0)
-		{
-			*Sresult1 = *Sresult2;
-		}
-		__syncthreads();
-
-	}
+	divergence[idx] = ((Ucurr - Umin1) + (Vcurr - Vmin1));
 }
 
 __global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, float* velX, float* velY)
@@ -879,6 +748,92 @@ __global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, floa
 
 	velX[idx] += scale * (NxPresProj - pressure[idx]);
 	velY[idx] += scale * (NyPresProj - pressure[idx]);
+}
+
+__global__ void getMaxDivergence(float* output, const float* div)
+{
+	//To speed up dot product, we make all blocks sum up their values and then connect them together.
+		//This is faster than 1 thead doing all the work.
+	__shared__ float sresult[GRIDSIZESKYX];
+	const int tX = threadIdx.x;
+	const int tY = blockIdx.x;
+	const int idx = tX + tY * GRIDSIZESKYX;
+
+	float maxVal = 0.0f;
+	if (!isGroundGPU(tX, tY))
+	{
+		maxVal = fabsf(div[idx]);
+	}
+	sresult[tX] = maxVal;
+	__syncthreads();
+
+	//Basically, we grab half of the block, add all the values on the other side and repeat the process.
+	for (int i = GRIDSIZESKYX / 2; i > 0; i >>= 1)
+	{
+		if (tX < i)
+		{
+			sresult[tX] = fmaxf(sresult[tX] ,sresult[tX + i]);
+		}
+		__syncthreads();
+	}
+
+	//Using atomicAdd(), we can safely add all block values to a singular value
+	if (tX == 0)
+	{
+		//Using atomic max, supports only ints, so we cast sort of to float
+		atomicMax((int*)output, __float_as_int(sresult[0]));
+		//This should work if we don't have negative numbers (which we should not have)
+	}
+}
+
+__global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* divergence, const float* s, const float* z)
+{
+	__shared__ float sresult;
+	const int tX = threadIdx.x;
+	const int tY = blockIdx.x;
+	const int idx = tX + tY * GRIDSIZESKYX;
+
+	if (tX == 0)
+	{
+		sresult = *S1 / *S2;
+	}
+	__syncthreads();
+
+	//Adding up pressure value and reducing residual value
+	if (!isGroundGPU(tX, tY))
+	{
+		pressure[idx] += sresult * s[idx];
+		divergence[idx] -= sresult * z[idx];
+	}
+	if (idx == 0)
+	{
+		*S2 = sresult;
+	}
+}
+
+__global__ void endIteration(float* S1, float* S2, float* s, const float* z)
+{
+	__shared__ float sresult;
+	const int tX = threadIdx.x;
+	const int tY = blockIdx.x;
+	const int idx = tX + tY * GRIDSIZESKYX;
+
+	if (tX == 0)
+	{
+		sresult = *S2 / *S1;
+	}
+	__syncthreads();
+
+	if (!isGroundGPU(tX, tY))
+	{
+		//Setting search vector s
+		s[idx] = z[idx] + sresult * s[idx];
+	}
+
+	if (idx == 0)
+	{
+		*S1 = *S2;
+	}
 }
 
 //-------------------------------------OTHER-------------------------------------
@@ -913,13 +868,13 @@ __device__ float calculateLayerAverage(const float* layer, const float* pressure
 
 	const int distXR = oX + int(ceilf(maxDistance));
 	const int distXL = oX - int(ceilf(maxDistance));
-	const int maxRight = distXR > GRIDSIZEGROUND ? GRIDSIZEGROUND : distXR;
+	const int maxRight = distXR > GRIDSIZESKYX ? GRIDSIZESKYX : distXR;
 	const int minLeft = distXL < 0 ? -1 : distXL;
 	const float MDistanceSqr = 1 / (maxDistance * maxDistance);
 	const int distOYY = (oY - lY) * (oY - lY);
 
 	//TODO: when difference in ground pressure, remove optimization:
-	float potTempMultiplier = 1.0f;// temp ? powf((pressures[lY] / groundP[0]), ConstantsGPU::Rsd / ConstantsGPU::Cpd) : 1.0f;
+	float potTempMultiplier = temp ? powf((pressures[lY] / groundP[0]), ConstantsGPU::Rsd / ConstantsGPU::Cpd) : 1.0f;
 
 	float amount = 0.0f;
 	float average = 0.0f;
@@ -952,7 +907,7 @@ __device__ float calculateLayerAverage(const float* layer, const float* pressure
 	}
 	if (amount == 0) return 0.0f;
 
-	return average / amount;
+	return (average / amount);
 }
 
 __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTemp, const float* Qv, 
@@ -979,11 +934,6 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 	//Wait for every thread to be done (for sure).
 	__syncthreads();
 
-	//Now check if we are on the edges, if so, we leave
-	if (neigh[idx].left == OUTSIDE || neigh[idx].right == OUTSIDE || neigh[idx].up == OUTSIDE || neigh[idx].down == OUTSIDE)
-	{
-		return;
-	}
 
 	//Vapor environment and Vapor Parcel
 	float Qenv = 0.0f, QenvUp = 0.0f, QenvDown = 0.0f;
@@ -1006,6 +956,7 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 		QPUp = Qv[idx + GRIDSIZESKYX];
 	}
 
+	__syncthreads();
 
 	// ------------ Temp ------------
 
@@ -1017,6 +968,11 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 	//Wait for every thread to be done (for sure).
 	__syncthreads();
 
+	//Now check if we are on the edges, if so, we leave
+	if (neigh[idx].left == OUTSIDE || neigh[idx].right == OUTSIDE || neigh[idx].up == OUTSIDE || neigh[idx].down == OUTSIDE)
+	{
+		return;
+	}
 
 	// Temp for up and down based on adiabatics
 	float Tadiab = T, TadiabUp = T, TadiabDown = T;
@@ -1032,6 +988,7 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 			//TODO: wrong and not very good if P change > 1
 			TadiabDown = T - MLRGPU(T - 273.15f, pressures[tY - 1]) * (pressures[tY] - pressures[tY - 1]);
 			TenvDown = calculateLayerAverage(sharedLayerUp, pressures, groundP, maxDistance, tY - 1, true);
+			//printf("(%i, %i) AV: %f, P: %f\n", tX, tY, TenvDown, TadiabDown);
 		}
 		if (up)
 		{
@@ -1069,6 +1026,7 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 		const float VTP = TadiabDown * (1.0f + 0.608f * QPDown);
 		const float VTE = TenvDown * (1.0f + 0.608f * QenvDown);
 		BDown = ConstantsGPU::g * ((VTP - VTE) / VTE);
+
 	}
 	{
 		//Temp parcel and Temp environment
@@ -1087,7 +1045,7 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 
 	// Now we calculate if we use up or down, this depends if the parcel on the current levels is going up or down
 
-	float buoyancyFinal = 0.0f;
+	float buoyancyFinal = B;
 	int divideBy = 1;
 
 	if (B < 0.0f) //If falling
@@ -1232,11 +1190,6 @@ __global__ void resetVelPressProj(const Neigh* neigh, float* velX, float* velY)
 	{
 		velX[idx] = defaultVel[tY];
 	}
-	if (tX == 16 && tY == 16)
-	{
-		velY[idx] = 2.0f;
-	}
-
 }
 
 __device__ bool isGroundLevel()

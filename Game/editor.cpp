@@ -86,6 +86,7 @@ void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, floa
 		float* dewPoints = new float[GRIDSIZESKYY];
 		float* ps = new float[GRIDSIZESKYY];
 
+
 #if USE_GPU
 		cudaMemcpy(ps, pressures, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
 #else
@@ -103,10 +104,12 @@ void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, floa
 		delete[] dewPoints;
 		delete[] ps;
 	}
+
 #if USE_GPU
 	cudaMemcpy(m_envData->m_envTemp, isentropicTemps, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
 	cudaMemcpy(m_envData->m_envVapor, isentropicVapor, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
 	cudaMemcpy(m_envData->m_envPressure, pressures, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
+
 #else
 	memcpy(m_envData->m_envTemp, isentropicTemps, GRIDSIZESKYY * sizeof(float));
 	memcpy(m_envData->m_envVapor, isentropicVapor, GRIDSIZESKYY * sizeof(float));

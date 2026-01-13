@@ -44,13 +44,14 @@ __global__ void advectPrecipBlack(float* array, const Neigh* neigh, const float*
 
 //-------------------Pressure Projection------------------
 
-__device__ void dotProductGPU(float* result, const float* a, const float* b);
-__device__ void applyAGPU(float* ouput, const float* input, const char3 A, const char3 ADo, const char3 ALe);
-__device__ void applyPreconditionerGPU(float* output, const float precon, const float div);
-__device__ float calculateDivergenceGPU(Neigh neigh, float* velX, float* velY);
-__global__ void calculatePresProjGPU(float* outputArray, const Neigh* neigh, const float* velX, const float* velY, const float* precon, float* divergence,
-	float* z, float* s, const char3* A, float* Sresult1, float* Sresult2);
+__global__ void dotProductGPU(float* result, const float* a, const float* b);
+__global__ void applyAGPU(float* ouput, const float* input, const Neigh* neigh, const char3* A);
+__global__ void applyPreconditionerGPU(float* output, const float* precon, const float* div);
+__global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, const float* velX, const float* velY);
 __global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, float* velX, float* velY);
+__global__ void getMaxDivergence(float* output, const float* div);
+__global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* divergence, const float* s, const float* z);
+__global__ void endIteration(float* S1, float* S2, float* s, const float* z);
 //------------------------------------------
 
 

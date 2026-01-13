@@ -64,6 +64,7 @@ public:
 
 	//-------------Pressure Project-------------
 	void pressureProject();
+	void calculatePressureProject(float* outputPressure);
 	//------------------------------------------
 
 
@@ -118,7 +119,7 @@ private:
 	float* m_freeze;
 	
 	//Single values
-	float* m_deltatime;
+	float* m_singleStor0;
 	float* m_sigma0;
 	float* m_sigma1;
 	int* m_firstValid;

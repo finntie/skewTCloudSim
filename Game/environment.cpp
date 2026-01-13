@@ -3,6 +3,7 @@
 
 
 #include "environment.h"
+#include "environment.cuh"
 
 #include "editor.h"
 #include "skewTer.h"
@@ -499,7 +500,7 @@ void environment::diffuseAndAdvectTemp(const float dt)
 	}
 
 
-
+	//Game.EnvGPU().advectAddDensity(m_envGrid.potTemp, m_isenTropicTemps, velocityX, velocityY, dt, true);
 
 	//Advection
 	//for (int loop = 0; loop < 2; loop++)
@@ -547,8 +548,8 @@ void environment::diffuseAndAdvectTemp(const float dt)
 
 	for (int i = 0; i < GRIDSIZESKY; i++)
 	{
-		m_envGrid.potTemp[i] /= density[i];
-		density[i] -= 1.0f;
+		//m_envGrid.potTemp[i] /= density[i];
+		//density[i] -= 1.0f;
 		//m_debugArray1[i] = density[i];
 	}
 	//setDebugArray(density, 1);
@@ -1284,6 +1285,8 @@ float environment::calculateBuoyancy(const int i)
 	//Environment Temp (Using average temp of whole until ground)
 	float Taverage = 0.0f;
 	float Baverage = 0.0f;
+	int divideBy = 1;
+
 	int Bamount = 0;
 	{
 		//First calculate adiabatic temp up and down.
@@ -1388,7 +1391,6 @@ float environment::calculateBuoyancy(const int i)
 
 		//=---------------------------Check state of buoyancy--------------------------------=
 
-		int divideBy = 1;
 
 		//Fully calculated Buoyancy without checks
 		buoyancies[0] = checkSize - outsideDown == 0 ? 0.0f : buoyancies[0] / (checkSize - outsideDown);
@@ -1435,7 +1437,7 @@ float environment::calculateBuoyancy(const int i)
 		delete[] QvP;
 		delete[] buoyancies;
 	}
-	return BuoyancyFinal / 3; //Take the average
+	return BuoyancyFinal / divideBy; //Take the average
 }
 
 float environment::averageEnvironment(const int i, const int distanceFromidx, const float maxDistance, const bool temp)
@@ -1719,7 +1721,7 @@ void environment::calculatePresProj(std::vector<float>& p)
 	calculateDivergence(divergence);
 	r = divergence; 
 
-	setDebugArray(divergence, 1);
+	//setDebugArray(divergence, 1);
 	//Checking max residual 
 	{
 		for (int i = 0; i < GRIDSIZESKY; i++)
@@ -1732,7 +1734,7 @@ void environment::calculatePresProj(std::vector<float>& p)
 
 	calculatePrecon(precon, A);
 	applyPreconditioner(precon, r, A, q, z);
-	setDebugArray(divergence, 1);
+	//setDebugArray(precon, 1);
 
 	s = z;
 
@@ -1751,7 +1753,7 @@ void environment::calculatePresProj(std::vector<float>& p)
 	{
 		applyA(s, A, z);
 		//for (int j = 0; j < GRIDSIZESKY; j++) debugVector[j] = z[j] * 1e8f;
-		//setDebugArray(debugVector, 0);
+		//setDebugArray(z, 1);
 
 		//Dotproduct
 		sigmaNew = 0;
@@ -1879,8 +1881,8 @@ void environment::applyPreconditioner(std::vector<float>& precon, std::vector<fl
 
 			const int idx = x + y * GRIDSIZESKYX;
 			//float ADiag = 1.0f / A[idx].z;
-			//output[idx] = r[idx] * precon[idx];
-
+			output[idx] = r[idx] * precon[idx];
+			if (1) continue;
 			const int Aminxx = x == 0 ? 0 : A[idx - 1].x; //Minus X looking at x
 			const int Aminyy = y == 0 ? 0 : A[idx - GRIDSIZESKYX].y; //Minus Y looking at y
 
@@ -1896,7 +1898,7 @@ void environment::applyPreconditioner(std::vector<float>& precon, std::vector<fl
 		}
 	}
 
-
+	if (1) return;
 	//Solve L^Tp = q
 	for (int y = GRIDSIZESKYY - 1; y >= 0; y--)
 	{

@@ -355,3 +355,21 @@ __global__ inline void multiplyValues(float* array1, const float* array2, const 
 
     array1[idx] *= array2[idx];
 }
+
+__global__ inline void divideValues(float* array1, const float* array2, const int width)
+{
+    const int tX = threadIdx.x;
+    const int tY = blockIdx.x;
+    const int idx = tX + tY * width;
+
+    array1[idx] /= array2[idx];
+}
+
+__global__ inline void subtractValue(float* array, const float value, const int width)
+{
+    const int tX = threadIdx.x;
+    const int tY = blockIdx.x;
+    const int idx = tX + tY * width;
+
+    array[idx] -= value;
+}
