@@ -1,19 +1,22 @@
 #pragma once
 #include <memory>
+#include "game.h"
 
 class environment;
+class environmentGPU;
 struct gridDataSky;
 struct gridDataGround;
 struct gridDataBounds;
+
+enum parameter : uint16_t
+{
+	POTTEMP, QV, QW, QC, QR, QS, QI, WIND, PGROUND, DEBUG1, DEBUG2, DEBUG3
+};
 
 class editor
 {
 public:
 
-	enum parameter
-	{
-		POTTEMP, QV, QW, QC, QR, QS, QI, WIND, GROUND, DEBUG1, DEBUG2, DEBUG3
-	};
 
 	//Could expand into multiple structs/refences from other classes.
 	editor(envDebugData* _envDebugData);
@@ -35,7 +38,7 @@ public:
 	bool changedGround() { return m_changedGround; }
 
 	void setDebugValueNum(const float* array, const int num);
-	void GPUSetEnv(void* _sky, void* _ground);
+	void GPUSetEnv(void* _sky, void* _ground, int* _groundHeight);
 	void setTime(float sec) { m_time = sec; }
 	void setLongitude(float longitude) { m_longitude = longitude; }
 	void setDay(int day) { m_day = day; }
@@ -69,6 +72,7 @@ private:
 	void viewImguiData();
 	void setSkewTData();
 	void skewTTexture();
+	void dataClassView();
 
 	//View
 	void viewBackground();
@@ -80,6 +84,7 @@ private:
 	void viewSelection();
 	void viewToolTipData();
 	void viewPickerData();
+	void viewMicroPhysGraph();
 
 	//Editor
 	void applyBrush();
@@ -105,7 +110,7 @@ private:
 
 	bool m_editMode{ false };
 	bool m_skewTSettings{ false };
-
+	bool m_dataViewer{ false };
 
 	parameter m_viewParamSky{ POTTEMP };
 	int m_viewParamGround{ 0 };
@@ -134,6 +139,8 @@ private:
 	bool m_selectReset{ false };
 	bool m_selecting{ false };
 	glm::vec2 m_corners[2]{};
+	bool m_microPhysSelect{ false };
+	bool m_justViewSelection{ false };
 
 
 	//Camera variables
@@ -163,8 +170,20 @@ private:
 //Stores all the refence variables from environment
 struct envDebugData
 {
-	envDebugData(environment::gridDataSky& skyData, environment::gridDataGround& groundData, int(&height)[GRIDSIZEGROUND], float(&debug1)[GRIDSIZESKY], float(&debug2)[GRIDSIZESKY], float(&debug3)[GRIDSIZESKY])
-		: m_envView(skyData), m_groundView(groundData), m_groundHeight(height), m_debugArray0(debug1), m_debugArray1(debug2), m_debugArray2(debug3)
+#if USE_GPU
+	envDebugData()  // GPU data is filled after each tick
+	{
+	}
+
+	//Variables
+	environment::gridDataSky m_envView;
+	environment::gridDataGround m_groundView;
+
+	int m_groundHeight[GRIDSIZEGROUND]{};
+
+#else
+	envDebugData(environment::gridDataSky& skyData, environment::gridDataGround& groundData, int(&height)[GRIDSIZEGROUND])
+		: m_envView(skyData), m_groundView(groundData), m_groundHeight(height)
 	{
 	}
 
@@ -173,10 +192,13 @@ struct envDebugData
 	environment::gridDataGround& m_groundView;
 
 	int(&m_groundHeight)[GRIDSIZEGROUND];
+#endif
 
-	float(&m_debugArray0)[GRIDSIZESKY];
-	float(&m_debugArray1)[GRIDSIZESKY];
-	float(&m_debugArray2)[GRIDSIZESKY];
+
+
+	float m_debugArray0[GRIDSIZESKY]{};
+	float m_debugArray1[GRIDSIZESKY]{};
+	float m_debugArray2[GRIDSIZESKY]{};
 
 	float m_envTemp[GRIDSIZESKYY]{};
 	float m_envVapor[GRIDSIZESKYY]{};

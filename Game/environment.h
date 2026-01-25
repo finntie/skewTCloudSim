@@ -3,8 +3,8 @@
 #include "half/half.hpp"
 #include <glm/glm.hpp>
 
-#define GRIDSIZESKYX 32 
-#define GRIDSIZESKYY 32
+#define GRIDSIZESKYX 256	
+#define GRIDSIZESKYY 256
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY)
 #define GRIDSIZEGROUND (GRIDSIZESKYX)
@@ -105,6 +105,8 @@ public:
 
 	/// <summary> Get UV from the velocity field which is in MAC grid</summary>
 	glm::vec2 getUV(const int index);
+	glm::vec2 getUV(const glm::vec2* velField, const int index);
+
 	/// <summary>Get ambient temp at height. Using avaraged lapse rate between 5 and 2 km. </summary>
 	float getIsentropicTemp(const float y);
 	float getIsentropicVapor(const float y);
@@ -119,7 +121,6 @@ public:
 	bool isGroundLevel(int x, int y);
 
 	void computeNeighArray();
-	void setDebugArray(std::vector<float>& s, const int index = 0);
 
 	Neigh m_NeighData[GRIDSIZESKY]; //Neighbour data
 	envDebugData* getDebugData();

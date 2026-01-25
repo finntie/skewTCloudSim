@@ -95,6 +95,12 @@
     <ClInclude Include="kernelGround.cuh">
       <Filter>Cuda Header</Filter>
     </ClInclude>
+    <ClInclude Include="kernelMaths.cuh">
+      <Filter>Cuda Header</Filter>
+    </ClInclude>
+    <ClInclude Include="dataClass.cuh">
+      <Filter>Cuda Header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="environment.cu">
@@ -113,6 +119,12 @@
       <Filter>Cuda</Filter>
     </CudaCompile>
     <CudaCompile Include="kernelGround.cu">
+      <Filter>Cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="kernelMaths.cu">
+      <Filter>Cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="dataClass.cu">
       <Filter>Cuda</Filter>
     </CudaCompile>
   </ItemGroup>

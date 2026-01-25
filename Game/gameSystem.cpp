@@ -43,6 +43,7 @@ gameSystem::gameSystem()
 	//Game.ReadTable().readKNMIFile("assets/input/KNMI/DeBilt_20250807_113122.mwx");
 	Game.ReadTable().readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_akt.zip");
 	//Game.ReadTable().readDWDFile("assets/input/DWD/sekundenwerte_aero_01303_20240101_20241231_hist.zip");
+
 	Game.ReadTable().initEnvironment();
 }
 

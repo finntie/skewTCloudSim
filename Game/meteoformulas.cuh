@@ -4,10 +4,9 @@
 #include <CUDA/cmath>
 #include <cuda_runtime.h>
 #include <cuda.h>
+#include <stdio.h>
 
-__constant__ float* gammaR{nullptr};
-__constant__ float* gammaS{nullptr};
-__constant__ float* gammaI{nullptr};
+
 
 // <summary>Get (Saturated) Water Vapor </summary>
 /// https://www.weather.gov/media/epz/wxcalc/vaporPressure.pdf
@@ -181,7 +180,7 @@ __device__ inline float slopePrecipGPU(const float D, const float Qj, const int 
         // Check for division by 0
         const float numerator = ConstantsGPU::PI * densW * N0R;
         const float denominator = fmaxf(D * Qj * 0.001f, 1e-14f);  // Convert kg/kg to g/cm3
-        return (numerator == 0 || denominator == 0) ? 0.0f : powf((numerator / denominator), _e);
+        return powf((numerator / denominator), _e);
         break;
     }
     case 1:  // Snow
@@ -191,7 +190,7 @@ __device__ inline float slopePrecipGPU(const float D, const float Qj, const int 
 
         const float numerator = ConstantsGPU::PI * densS * N0S;
         const float denominator = fmaxf(D * Qj * 0.001f, 1e-14f);  // Convert kg/kg to g/cm3
-        return (numerator == 0 || denominator == 0) ? 0.0f : powf((numerator / denominator), _e);
+        return powf((numerator / denominator), _e);
         break;
     }
     case 2:  // Ice
@@ -201,27 +200,13 @@ __device__ inline float slopePrecipGPU(const float D, const float Qj, const int 
 
         const float numerator = ConstantsGPU::PI * densI * N0I;
         const float denominator = fmaxf(D * Qj * 0.001f, 1e-14f);  // Convert kg/kg to g/cm3
-        return (numerator == 0 || denominator == 0) ? 0.0f : powf((numerator / denominator), _e);
+        return powf((numerator / denominator), _e);
         break;
     }
     default:
         break;
     }
     return 0.0f;
-}
-
-
-/// <summary>Gammas should be initialized, since calculating them could be expensive</summary>
-inline void initGammas()
-{
-    const float b = 0.8f;
-    const float d = 0.25f;
-    static float GammaR = tgammaf(4.0f + b);
-    static float GammaS = tgammaf(4.0f + d);
-    static float GammaI = GammaS;
-    cudaMemcpyToSymbol(gammaR, &GammaR, sizeof(float));
-    cudaMemcpyToSymbol(gammaS, &GammaS, sizeof(float));
-    cudaMemcpyToSymbol(gammaI, &GammaI, sizeof(float));
 }
 
 /// <summary>Calculates the falling velocity of each different precip type</summary>
@@ -232,43 +217,44 @@ inline void initGammas()
 /// <param name = "type"> 1 = rain, 2 = snow, 3 = hail, 4 = all</param>
 
 /// <returns>x: rain, y: snow, z: ice</returns>
-__device__ inline float3 calculateFallingVelocityGPU(const float Qr, const float Qs, const float Qi, const float densAir, const int type)
+__device__ inline float3 calculateFallingVelocityGPU(const float Qr, const float Qs, const float Qi, const float densAir, const int type, const float GammaR, const float GammaS, const float GammaI)
 {
-    bool all{ (type == 4) };
+    bool all{ (type == 3) };
     float UR = 0.0f;
     float US = 0.0f;
     float UI = 0.0f;
 
     //Check if gammas are valid
-    if (gammaR == nullptr)
+    if (GammaR == 0.0f)
     {
+        printf("Gamma is invalid %f %f %f!\n", GammaR, GammaS, GammaI);
         return { -1,-1,-1 };
     }
 
-    if (type == 1 || all)
+    if (type == 0 || all)
     {
         const float a = 2115.0f;
         const float b = 0.8f;
         float slopeR = slopePrecipGPU(densAir, Qr, 0);
-        UR = a * (*gammaR / (6 * std::powf(slopeR, b))) * sqrt(1.225f / densAir);
+        UR = a * (GammaR / (6 * powf(slopeR, b))) * sqrtf(1.225f / densAir);
         UR *= 0.01f; //Convert cm to m
     }
-    else if (type == 2 || all)
+    else if (type == 1 || all)
     {
         const float c = 152.93f;
         const float d = 0.25f;
         float slopeS = slopePrecipGPU(densAir, Qs, 1);
-        US = c * (*gammaS / (6 * std::powf(slopeS, d))) * sqrt(1.225f / densAir);
+        US = c * (GammaS / (6 * powf(slopeS, d))) * sqrtf(1.225f / densAir);
         US *= 0.01f; //Convert cm to m
     }
-    else if (type == 3 || all)
+    else if (type == 2 || all)
     {
         //Densities in g/cm3
         const float densI = 0.91f;
         //constants
         const float CD = 0.6f; //Drag coefficient
         float slopeI = slopePrecipGPU(densAir, Qi, 2);
-        UI = (*gammaI / (6 * std::pow(slopeI, 0.5f))) * powf(4 * ConstantsGPU::g * 100 * densI / (3 * CD * densAir * 0.001f), 0.5f); //Converting g to cm/s2 and densAir to g/cm3
+        UI = (GammaI / (6 * powf(slopeI, 0.5f))) * powf(4 * ConstantsGPU::g * 100 * densI / (3 * CD * densAir * 0.001f), 0.5f); //Converting g to cm/s2 and densAir to g/cm3
         UI *= 0.01f; //Convert cm to m
     }
     return float3{ UR, US, UI };
@@ -328,48 +314,4 @@ __device__ inline float MLRGPU(const float T, const float P)
     float Tw = ((ConstantsGPU::Rsd * TKelvin + ConstantsGPU::Hv * Ws) /
         (ConstantsGPU::Cpd + (ConstantsGPU::Hv * ConstantsGPU::Hv * Ws * ConstantsGPU::E / (ConstantsGPU::Rsd * TKelvin * TKelvin))));
     return Tw / P;
-}
-
-
-
-//------------------------------------------------------------------------------------------
-
-//                                  Other Functions
-
-//------------------------------------------------------------------------------------------
-
-__global__ inline void setToValue(float* array, const float value, const int width)
-{
-    const int tX = threadIdx.x;
-    const int tY = blockIdx.x;
-    const int idx = tX + tY * width;
-
-    array[idx] = value;
-}
-
-__global__ inline void multiplyValues(float* array1, const float* array2, const int width)
-{
-    const int tX = threadIdx.x;
-    const int tY = blockIdx.x;
-    const int idx = tX + tY * width;
-
-    array1[idx] *= array2[idx];
-}
-
-__global__ inline void divideValues(float* array1, const float* array2, const int width)
-{
-    const int tX = threadIdx.x;
-    const int tY = blockIdx.x;
-    const int idx = tX + tY * width;
-
-    array1[idx] /= array2[idx];
-}
-
-__global__ inline void subtractValue(float* array, const float value, const int width)
-{
-    const int tX = threadIdx.x;
-    const int tY = blockIdx.x;
-    const int idx = tX + tY * width;
-
-    array[idx] -= value;
 }

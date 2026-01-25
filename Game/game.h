@@ -9,7 +9,7 @@ class readTable;
 class skewTer;
 class microPhys;
 class environmentGPU;;
-
+class dataClass;
 
 class game
 {
@@ -29,7 +29,7 @@ public:
 	skewTer& SkewT() { return *m_skewTerObj; }
 	microPhys& mPhys() { return *m_microPhysObj; }
 	environmentGPU& EnvGPU() { return *m_envGPUObj; }
-
+	dataClass& DataClass() { return *m_dataClassObj; }
 private:
 
 	environment* m_environmentObj = nullptr;
@@ -38,6 +38,7 @@ private:
 	skewTer* m_skewTerObj = nullptr;
 	microPhys* m_microPhysObj = nullptr;
 	environmentGPU* m_envGPUObj = nullptr;
+	dataClass* m_dataClassObj = nullptr;
 };
 
 extern game Game;

@@ -102,6 +102,15 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <CudaCompile>
+      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
+      <AdditionalOptions>--std=c++17 %(AdditionalOptions)</AdditionalOptions>
+      <Warning>InheritFromHost</Warning>
+    </CudaCompile>
+    <CudaLink>
+      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64</AdditionalLibraryDirectories>
+    </CudaLink>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -121,6 +130,15 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <CudaCompile>
+      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
+      <AdditionalOptions>--std=c++17 %(AdditionalOptions)</AdditionalOptions>
+      <Warning>InheritFromHost</Warning>
+    </CudaCompile>
+    <CudaLink>
+      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64</AdditionalLibraryDirectories>
+    </CudaLink>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -135,6 +153,16 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
+    <CudaCompile>
+      <GenerateRelocatableDeviceCode>false</GenerateRelocatableDeviceCode>
+      <AdditionalOptions>--std=c++17 %(AdditionalOptions)</AdditionalOptions>
+      <Warning>InheritFromHost</Warning>
+      <CudaRuntime>Static</CudaRuntime>
+    </CudaCompile>
+    <CudaLink>
+      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64</AdditionalLibraryDirectories>
+    </CudaLink>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -155,6 +183,15 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
+    <CudaCompile>
+      <GenerateRelocatableDeviceCode>false</GenerateRelocatableDeviceCode>
+      <AdditionalOptions>--std=c++17 %(AdditionalOptions)</AdditionalOptions>
+      <Warning>InheritFromHost</Warning>
+    </CudaCompile>
+    <CudaLink>
+      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64</AdditionalLibraryDirectories>
+    </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="editor.cpp" />
@@ -167,6 +204,7 @@
     <ClCompile Include="skewTer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="dataClass.cuh" />
     <ClInclude Include="editor.h" />
     <ClInclude Include="environment.cuh" />
     <ClInclude Include="environment.h" />
@@ -174,6 +212,7 @@
     <ClInclude Include="game.h" />
     <ClInclude Include="gameSystem.h" />
     <ClInclude Include="kernelGround.cuh" />
+    <ClInclude Include="kernelMaths.cuh" />
     <ClInclude Include="kernelSky.cuh" />
     <ClInclude Include="kernelTest.cuh">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
@@ -187,8 +226,10 @@
     <ClInclude Include="zip_file.hpp" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="dataClass.cu" />
     <CudaCompile Include="environment.cu" />
     <CudaCompile Include="kernelGround.cu" />
+    <CudaCompile Include="kernelMaths.cu" />
     <CudaCompile Include="kernelSky.cu" />
     <CudaCompile Include="kernelTest.cu">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>

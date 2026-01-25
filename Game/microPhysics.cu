@@ -1,13 +1,17 @@
 #include "microPhysics.cuh"
 
+//Game includes
+#include "environment.h"
+
+#include "meteoconstants.cuh"
+#include "meteoformulas.cuh"
+#include "game.h"
+#include "dataClass.cuh"
+
 #include <CUDA/include/cuda_runtime.h>
 #include <CUDA/include/cuda.h>
 #include <CUDA/cmath>
 
-//Game includes
-#include "environment.h"
-#include "meteoconstants.cuh"
-#include "meteoformulas.cuh"
 
 
 //Not same as the Gammas in #meteoformulas.cuh
@@ -19,12 +23,17 @@ __constant__ float m_gammaS; //Snow; 3 + d
 __constant__ float m_gammaI; //Ice; 3.5f
 __constant__ float m_gammaRI; //Smelting Ice; 2.75f
 
+__constant__ float m_gammaQr; //Rain falling; 4 + b
+__constant__ float m_gammaQs; //Snow falling; 4.0f + d
+__constant__ float m_gammaQi; //Ice falling; 4.0f + d
+
 
 /// <summary> Initializes all the gammas</summary>
 void initGammasMicroPhysics()
 {
     float GammaR, GammaER, GammaS, GammaRC, GammaSS, GammaI, GammaRI;
-
+    float GammaQr, GammaQs, gammaQi; //For falling vel
+    
     //Init constant gamma's
     const float b = 0.8f;
     const float d = 0.25f;
@@ -35,14 +44,21 @@ void initGammasMicroPhysics()
     GammaSS = tgammaf((d + 5.0f) / 2.0f);
     GammaI = tgammaf(3.5f);
     GammaRI = tgammaf(2.75f);
+    
+    GammaQr = tgammaf(4.0f + b);
+    GammaQs = tgammaf(4.0f + d);
+    gammaQi = GammaQs;
 
-    cudaMemcpyToSymbol((const void*)&m_gammaR,  &GammaR, sizeof(float));
-    cudaMemcpyToSymbol((const void*)&m_gammaER, &GammaER, sizeof(float));
-    cudaMemcpyToSymbol((const void*)&m_gammaS,  &GammaS, sizeof(float));
-    cudaMemcpyToSymbol((const void*)&m_gammaRC, &GammaRC, sizeof(float));
-    cudaMemcpyToSymbol((const void*)&m_gammaSS, &GammaSS, sizeof(float));
-    cudaMemcpyToSymbol((const void*)&m_gammaI,  &GammaI, sizeof(float));
-    cudaMemcpyToSymbol((const void*)&m_gammaRI, &GammaRI, sizeof(float));
+    cudaMemcpyToSymbol(m_gammaR,  &GammaR, sizeof(float));
+    cudaMemcpyToSymbol(m_gammaER, &GammaER, sizeof(float));
+    cudaMemcpyToSymbol(m_gammaS,  &GammaS, sizeof(float));
+    cudaMemcpyToSymbol(m_gammaRC, &GammaRC, sizeof(float));
+    cudaMemcpyToSymbol(m_gammaSS, &GammaSS, sizeof(float));
+    cudaMemcpyToSymbol(m_gammaI,  &GammaI, sizeof(float));
+    cudaMemcpyToSymbol(m_gammaRI, &GammaRI, sizeof(float));
+    cudaMemcpyToSymbol(m_gammaQr, &GammaQr, sizeof(float));
+    cudaMemcpyToSymbol(m_gammaQs, &GammaQs, sizeof(float));
+    cudaMemcpyToSymbol(m_gammaQi, &gammaQi, sizeof(float));
 }
 
 
@@ -70,21 +86,25 @@ __device__ float FPVDEP(const float temp, const float ps, const float Qv, const 
     }
 }
 
-__device__ float FPIMLT(const float Qc)
+__device__ float FPIMLT(const float temp, const float Qc)
 {
     //Melt cloud ice if possible
     //Melt all or the maximum we can handle
-    return Qc;
+    if (temp >= 0.0f)
+    {
+        return Qc;
+    }
+    return 0.0f;
 }
 
 __device__ float FPIDW(const float dt, const float temp, const float Qc, const float Qw, const float Dair, const float ps)
 {
-    if (temp < 0.0f && Qw > 0.0f)
+    if (temp < 0.0f && Qw > 0.0f && Qc > 0.0f)
     {
         //Formula from https://journals.ametsoc.org/view/journals/mwre/128/4/1520-0493_2000_128_1070_asfcot_2.0.co_2.xml and WeatherScapes
         const float a = 0.5f; // capacitance for hexagonal crystals
-        const float quu = fmax(1e-12f * NiGPU(temp) / Dair, Qc);
-        return powf((1 - a) * cvdGPU(temp, ps, Dair) * dt + powf(quu, 1 - a), 1 / (1 - a)) - Qc;
+        const float quu = fmax(1e-12f * NiGPU(temp) / (Dair * 0.001f), Qc);
+        return powf((1 - a) * cvdGPU(temp, ps, Dair * 0.001f) * dt + powf(quu, 1 - a), 1 / (1 - a)) - Qc;
     }
     return 0.0f;
 }
@@ -303,7 +323,7 @@ __device__ float FPSACI(const float temp, const float Qs, const float Qc, const 
 
 __device__ float FPSAUT(const float temp, const float Qc, const float QcMin)
 {
-    if (Qc - QcMin > 0.0f)
+    if (Qc - QcMin > 0.0f && temp < 0.0f)
     {
         return 1e-3f * exp(0.025f * (temp)) * (Qc - QcMin);
     }
@@ -403,10 +423,14 @@ __device__ float FPSSUB(const float PSDEP)
     return fmax(0.0f, -1 * PSDEP); //Inverse of depos and can't be negative
 }
 
-__device__ float FPSMLT(const float temp, const float ps, const float Qs, const float Qv, const float Dair, const float slopeS, const float PSACW, const float PSACR)
+__device__ float FPSMLT(const float temp, const float ps, const float Qw, const float Qr, const float Qs, const float Qv, const float Dair, const float slopeS, const float PSACW, const float PSACR, const float dtSpeed)
 {
     if (temp >= 0.0f && Qs > 0.0f)
     {
+        //Limit variables
+        const float LPSACW = fminf(Qw, PSACW * dtSpeed);
+        const float LPSACR = fminf(Qr, PSACR * dtSpeed);
+
         //TODO: introduce limit?
         //const float limit = Cpd / Lf * m_Tc;
 
@@ -434,18 +458,18 @@ __device__ float FPSMLT(const float temp, const float ps, const float Qs, const 
 
 __device__ float FPGAUT(const float temp, const float Qs, const float QiMin)
 {
-    if (Qs - QiMin > 0.0f)
+    const float surplus = Qs - QiMin;
+    if (surplus > 0.0f && temp < 0.0f)
     {
-        return 1e-3f * exp(0.09f * temp);
+        return (1e-3f * exp(0.09f * temp)) * (surplus);
     }
     return 0.0f;
 }
 
 __device__ float FPGFR(const float temp, const float Qr, const float Dair, const float slopeR)
 {
-    if (Qr > 0.0f)
+    if (Qr > 0.0f && temp < 0.0f)
     {
-        const float tempK = temp + 273.15f;
         //How many of this particle
         const float N0R = 8e-2f;
         //Densities in g/cm3
@@ -454,7 +478,7 @@ __device__ float FPGFR(const float temp, const float Qr, const float Dair, const
         const float A = 0.66f; // Kelvin
         const float B = 100.0f; // m3/s
 
-        return 20 * PI * PI * B * N0R * (densW / (Dair * 0.001f)) * (exp(A * (273.15f - tempK)) - 1) * powf(slopeR, -7);
+        return 20 * PI * PI * B * N0R * (densW / (Dair * 0.001f)) * (exp(A * (-temp)) - 1) * powf(slopeR, -7);
     }
     return 0.0f;
 }
@@ -530,9 +554,16 @@ __device__ float FPGACS(const float temp, const float Qs, const float Qi, const 
     return 0.0f;
 }
 
-__device__ float FPGDRY(const float PGACW, const float PGACI, const float PGACR, const float PGACS)
+__device__ float FPGDRY(const float Qw, const float Qc, const float Qr, const float Qs, 
+    const float PGACW, const float PGACI, const float PGACR, const float PGACS, const float dtSpeed)
 {
-    return PGACW + PGACI + PGACR + PGACS;
+    //Limit all values
+    const float LPGACW = fminf(Qw, PGACW * dtSpeed);
+    const float LPGACI = fminf(Qc, PGACI * dtSpeed);
+    const float LPGACR = fminf(Qr, PGACR * dtSpeed);
+    const float LPGACS = fminf(Qs, PGACS * dtSpeed);
+
+    return LPGACW + LPGACI + LPGACR + LPGACS;
 }
 
 __device__ float FPGSUB(const float temp, const float ps, const float Qv, const float QWI, const float Qi, const float Dair, const float slopeI)
@@ -565,10 +596,13 @@ __device__ float FPGSUB(const float temp, const float ps, const float Qv, const 
     return 0.0f;
 }
 
-__device__ float FPGMLT(const float temp, const float ps, const float Qi, const float Qv, const float Dair, const float slopeI, const float PGACW, const float PGACR)
+__device__ float FPGMLT(const float temp, const float ps, const float Qw, const float Qr, const float Qi, const float Qv, const float Dair, const float slopeI, const float PGACW, const float PGACR, const float dtSpeed)
 {
     if (Qi > 0.0f)
     {
+        //Limit variables
+        const float LPGACW = fminf(Qw, PGACW * dtSpeed);
+        const float LPGACR = fminf(Qr, PGACR * dtSpeed);
         //How many of this particle
         const float N0I = 4e-4f;
         //Density in g/cm3
@@ -586,19 +620,24 @@ __device__ float FPGMLT(const float temp, const float ps, const float Qi, const 
         //Multiply by -1 to make value turned around (we want to make it positive)
         return fmax(0.0f, -1 * (-2 * PI / (Dair * 0.001f * Lf) * (Ka * temp - E0v * dQv * Dair * 0.001f * Drs) * N0I *
             (0.78f * powf(slopeI, -2) + 0.31f * powf(Sc, 1.0f / 3.0f) * m_gammaRI * density * powf(kv, -0.5f) * powf(slopeI, -2.75f)) -
-            Cvl * temp / Lf * (PGACW + PGACR)));
+            Cvl * temp / Lf * (LPGACW + LPGACR)));
     }
     return 0.0f;
 }
 
 
-__device__ float FPGWET(const float temp, const float ps, const float Qs, const float Qi, const float Qv, const float3 fallVel, const float Dair, const float slopeS, const float slopeI, const float PGACI, const float PGACS)
+__device__ float FPGWET(const float temp, const float ps, const float Qc, const float Qs, const float Qi, const float Qv, 
+    const float3 fallVel, const float Dair, const float slopeS, const float slopeI, const float PGACI, const float PGACS, const float dtSpeed)
 {
     if (Qi > 0.0f)
     {
         const float PGACI1 = PGACI * 10.0f; //Multiplying by 10 is the same as re-calculating PGACI with EGI as 1.0f
         //Re-calcuating PGACS if Temp is lower then 0.0 to ensure EGS is 1.0f TODO: could otherwise use division by exp(0.09f * temp) to regain value
         const float PGACS1 = temp >= 0.0f ? PGACS : FPGACS(temp, Qs, Qi, Dair, fallVel, slopeS, slopeI, true);
+
+        //Limit them
+        const float LPGACI1 = fminf(Qc, PGACI1 * dtSpeed);
+        const float LPGACS1 = fminf(Qs, PGACS1 * dtSpeed);
 
         //How many of this particle
         const float N0I = 4e-4f;
@@ -616,13 +655,13 @@ __device__ float FPGWET(const float temp, const float ps, const float Qs, const 
 
         return 2 * PI * N0I * (Dair * 0.001f * E0v * dQv * Drs - Ka * temp) / (Dair * 0.001f * (Lf + Cvl * temp)) *
             (0.78f * powf(slopeI, -2) + 0.31f * powf(Sc, 1.0f / 3.0f) * m_gammaRI * density * powf(kv, -0.5f) * powf(slopeI, -2.75f)) +
-            (PGACI1 + PGACS1) * (1 - Cpi * temp / (Lf + Cvl * temp));
+            (LPGACI1 + LPGACS1) * (1 - Cpi * temp / (Lf + Cvl * temp));
     }
 
     return 0.0f;
 }
 
-__device__ float FPGACR1(const float temp, const float Qs, const float Qi, const float Dair, const float3 fallVel, const float slopeS, const float slopeI, const float PGWET, const float PGACW, const float PGACI, const float PGACS)
+__device__ float FPGACR1(const float temp, const float Qw, const float Qc, const float Qs, const float Qi, const float Dair, const float3 fallVel, const float slopeS, const float slopeI, const float PGWET, const float PGACW, const float PGACI, const float PGACS, const float dtSpeed)
 {
     if (Qi > 0.0f)
     {
@@ -630,8 +669,13 @@ __device__ float FPGACR1(const float temp, const float Qs, const float Qi, const
         //Re-calcuating PGACS if Temp is lower then 0.0 to ensure EGS is 1.0f TODO: could otherwise use division by exp(0.09f * temp) to regain value
         const float PGACS1 = temp >= 0.0f ? PGACS : FPGACS(temp, Qs, Qi, Dair, fallVel, slopeS, slopeI, true);
 
+        //Limit them
+        const float LPGACI1 = fminf(Qc, PGACI1 * dtSpeed);
+        const float LPGACS1 = fminf(Qs, PGACS1 * dtSpeed);
+        const float LPGACW = fminf(Qw, PGACW * dtSpeed);
+
         //If PGACW < (PGWET - PGACI1 - PGACS1), then PGACR1 is positive, meaning, we have freezing, else the wetness collected on the hail will melt off. (PGACR1 < 0)
-        return PGWET - PGACW - PGACI1 - PGACS1;
+        return PGWET - LPGACW - LPGACI1 - LPGACS1;
     }
 
     return 0.0f;
@@ -987,7 +1031,8 @@ __device__ float FPGRFR(const float tempAirK, const float tempGroundC, const flo
 
 __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, float* _Qr, float* _Qs, float* _Qi, 
     const float dt, const float speed, const float* _temp, const float* _pressure, const int* _groundHeight, const float* _groundpressure,
-    float* condens, float* depos, float* freeze)
+    float* condens, float* depos, float* freeze, 
+    const bool graphActive, const int2 minSelectPos, const int2 maxSelectPos, microPhysicsParams& microPhysicsResult)
 {
     //----------------------------------------------------------------------------------------------------------------------------------//
     //--------- Formulas and variables from https://research.csiro.au/ccam/wp-content/uploads/sites/520/2024/01/1377337420.pdf ---------//
@@ -997,8 +1042,16 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     const int tY = blockIdx.x;
     const int idx = tX + tY * GRIDSIZESKYX;
 
+    __shared__ microPhysicsParams microPhysValuesShared[GRIDSIZESKYX];
+    if (graphActive)
+    {  
+        microPhysValuesShared[tX].reset();
+    }
+
     //Is ground?
-    if (tY == _groundHeight[tX] - 1) return;
+    if (tY <= _groundHeight[tX]) return;
+    if (tX == GRIDSIZESKYX - 1) return; //Right side is not fully working due to pressure project 
+
 
     float PVCON{ 0.0f }; // Condensation/Evaporation rate of cloud water to vapor
     float PVDEP{ 0.0f }; // Deposition/Sublimation rate of cloud ice to vapor.
@@ -1026,8 +1079,8 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     float PGACW{ 0.0f }; // Accretion of cloud water by graupel
     float PGACI{ 0.0f }; // Accretion of cloud ice by graupel
     float PGACR{ 0.0f }; // Accretion of rain by graupel
-    float PGDRY{ 0.0f }; // Dry growth of graupel
     float PGACS{ 0.0f }; // Accretion of snow by graupel
+    float PGDRY{ 0.0f }; // Dry growth of graupel
     float PGSUB{ 0.0f }; // Sublimation of graupel
     float PGMLT{ 0.0f }; // Melting of graupel to form rain, T > 0. (In this regime, PGACW is assumed to be shed off as rain)
     float PGWET{ 0.0f }; // Wet growth of graupel; may involve PGACS and PGACI and must include: PGACW or PGACR, or both. The amount of PGACW which is not able to freeze is shed off as rain.
@@ -1045,26 +1098,28 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     const float QcMin = 0.001f; // the minimum cloud ice content required before snowmaking begins
     const float QiMin = 0.0006f; // the minimum ice content required before snow turns into ice
 
-    const float tempK = _temp[idx];
-    const float tempC = tempK - 273.15f;
+    float tempK = 0.0f;
+    float tempC = 0.0f;
+
     const float ps = _pressure[tY];
     float3 fallVel = { 0.0f, 0.0f, 0.0f };
     float Dair = 0.0f;
 
     //Setting density and falling velocity
     {
-        const float T = float(tempK) * powf(ps / _groundpressure[tX], Rsd / Cpd);
-        const float Tv = T * (0.608f * Qv + 1);
+        tempK = float(_temp[idx]) * powf(ps / _groundpressure[tX], Rsd / Cpd);
+        const float Tv = tempK * (0.608f * Qv + 1);
         Dair = ps * 100 / (Rsd * Tv); //Convert Pha to Pa
+        tempC = tempK - 273.15f;
 
-        if (Qr > 0.0f || Qs > 0.0f || Qi > 0.0f) fallVel = calculateFallingVelocityGPU(Qr, Qs, Qi, Dair, 4);
+        if (Qr > 0.0f || Qs > 0.0f || Qi > 0.0f) fallVel = calculateFallingVelocityGPU(Qr, Qs, Qi, Dair, 3, m_gammaQr, m_gammaQs, m_gammaQi);
     }
 
     const float QWS = wsGPU(tempC, ps); //Maximum water vapor air can hold
     const float QWI = wiGPU(tempC, ps); //Maximum water vapor cold air can hold
 
     //Production terms, used to sometimes create snow or ice or other stuff (formula 20): https://research.csiro.au/ccam/wp-content/uploads/sites/520/2024/01/1377337420.pdf 
-    const float PTerm1 = tempC < 0.0f && Qw + Qc > 0 + 1e-9f ? 1.0f : 0.0f; //TODO: when is there no cloud? (value 1e-9f)
+    const float PTerm1 = tempC < 0.0f && Qw + Qc > 0 + 1e-6f ? 1.0f : 0.0f; //TODO: when is there no cloud? (value 1e-6f)
     const float PTerm2 = tempC < 0.0f && Qr < 1e-4f && Qs < 1e-4f ? 1.0f : 0.0f;
     const float PTerm3 = tempC < 0.0f && Qr < 1e-4f ? 1.0f : 0.0f;
 
@@ -1077,7 +1132,7 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     PVCON = FPVCON(tempC, ps, Qv, QWS, dt, speed);
     PVDEP = FPVDEP(tempC, ps, Qv, QWI, dt, speed);
 
-    PIMLT = FPIMLT(Qv);
+    PIMLT = FPIMLT(tempC, Qc);
     PIDW = FPIDW(dt, tempC, Qc, Qw, Dair, ps);
     PIHOM = FPIHOM(tempC, Qw);
     PIACR = FPIACR(Qr, Qc, Dair, slopeR);
@@ -1095,7 +1150,7 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     PSDEP = FPSDEP(tempC, ps, Qv, QWI, Dair, slopeS);
     PSSUB = FPSSUB(PSDEP);
     PSDEP = fmax(0.0f, PSDEP); //Can't be negative
-    PSMLT = FPSMLT(tempC, ps, Qs, Qv, Dair, slopeS, PSACW, PSACR);
+    PSMLT = FPSMLT(tempC, ps, Qw, Qr, Qs, Qv, Dair, slopeS, PSACW, PSACR, dt * speed);
     PGAUT = FPGAUT(tempC, Qs, QiMin);
     PGFR = FPGFR(tempC, Qr, Dair, slopeR);
     PGACW = FPGACW(Qi, Qw, slopeI, Dair);
@@ -1103,12 +1158,10 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     PGACR = FPGACR(Qi, Qr, Dair, fallVel, slopeR, slopeI);
     PGACS = FPGACS(tempC, Qs, Qi, Dair, fallVel, slopeS, slopeI, false);
     PGSUB = FPGSUB(tempC, ps, Qv, QWI, Qi, Dair, slopeI);
-    PGMLT = FPGMLT(tempC, ps, Qi, Qv, Dair, slopeI, PGACW, PGACR);
-    PGDRY = FPGDRY(PGACW, PGACI, PGACR, PGACS);
-    PGWET = FPGWET(tempC, ps, Qs, Qi, Qv, fallVel, Dair, slopeS, slopeI, PGACI, PGACS);
-    PGACR1 = FPGACR1(tempC, Qs, Qi, Dair, fallVel, slopeS, slopeI, PGWET, PGACW, PGACI, PGACS);
-
-
+    PGMLT = FPGMLT(tempC, ps, Qw, Qr, Qi, Qv, Dair, slopeI, PGACW, PGACR, dt * speed);
+    PGDRY = FPGDRY(Qw, Qc, Qr, Qs, PGACW, PGACI, PGACR, PGACS, dt * speed);
+    PGWET = FPGWET(tempC, ps, Qc, Qs, Qi, Qv, fallVel, Dair, slopeS, slopeI, PGACI, PGACS, dt * speed);
+    PGACR1 = FPGACR1(tempC, Qw, Qc, Qs, Qi, Dair, fallVel, slopeS, slopeI, PGWET, PGACW, PGACI, PGACS, dt * speed);
 
     //Depending on which value is smaller, we choose or PGDRY or PGWET.
     //In case of PGWET, we use PGACR1 to decide how much rain or ice we gain, else we use PGACR
@@ -1179,14 +1232,14 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
         freeze[idx] -= PIMLT = dt * fmin(Qc, speed * PIMLT);
         //PIDW;
         //PIHOM;
-        //PIACR;
+        PIACR = 0.0f;
         //PRACI;
         PRAUT = dt * fmin(Qw, speed * PRAUT);
         PRACW = dt * fmin(Qw, speed * PRACW);
         condens[idx] -= PREVP = dt * fmin(Qr, speed * PREVP * (1 - PTerm1));
         //PRACS;
         //PSACR;
-        //PSACW; //Limited by PSMLT
+        PSACW = dt * fmin(Qw, speed * PSACW);
         //PSACI;
         //PSAUT;
         //PSFW;
@@ -1233,8 +1286,8 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     //PRACW:  | +Qr     | -Qw     |
     //PREVP:  | +Qv     | -Qr     |
     //PRACS:  | +Qi     | -Qs     | (Depending on PTerm2, and T < 0)
-    //PSACR:  | +Qs, Qi | -Qr     | (Depending on PTerm2)
     //PSACW:  | +Qs, Qr | -Qr, Qw | (+Qs if T < 0, +Qr if T >= 0)
+    //PSACR:  | +Qs, Qi | -Qr     | (Depending on PTerm2)
     //PSACI:  | +Qs     | -Qc     |
     //PSAUT:  | +Qs     | -Qc     |
     //PSFW:   | +Qs     | -Qw     |
@@ -1242,15 +1295,15 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     //PSDEP:  | +Qs     | -Qv     |
     //PSSUB:  | +Qv     | -Qs     |
     //PSMLT:  | +Qr     | -Qs     | (if T >= 0)
-    //PGAUT:  | +Qi     | -Qi     |
+    //PGAUT:  | +Qi     | -Qs     |
     //PGFR:   | +Qi     | -Qr     |
-    //PGSUB:  | +Qv     | -Qi     |
-    //PGMLT:  | +Qr     | -Qi     | (if T >= 0)
     //PGACW:  | +Qi, Qr | -Qw     | (Included in PGWET or PGDRY)
     //PGACI:  | +Qi     | -Qc     | (Included in PGWET or PGDRY)
     //PGACR:  | +Qi     | -Qr     | (Included in PGWET or PGDRY)
     //PGACS:  | +Qi     | -Qs     | (Included in PGWET or PGDRY)
     //PGDRY:  | +Qi     |         | (Depending on dry or wet)
+    //PGSUB:  | +Qv     | -Qi     |
+    //PGMLT:  | +Qr     | -Qi     | (if T >= 0)
     //PGWET:  | +Qi     |         | (Is included in PGACR1)
     //PGACR1: | +Qr, Qi | -Qr, Qi | (If PGWET and depending on positive or negative)
 
@@ -1281,14 +1334,75 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     {
         _Qv[idx] += PREVP * (1 - PTerm1) -
             PVCON - PVDEP;
-        _Qw[idx] += PVCON + PIMLT - PRAUT - PRACW - PGACW;
+        _Qw[idx] += PVCON + PIMLT - PRAUT - PRACW - PGACW - PSACW;
+
         _Qc[idx] += PVDEP - PIMLT;
 
         _Qr[idx] += PRAUT + PRACW + PSACW + PGACW +
             PGMLT + PSMLT - PREVP * (1 - PTerm1);
 
+
         _Qs[idx] += -PSMLT - PGACS;
         _Qi[idx] += -PGMLT + PGACS;
+    }
+    __syncthreads();
+
+    //Make data ready for return but only inside the set-region
+    if (graphActive)
+    {
+        bool insideRegion = (tX >= minSelectPos.x && tX <= maxSelectPos.x &&
+            tY >= minSelectPos.y && tY <= maxSelectPos.y);
+
+        int LIdx = tX;
+
+        if (insideRegion)
+        {
+            if (minSelectPos.x >= 0)
+            {
+                //Offset the index to the left, so we can correctly grab the most left one easily.
+                LIdx = tX - minSelectPos.x;
+            }
+
+            float PVVAP = 0.0f;
+            float PVSUB = 0.0f;
+            if (PVCON < 0.0f)
+            {
+                PVVAP = -PVCON;
+                PVCON = 0.0f;
+            }
+            if (PVDEP < 0.0f)
+            {
+                PVSUB = -PVDEP;
+                PVDEP = 0.0f;
+            }
+            PGWET *= WTerm;
+            PGDRY *= (1 - WTerm);
+
+            microPhysValuesShared[LIdx].init(PVCON, PVDEP, PIMLT, PIDW, PIHOM, PIACR, PRACI, PRAUT,
+                PRACW, PREVP, PRACS, PSACW, PSACR, PSACI, PSAUT, PSFW,
+                PSFI, PSDEP, PSSUB, PSMLT, PGAUT, PGFR, PGACW, PGACI,
+                PGACR, PGDRY, PGACS, PGSUB, PGMLT, PGWET, PGACR1, PVVAP, PVSUB);
+        }
+        __syncthreads();
+
+
+        //Basically, we grab half of the block, add all the values on the other side and repeat the process.
+        for (int i = GRIDSIZESKYX / 2; i > 0; i >>= 1)
+        {
+            if (insideRegion && LIdx < i)
+            {
+                microPhysValuesShared[LIdx] = microPhysValuesShared[LIdx] + microPhysValuesShared[LIdx + i];
+            }
+            __syncthreads();
+        }
+
+
+        //Using atomicAdd(), we can safely add all block values to a singular value
+        if (insideRegion && LIdx == 0)
+        {
+            microPhysValuesShared->atomicAddValues(microPhysicsResult, microPhysValuesShared[0]);
+        }
+        __syncthreads();
     }
 }
 
@@ -1300,7 +1414,7 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
     const int tX = threadIdx.x;
 
     const int tY = _groundHeight[tX]; //Y to use index on environment variables
-    const int idx = tX + tY * GRIDSIZESKYX;
+    const int idx = tX + (tY + 1) * GRIDSIZESKYX;
 
 
     float PGREVP{ 0.0f }; // Evaporation of (rain)water.
@@ -1329,7 +1443,7 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
     float depos = 0.0f;
 
     const float tempGroundC = _tempGround[tX] - 273.15f;
-    const float tempAirK = _tempAir[idx];
+    float tempAirK = 0.0f;
     const float ps = _pressure[tY];
     const float windSpeed = _windSpeedX[idx];
     const float cloudCover = _cloudCover[tX];
@@ -1338,10 +1452,14 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
 
     //Setting density and falling velocity
     {
-        const float T = float(tempAirK) * powf(ps / groundPressure[tX], Rsd / Cpd);
-        const float Tv = T * (0.608f * Qv + 1);
+        const float tempAirK = float(_tempAir[idx]) * powf(ps / groundPressure[tX], Rsd / Cpd);
+        const float Tv = tempAirK * (0.608f * Qv + 1);
         Dair = ps * 100 / (Rsd * Tv); //Convert Pha to Pa
     }
+    tempAirK += 273.15f;
+
+    //printf("tempGroundC[(%i, %i), %i (Y + 1)]: %f\n", tX, tY, idx, tempGroundC);
+    //printf("TempK[(%i, %i), %i (Y + 1)]: %f\n", tX, tY, idx, tempAirK);
 
     const float QWS = wsGPU(tempGroundC, ps); //Maximum water vapor air can hold
     const float QWI = wiGPU(tempGroundC, ps); //Maximum water vapor cold air can hold
@@ -1378,33 +1496,39 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
     //PGFLW:  | +Qrs    | -Qr     | 
     //PGDEVP: | +Qv     | -Qrs    | 
 
-    _Qrs[idx] += PGFLW - PGDEVP;
+    _Qrs[tX] += PGFLW - PGDEVP;
     _Qv[idx] += PGREVP + PGDEVP;
-    _Qgr[idx] += PGSMLT + PGGMLT - PGREVP - PGGFR - PGSFR - PGFLW;
-    _Qgs[idx] += PGSFR - PGSMLT;
-    _Qgi[idx] += PGGFR - PGGMLT;
+    _Qgr[tX] += PGSMLT + PGGMLT - PGREVP - PGGFR - PGSFR - PGFLW;
+    _Qgs[tX] += PGSFR - PGSMLT;
+    _Qgi[tX] += PGGFR - PGGMLT;
 
 
     //Adding ground heat
     {
-        const float Mair = 0.02896f; //In kg/mol
-        const float Mwater = 0.01802f; //In kg/mol
-        const float XV = (Qv / Mwater) / ((Qv / Mwater) + (1 - Qv) / Mair);
-        const float Mth = XV * Mwater + (1 - XV) * Mair;
-        const float Yair = 1.4f, yV = 1.33f;
-        const float YV = XV * (Mwater / Mth); //Mass fraction of vapor
-        const float yth = YV * yV + (1 - YV) * Yair; //Weighted average
+        //const float Mair = 0.02896f; //In kg/mol
+        //const float Mwater = 0.01802f; //In kg/mol
+        //const float XV = (Qv / Mwater) / ((Qv / Mwater) + (1 - Qv) / Mair);
+        //const float Mth = XV * Mwater + (1 - XV) * Mair;
+        //const float Yair = 1.4f, yV = 1.33f;
+        //const float YV = XV * (Mwater / Mth); //Mass fraction of vapor
+        //const float yth = YV * yV + (1 - YV) * Yair; //Weighted average
 
+        //TODO: get specifics on this
         // Get specific gas constant
-        const float cpth = R / (Mth * (yth - 1)); //Not multiplied by yth due to not needing pottemp but normal temp
+       // const float cpth = R / (Mth * (yth - 1)); //Not multiplied by yth due to not needing pottemp but normal temp
+        const float cp_soil = 1500.0f; // J/(kg·K)
+        const float rho_soil = 1500.0f; // kg/m3 soil density
+        const float depth_layer = 0.1f; // m depth of ground layer you're modeling
+        const float mass_soil = rho_soil * depth_layer; // kg/m2 of soil
+
 
         float sumPhaseheat = 0.0f;
 
-        sumPhaseheat += LwaterGPU(tempGroundC) / cpth * condens;
-        sumPhaseheat += LiceGPU(tempGroundC) / cpth * depos;
-        sumPhaseheat += Lf / cpth * freeze;
+        sumPhaseheat += LwaterGPU(tempGroundC) / (mass_soil * cp_soil)*condens;
+        sumPhaseheat += LiceGPU(tempGroundC) / (mass_soil * cp_soil) * depos;
+        sumPhaseheat += Lf / (mass_soil * cp_soil) * freeze;
 
-        _tempGround[tX] += dt * sumPhaseheat;
+        _tempGround[tX] += sumPhaseheat;
     }
 }
 
@@ -1416,7 +1540,7 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
     const int tX = threadIdx.x;
 
     const int tY = _groundHeight[tX]; //Y to use index on environment variables
-    const int idx = tX + tY * GRIDSIZESKYX;
+    const int idx = tX + (tY + 1) * GRIDSIZESKYX;
 
 
     float PGRFR{ 0.0f }; // Freezing rain hitting the ground forming ice
@@ -1427,9 +1551,9 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
     const float Qgs = _Qgs[tX] > 1e-18f ? _Qgs[tX] : 0.0f;
     const float Qgi = _Qgi[tX] > 1e-18f ? _Qgi[tX] : 0.0f;
     const float Qv = _Qv[idx] > 1e-18f ? _Qv[idx] : 0.0f;
-    const float Qr = _Qr[tX] > 1e-18f ? _Qr[tX] : 0.0f;
-    const float Qs = _Qs[tX] > 1e-18f ? _Qs[tX] : 0.0f;
-    const float Qi = _Qi[tX] > 1e-18f ? _Qi[tX] : 0.0f;
+    const float Qr = _Qr[idx] > 1e-18f ? _Qr[idx] : 0.0f;
+    const float Qs = _Qs[idx] > 1e-18f ? _Qs[idx] : 0.0f;
+    const float Qi = _Qi[idx] > 1e-18f ? _Qi[idx] : 0.0f;
 
     float freeze = 0.0f;
 
@@ -1448,7 +1572,7 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
 
         if (Qgr > 0.0f || Qgs > 0.0f || Qgi > 0.0f)
         {
-            fallVel = calculateFallingVelocityGPU(Qgr, Qgs, Qgi, Dair, 4);
+            fallVel = calculateFallingVelocityGPU(Qgr, Qgs, Qgi, Dair, 3, m_gammaQr, m_gammaQs, m_gammaQi);
         }
     }
 
@@ -1481,9 +1605,9 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
     _Qr[idx] += -GR;
     _Qs[idx] += -GS;
     _Qi[idx] += -GI;
-    _Qgr[idx] += GR - PGRFR;
-    _Qgs[idx] += GS;
-    _Qgi[idx] += GI + PGRFR;
+    _Qgr[tX] += GR - PGRFR;
+    _Qgs[tX] += GS;
+    _Qgi[tX] += GI + PGRFR;
 
     //Adding ground heat
     {
@@ -1501,6 +1625,6 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
         float sumPhaseheat = 0.0f;
         sumPhaseheat += Lf / cpth * freeze;
 
-        _tempGround[tX] += dt * sumPhaseheat;
+        _tempGround[tX] += sumPhaseheat;
     }
 }

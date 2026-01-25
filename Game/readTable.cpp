@@ -15,6 +15,8 @@
 #include <iostream>
 #include <cassert>
 #include <memory>
+#include <chrono>
+#include <ctime>
 
 #include <CUDA/include/cuda_runtime.h>
 #include <CUDA/include/cuda.h>
@@ -200,11 +202,16 @@ void readTable::readDWDFile(const char* _file)
 		}
 
 	}
-
+	
 	//TODO: Could do something with the dates, i.e. select a date, but for now we will grab the latest.
 	targetDate = AllDates[161] + "12"; // 2025 03 24 
 
-	//targetDate = AllDates[243] + "12"; // 2024 05 01 - 1700 Cape?
+
+	//734
+	//srand(static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1)));
+	//int dateNum = rand() % 734;
+
+	//targetDate = AllDates[dateNum] + "12"; // 2024 05 01 - 1700 Cape?
 
 	printf("Reading file %s\n", targetDate.c_str());
 
@@ -250,6 +257,11 @@ void readTable::readDWDFile(const char* _file)
 				}
 			}
 			count++;
+		}
+		if (s.tellg() == -1)
+		{
+			printf("Error, could not find date: %s\n", targetDate.c_str());
+			return;
 		}
 	}
 	reachedDate = false;
@@ -321,6 +333,11 @@ void readTable::readDWDFile(const char* _file)
 			}
 		}
 		if (reachedDate) row++;
+		if (s.tellg() == -1)
+		{
+			printf("Error, could not find date: %s\n", targetDate.c_str());
+			return;
+		}
 	}
 
 	//Copy the data over

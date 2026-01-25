@@ -2,6 +2,9 @@
 
 #include <cuda_runtime.h> 
 struct Neigh;
+enum parameter : uint16_t;
+struct microPhysicsParams;
+struct envDebugData;
 
 class environmentGPU
 {
@@ -55,6 +58,7 @@ public:
 	//-----------------Advecting----------------
 
 	void advectGroundWaterGPU(const float dt, const float speed);
+	void setTempsAtGround(const float dt, const float speed);
 	void advectAddDensity(float* array, const float* defaultVal, const float dt, const bool density);
 	void advectPPMWGPU(float* array, const float* defaultVal, const float dt);
 	// fallVelType: rain = 0, snow = 1, hail = 2
@@ -77,8 +81,27 @@ public:
 	void updateGroundTempsGPU(const float dt, const float speed, const float irridiance);
 	void calculateBuoyancy(const float dt);
 	bool isGround(int x, int y);
+	float* getParamArray(parameter type, const bool windX = true);
 	//------------------------------------------
 
+
+	//-------------------Outside------------------
+
+	void prepareBrushGPU(parameter paramType, const float brushSize, const float2 mousePos, const float2 extras,
+		const float brushSmoothnes, const float dt, const float brushIntensity, const float applyValue, const float2 valueDir, const bool groundErase);
+	void resetParameterGPU(parameter paramType);
+	//------------------------------------------
+
+	//-------------------Get/Set------------------
+
+	envDebugData* getDebugData();
+	//gridDataSkyGPU& getEnvGridGPU() { return m_envGrid; }
+	//gridDataGroundGPU& getGroundGridGPU() { return m_groundGrid; }
+	//float* getIsenTropicTemp() { return m_isentropicTemp; }
+	//float* getIsenTropicVapor() { return m_isentropicVapor; }
+	//float* getDefaultWind() { return m_defaultVel; }
+
+	//------------------------------------------
 
 
 private:
@@ -91,26 +114,30 @@ private:
 	float m_time = 43200.0f; //0 to 86.400 time in seconds
 	const float m_dayLightDuration = 14.0f;
 	const float m_hourOfSunrise = 6.0f;
-	float m_speed = 1.0f;
 	float m_longitude = 52.37f; //Longitude on earth, 52.37 is Amsterdam
 	int m_day = 130; //Day of the year
 	float m_sunStrength = 1.0f;
 	bool m_pauseDiurnal = false;
 
+	//GPU variables
 	float* m_array;
 	float* m_outputArray;
 	float* m_defaultVal;
 	float* m_density;
 
 	Neigh* m_neighbourData;
+	microPhysicsParams* m_microPhysRes;//Used for microphysics
 
 	int* m_GHeight;
+	int* m_dummyGHeight;
 
 	float* m_pressures;
 	float* m_defaultVel;
 	float* m_isentropicTemp;
 	float* m_isentropicVapor;
 	float* m_dummyArray;
+	float* m_dummyArraySky2;
+
 	float* m_dummyArrayGround;
 	float* m_dummyArrayGround2;
 
@@ -123,6 +150,7 @@ private:
 	float* m_sigma0;
 	float* m_sigma1;
 	int* m_firstValid;
+	bool* m_storBool;
 
 	//Extra Storage
 	float* m_stor0;
@@ -133,5 +161,8 @@ private:
 	float* m_precon; //Precon (pressure projection)
 	char3* m_A; //A matrix (pressure projection)
 
+	//CPU storage
+	float m_velXCPU[GRIDSIZESKY];
+	float m_velYCPU[GRIDSIZESKY];
 
 };

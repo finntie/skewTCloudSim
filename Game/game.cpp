@@ -8,6 +8,7 @@
 #include "skewTer.h"
 #include "microPhys.h"
 #include "environment.cuh"
+#include "dataClass.cuh"
 
 // Make the game a global variable on free store memory.
 game Game;
@@ -20,6 +21,7 @@ game::game()
 game::~game()
 {
 	//Cleanup from last created to first.
+	delete m_dataClassObj;
 	delete m_microPhysObj;
 	delete m_skewTerObj;
 	delete m_envGPUObj;
@@ -31,11 +33,16 @@ game::~game()
 void game::Initialize()
 {
 	m_readTableObj = new readTable();
+#if USE_GPU
+	m_envGPUObj = new environmentGPU();
+	m_editorObj = new editor(m_envGPUObj->getDebugData());
+#else
 	m_environmentObj = new environment();
 	m_editorObj = new editor(m_environmentObj->getDebugData());
-	m_envGPUObj = new environmentGPU();
+#endif
 	m_skewTerObj = new skewTer();
 	m_microPhysObj = new microPhys();
+	m_dataClassObj = new dataClass();
 }
 
 //Update function 

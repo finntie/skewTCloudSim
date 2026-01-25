@@ -548,8 +548,8 @@ void environment::diffuseAndAdvectTemp(const float dt)
 
 	for (int i = 0; i < GRIDSIZESKY; i++)
 	{
-		//m_envGrid.potTemp[i] /= density[i];
-		//density[i] -= 1.0f;
+		m_envGrid.potTemp[i] /= density[i];
+		density[i] -= 1.0f;
 		//m_debugArray1[i] = density[i];
 	}
 	//setDebugArray(density, 1);
@@ -1061,15 +1061,14 @@ void environment::updateVelocityField(const float dt)
 		glm::vec2 F = { 0,0 };
 		//glm::vec2 F = vorticityConfinement(i); TODO: Fix on sides
 		
-		debugVector[i] = B;
+		debugVector[i] = B * dt * m_speed;
 		//F.x = 0.0f;
 		//F.y = 0.0f;
 		//B = 0.0f;
 		m_envGrid.velField[i].x += m_speed * dt * F.x;
 		m_envGrid.velField[i].y += m_speed * dt * (B + F.y);
 	}
-	
-	setDebugArray(debugVector, 2);
+	Game.Editor().setDebugValueNum(debugVector.data(), 2);
 	
 	
 	//2. TODO: could make use of same matrix projection() uses.
@@ -1210,7 +1209,7 @@ void environment::updateVelocityField(const float dt)
 
 float environment::calculateBuoyancy(const int i)
 {
-	const float mDistance = 4096.0f / VOXELSIZE; //Distance buoyancy will be taken into account.
+	const float mDistance = 3.5f;// 4096.0f / VOXELSIZE; //Distance buoyancy will be taken into account.
 	const int oX = i % GRIDSIZESKYX;
 	const int oY = int(float(i) / GRIDSIZESKYX);
 
@@ -1404,6 +1403,7 @@ float environment::calculateBuoyancy(const int i)
 			{
 				BuoyancyFinal += buoyancies[0];
 				divideBy++;
+				//printf("Parcel Falling Y: %i, BDown: %f, BUp: %f, adiabUp %f, adiabDown %f \n", oY, buoyancies[0], buoyancies[2], PTemps[0], PTemps[2]);
 				if (BuoyancyFinal > 0.0f) //Rising due to falling into colder air
 				{
 					//BuoyancyFinal = 0.0f;
@@ -1783,7 +1783,7 @@ void environment::calculatePresProj(std::vector<float>& p)
 		}
 		if (maxr < tolValue)
 		{
-			std::cout << "iteration amount: " << i << std::endl;
+			//std::cout << "iteration amount: " << i << std::endl;
 			return;
 		}
 
@@ -2079,6 +2079,18 @@ glm::vec2 environment::getUV(const int i)
 	return glm::vec2((Pu + u) / 2, (Pv + v) / 2);
 }
 
+glm::vec2 environment::getUV(const glm::vec2* velField, const int i)
+{
+	//Casual avaraging
+	const int x = i % GRIDSIZESKYX;
+	const float u = velField[i].x;
+	const float v = velField[i].y;
+	const float Pu = x == 0 ? velField[i].x :velField[i - 1].x;
+	const float Pv = i - GRIDSIZESKYX < 0 ? 0.0f : velField[i - GRIDSIZESKYX].y;
+
+	return glm::vec2((Pu + u) / 2, (Pv + v) / 2);
+}
+
 float environment::getIsentropicTemp(const float coordy)
 {
 	//Clamp
@@ -2199,25 +2211,12 @@ void environment::computeNeighArray()
 	}
 }
 
-void environment::setDebugArray(std::vector<float>& s, const int i)
-{
-	switch (i)
-	{
-	case 0:
-		memcpy(m_debugArray0, s.data(), s.size() * sizeof(float));
-		break;
-	case 1:
-		memcpy(m_debugArray1, s.data(), s.size() * sizeof(float));
-		break;
-	case 2:
-		memcpy(m_debugArray2, s.data(), s.size() * sizeof(float));
-		break;
-	default:
-		break;
-	}
-}
-
 envDebugData* environment::getDebugData()
 {
-	return new envDebugData(m_envGrid, m_groundGrid, m_GHeight, m_debugArray0, m_debugArray1, m_debugArray2);
+#if !USE_GPU
+	return new envDebugData(m_envGrid, m_groundGrid, m_GHeight);
+#else
+	return new envDebugData();
+#endif
+
 };

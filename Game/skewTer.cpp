@@ -146,6 +146,9 @@ void skewTer::drawDryAndMoist()
 {
 	//Dry and moist adiabatics
 	{
+		if (m_skewT.temps[startHeight] != m_skewT.temps[startHeight] || m_skewT.temps[startHeight] <= -273.0f ||
+			m_skewT.dewPoints[startHeight] != m_skewT.dewPoints[startHeight]) return;
+
 		std::unique_ptr<float[]> temps = std::make_unique<float[]>(m_skewT.size);
 
 		//Dry adiabatic to LCL
@@ -153,6 +156,7 @@ void skewTer::drawDryAndMoist()
 
 		for (int j = startHeight + 1; j < m_skewT.size; j++)
 		{
+			if (temps[j - 1] <= -273.0f || temps[j] <= -273.0f) return;
 			//TODO: should convertToPlottingCoordinates include setting default pressure height? (maybe an extra function that sets it)
 			glm::vec2 coords = convertToPlottingCoordinates(temps[j], m_skewT.pressures[j], true, skewTSize.x, skewTSize.y);
 			glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], m_skewT.pressures[j - 1], true, skewTSize.x, skewTSize.y);
@@ -170,6 +174,7 @@ void skewTer::drawDryAndMoist()
 		{
 			for (int j = offset + 1; j < m_skewT.size; j++)
 			{
+				if (temps[j - 1] <= -273.0f || temps[j] <= -273.0f) return;
 				//TODO: should convertToPlottingCoordinates include setting default pressure height? (maybe an extra function that sets it)
 				glm::vec2 coords = convertToPlottingCoordinates(temps[j], m_skewT.pressures[j], true, skewTSize.x, skewTSize.y);
 				glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], m_skewT.pressures[j - 1], true, skewTSize.x, skewTSize.y);

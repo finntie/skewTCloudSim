@@ -1,8 +1,8 @@
 #include "environment.h"
-#include "environment.cuh"
 #include "editor.h"
 #include "skewTer.h"
-#include "game.h"
+#include "dataClass.cuh"
+//#include "game.h" //Done in .h due to need for USE_GPU
 
 #include "math/meteoformulas.h"
 #include "math/constants.hpp"
@@ -25,6 +25,10 @@
 #include "imgui/imgui.h"
 
 #if USE_GPU
+#include "environment.cuh"
+#include "kernelMaths.cuh"
+#include "kernelSky.cuh"
+#include <cuda.h>
 #include <cuda_runtime.h>
 #endif
 
@@ -139,6 +143,8 @@ void editor::panel()
 	editModeParams();
 	setSkewTData();
 	skewTTexture();
+	dataClassView();
+	viewMicroPhysGraph();
 	viewImguiData();
 }
 
@@ -186,8 +192,9 @@ void editor::setDebugValueNum(const float* array, const int num)
 #endif
 }
 
-void editor::GPUSetEnv(void* _sky, void* _ground)
+void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight)
 {
+#if USE_GPU
 	auto* sky = static_cast<environmentGPU::gridDataSkyGPU*>(_sky);
 	auto* ground = static_cast<environmentGPU::gridDataGroundGPU*>(_ground);
 
@@ -217,21 +224,33 @@ void editor::GPUSetEnv(void* _sky, void* _ground)
 	cudaMemcpy(m_envData->m_groundView.Qgi, ground->Qgi, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
 	cudaMemcpy(m_envData->m_groundView.P, ground->P, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
 	cudaMemcpy(m_envData->m_groundView.t, ground->t, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(m_envData->m_groundHeight, _groundHeight, GRIDSIZEGROUND * sizeof(int), cudaMemcpyDeviceToHost);
+#else
+	_sky;
+	_ground;
+	_groundHeight;
+#endif
 }
 
 void editor::editMode()
 {
 	m_changedGround = false;
 
-	if (m_editMode)
+	if (m_editMode || m_microPhysSelect)
 	{
-		viewBrush();
-		applyBrush();
+		if (m_editMode)
+		{
+			viewBrush();
+			applyBrush();
+			usePicker();
+		}
 		applySelect();
 		viewSelection();
-		usePicker();
 	}
-
+	else if (m_justViewSelection)
+	{
+		viewSelection();
+	}
 }
 
 void editor::cameraControl()
@@ -399,25 +418,14 @@ void editor::setVariables()
 
 void editor::mainButtons()
 {
+	ImGui::BeginGroup();
 	if (ImGui::Button(ICON_FA_PLAY))
 	{
 		m_simulationActive = true;
 	}	ImGui::SameLine();
-
 	if (ImGui::Button(ICON_FA_STOP))
 	{
 		m_simulationActive = false;
-	}	ImGui::SameLine();
-
-	std::string mode = m_editMode ? "View" : "Edit";
-	if (ImGui::Button(mode.c_str()))
-	{
-		m_editMode = m_editMode ? false : true;
-	}
-	ImGui::SameLine();
-	if (ImGui::Button("SkewTOptions"))
-	{
-		m_skewTSettings = m_skewTSettings ? false : true;
 	}
 
 	//Step forwards and step backwards (IMPORTANT: step backwards could cause inaccuracies)
@@ -430,6 +438,26 @@ void editor::mainButtons()
 	{
 		m_simulationStep = 1;
 	}
+	ImGui::EndGroup();
+	ImGui::SameLine();
+	ImGui::BeginGroup();
+	std::string mode = m_editMode ? "View" : "Edit";
+	if (ImGui::Button(mode.c_str()))
+	{
+		m_editMode = m_editMode ? false : true;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("SkewTOptions"))
+	{
+		m_skewTSettings = m_skewTSettings ? false : true;
+	}
+	if (ImGui::Button("Data"))
+	{
+		m_dataViewer = m_dataViewer ? false : true;
+	}
+	ImGui::EndGroup();
+
+
 }
 
 void editor::viewParamInformation()
@@ -502,6 +530,17 @@ void editor::setView()
 	if (ImGui::TreeNode("Resetting"))
 	{
 		ImGui::Text("Reset one parameter:");
+#if USE_GPU
+		if (ImGui::Button("Temp")) Game.EnvGPU().resetParameterGPU(POTTEMP); ImGui::SameLine();
+		if (ImGui::Button("Wind")) Game.EnvGPU().resetParameterGPU(WIND); ImGui::SameLine();
+		if (ImGui::Button("Qv")) Game.EnvGPU().resetParameterGPU(QV); ImGui::SameLine();
+		if (ImGui::Button("Qw")) Game.EnvGPU().resetParameterGPU(QW); ImGui::SameLine();
+		if (ImGui::Button("Qc")) Game.EnvGPU().resetParameterGPU(QC);
+		if (ImGui::Button("Qr")) Game.EnvGPU().resetParameterGPU(QR); ImGui::SameLine();
+		if (ImGui::Button("Qs")) Game.EnvGPU().resetParameterGPU(QS); ImGui::SameLine();
+		if (ImGui::Button("Qi")) Game.EnvGPU().resetParameterGPU(QI);
+
+#else
 		if (ImGui::Button("Temp"))
 		{
 			for (int i = 0; i < GRIDSIZESKY; i++)
@@ -524,6 +563,9 @@ void editor::setView()
 		if (ImGui::Button("Qr")) memset(m_envData->m_envView.Qr, 0, sizeof(float) * GRIDSIZESKY); ImGui::SameLine();
 		if (ImGui::Button("Qs")) memset(m_envData->m_envView.Qs, 0, sizeof(float) * GRIDSIZESKY); ImGui::SameLine();
 		if (ImGui::Button("Qi")) memset(m_envData->m_envView.Qi, 0, sizeof(float) * GRIDSIZESKY);
+#endif
+
+
 
 		ImGui::TreePop();
 	}
@@ -556,7 +598,7 @@ void editor::editModeParams()
 			if (ImGui::Button("Qr")) m_editParamSky = QR;		ImGui::SameLine();
 			if (ImGui::Button("Qs")) m_editParamSky = QS;		ImGui::SameLine();
 			if (ImGui::Button("Qi")) m_editParamSky = QI;
-			if (ImGui::Button("Ground")) m_editParamSky = GROUND;
+			if (ImGui::Button("Ground")) m_editParamSky = PGROUND;
 
 			static int e = 0;
 			ImGui::RadioButton("Empty", &e, 0); ImGui::SameLine();
@@ -566,12 +608,13 @@ void editor::editModeParams()
 			if (e == 0)
 			{
 				m_brushing = false;
-				m_selecting = false;
+				m_selecting = m_microPhysSelect;
 			}
 			else if (e == 1)//(ImGui::TreeNode("Brushing"))
 			{
 				m_brushing = true;
 				m_selecting = false;
+				m_microPhysSelect = false;
 
 				glm::vec2 minMax = getMinMaxVaueParam(m_editParamSky);
 				ImGuiSliderFlags sliderFlag = 0;
@@ -599,6 +642,7 @@ void editor::editModeParams()
 			{
 				m_brushing = false;
 				m_selecting = true;
+				m_microPhysSelect = false;
 
 				glm::vec2 minMax = getMinMaxVaueParam(m_editParamSky);
 				ImGuiSliderFlags sliderFlag = 0;
@@ -822,6 +866,36 @@ void editor::skewTTexture()
 	ImGui::End();
 }
 
+void editor::dataClassView()
+{
+	if (m_dataViewer)
+	{
+		ImGui::Begin("Data Viewer");
+
+		ImGui::SeparatorText("MicroPhysics Graph");
+		if (ImGui::Button("Select Region"))
+		{
+			m_microPhysSelect = true;
+			m_selecting = true;
+			m_justViewSelection = false;
+		}
+		if (ImGui::Button("Cancel Region"))
+		{
+			m_microPhysSelect = false;
+			m_selecting = false;
+			m_justViewSelection = false;
+		}
+		if (ImGui::Button("View Region"))
+		{
+			m_justViewSelection = true;
+			m_selecting = false;
+			m_microPhysSelect = false;
+		}
+
+		ImGui::End();
+	}
+}
+
 
 void editor::viewBackground()
 {
@@ -851,7 +925,7 @@ void editor::viewSky()
 			glm::vec3 color{};
 			switch (m_viewParamSky)
 			{
-			case editor::POTTEMP:
+			case POTTEMP:
 			{
 				//Get temp
 				const float Tz = float(m_envData->m_envView.potTemp[int(x) + int(y) * GRIDSIZESKYX]) - 273.15f;
@@ -860,31 +934,31 @@ void editor::viewSky()
 				colorScheme.getColor("TemperatureSky", T, color);
 				break;
 			}
-			case editor::QV:
+			case QV:
 				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qv[int(x) + int(y) * GRIDSIZESKYX], color);
 				break;
-			case editor::QW:
+			case QW:
 				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qw[int(x) + int(y) * GRIDSIZESKYX], color);
 				break;
-			case editor::QC:
+			case QC:
 				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qc[int(x) + int(y) * GRIDSIZESKYX], color);
 				break;
-			case editor::QR:
+			case QR:
 				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qr[int(x) + int(y) * GRIDSIZESKYX], color);
 				break;
-			case editor::QS:
+			case QS:
 				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qs[int(x) + int(y) * GRIDSIZESKYX], color);
 				break;
-			case editor::QI:
+			case QI:
 				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qi[int(x) + int(y) * GRIDSIZESKYX], color);
 				break;
-			case editor::WIND:
-				const glm::vec2 VelUV = Game.Environment().getUV(x + y * GRIDSIZESKYX);
+			case WIND:
+				const glm::vec2 VelUV = Game.Environment().getUV(m_envData->m_envView.velField, x + y * GRIDSIZESKYX);
 				// = m_envData->m_envView.velField[x + y * GRIDSIZESKYX];// getUV(int(x) + int(y) * GRIDSIZESKYX);
 				colorScheme.getColor("velField", glm::length(VelUV), color);
 				bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, 0.1f), glm::vec3(0.0f, 0.0f, 1.0f), VelUV, 0.9f, bee::Colors::Black);
 				break;
-			case editor::DEBUG1:
+			case DEBUG1:
 			{
 				//Currently for realistic view
 				const int idx = int(x) + int(y) * GRIDSIZESKYX;
@@ -894,10 +968,10 @@ void editor::viewSky()
 				colorScheme.getColor("realistic", allValues, color);
 				break;
 			}
-			case editor::DEBUG2:
+			case DEBUG2:
 				colorScheme.getColor("debugColor", m_envData->m_debugArray1[int(x) + int(y) * GRIDSIZESKYX], color);
 				break;
-			case editor::DEBUG3:
+			case DEBUG3:
 				colorScheme.getColor("debugColor", m_envData->m_debugArray2[int(x) + int(y) * GRIDSIZESKYX], color);
 				break;
 			default:
@@ -965,7 +1039,7 @@ void editor::viewBrush()
 void editor::viewSelection()
 {
 	//Set correct selection posses
-	if (m_selecting && !bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::LeftShift) && !bee::Engine.Inspector().IsSelected())
+	if ((m_selecting) && !bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::LeftShift) && !bee::Engine.Inspector().IsSelected())
 	{
 		if (bee::Engine.Input().GetMouseButtonOnce(bee::Input::MouseButton::Left))
 		{
@@ -1046,6 +1120,22 @@ void editor::viewPickerData()
 	}
 }
 
+void editor::viewMicroPhysGraph()
+{
+	if (m_dataViewer)
+	{
+		ImGui::Begin("MicroPhysicsGraph");
+
+		Game.DataClass().drawMicroPhysGraph();
+
+		if (ImGui::Button("Reset Graph"))
+		{
+			Game.DataClass().cancelMicroPhysCheckRegion();
+		}
+		ImGui::End();
+	}
+}
+
 void editor::viewSkewT()
 {
 	float* temps = new float[GRIDSIZESKYY];
@@ -1053,6 +1143,12 @@ void editor::viewSkewT()
 	dataToSkewTData(temps, dewPoints);
 
 	Game.SkewT().setAllArrays(temps, dewPoints, m_envData->m_envPressure);
+
+	//Small check just in case
+	if (m_skewTidx / GRIDSIZESKYX <= m_envData->m_groundHeight[m_skewTidx % GRIDSIZESKYX])
+	{
+		m_skewTidx = m_skewTidx % GRIDSIZESKYX + (m_envData->m_groundHeight[m_skewTidx % GRIDSIZESKYX] + 1) * GRIDSIZESKYX;
+	}
 	Game.SkewT().setStartIdx(m_skewTidx / GRIDSIZESKYX);
 	Game.SkewT().drawSkewT();
 
@@ -1069,6 +1165,11 @@ void editor::applyBrush()
 		const float extraX = MousePos3D.x - std::floor(MousePos3D.x);
 		const float extraY = MousePos3D.y - std::floor(MousePos3D.y);
 
+#if USE_GPU
+		Game.EnvGPU().prepareBrushGPU(m_editParamSky, m_brushSize, { MousePos3D.x, MousePos3D.y }, { extraX, extraY },
+			m_brushSmoothness, m_deltatime, m_brushIntensity, m_applyValue, { m_valueDir.x, m_valueDir.y }, m_groundErase);
+
+#else
 		for (int y = int(std::floor(-m_brushSize)); y < int(std::ceil(m_brushSize)); y++)
 		{
 			for (int x = int(std::floor(-m_brushSize)); x < int(std::ceil(m_brushSize)); x++)
@@ -1118,44 +1219,56 @@ void editor::applyBrush()
 				}
 			}
 		}
+#endif
 	}
 
 }
 
 void editor::applySelect()
 {
-	if (m_selecting && m_saveSelectPos != glm::vec2(0) && !bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left))
+	if ((m_selecting) && m_saveSelectPos != glm::vec2(0) && !bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left))
 	{
 		int minX = int(std::min(m_corners[0].x, m_corners[1].x));
 		int minY = int(std::min(m_corners[0].y, m_corners[1].y));
 		int maxX = int(std::max(m_corners[0].x, m_corners[1].x));
 		int maxY = int(std::max(m_corners[0].y, m_corners[1].y));
 
-		for (int y = minY; y < maxY; y++)
+		if (m_microPhysSelect)
 		{
-			for (int x = minX; x < maxX; x++)
+			Game.DataClass().confirmMicroPhysCheckRegion({ minX, minY }, { maxX, maxY });
+			m_selecting = false;
+			m_microPhysSelect = false;
+		}
+#if !USE_GPU
+		else
+		{
+			for (int y = minY; y < maxY; y++)
 			{
-				if (x >= 0 && x < GRIDSIZESKYX && y >= 0 && y < GRIDSIZESKYY)
+				for (int x = minX; x < maxX; x++)
 				{
-					float value1 = m_applyValue;
-					float value2{ 0.0f };
+					if (x >= 0 && x < GRIDSIZESKYX && y >= 0 && y < GRIDSIZESKYY)
+					{
+						float value1 = m_applyValue;
+						float value2{ 0.0f };
 
-					if (m_editParamSky == 8) //For ground
-					{
-						setGround(x + y * GRIDSIZESKYX, value1 > 0);
-					}
-					else if (y > m_envData->m_groundHeight[x])
-					{
-						if (m_editParamSky == 7)
+						if (m_editParamSky == 8) //For ground
 						{
-							value2 = value1 * m_valueDir.y;
-							value1 *= m_valueDir.x;
+							setGround(x + y * GRIDSIZESKYX, value1 > 0);
 						}
-						setValueOfParam(x + y * GRIDSIZESKYX, m_editParamSky, false, value1, value2);
+						else if (y > m_envData->m_groundHeight[x])
+						{
+							if (m_editParamSky == 7)
+							{
+								value2 = value1 * m_valueDir.y;
+								value1 *= m_valueDir.x;
+							}
+							setValueOfParam(x + y * GRIDSIZESKYX, m_editParamSky, false, value1, value2);
+						}
 					}
 				}
 			}
 		}
+#endif
 	}
 }
 
@@ -1185,28 +1298,28 @@ void editor::setValueOfParam(const int i, const parameter p, const bool add, con
 {
 	switch (p)
 	{
-	case editor::POTTEMP:
+	case POTTEMP:
 		m_envData->m_envView.potTemp[i] = add ? m_envData->m_envView.potTemp[i] + value : value;
 		break;
-	case editor::QV:
+	case QV:
 		m_envData->m_envView.Qv[i] = add ? m_envData->m_envView.Qv[i] + value : value;
 		break;
-	case editor::QW:
+	case QW:
 		m_envData->m_envView.Qw[i] = add ? m_envData->m_envView.Qw[i] + value : value;
 		break;
-	case editor::QC:
+	case QC:
 		m_envData->m_envView.Qc[i] = add ? m_envData->m_envView.Qc[i] + value : value;
 		break;
-	case editor::QR:
+	case QR:
 		m_envData->m_envView.Qr[i] = add ? m_envData->m_envView.Qr[i] + value : value;
 		break;
-	case editor::QS:
+	case QS:
 		m_envData->m_envView.Qs[i] = add ? m_envData->m_envView.Qs[i] + value : value;
 		break;
-	case editor::QI:
+	case QI:
 		m_envData->m_envView.Qi[i] = add ? m_envData->m_envView.Qi[i] + value : value;
 		break;
-	case editor::WIND:
+	case WIND:
 		m_envData->m_envView.velField[i] = add ? m_envData->m_envView.velField[i] + glm::vec2{ value, value2 } : glm::vec2{ value, value2 };
 		break;
 	default:
@@ -1252,7 +1365,6 @@ void editor::addDataErasedGround(const int x, const int y)
 	m_envData->m_envView.velField[idx] = { 0,0 };
 }
 
-
 void editor::dataToSkewTData(float* temp, float* dew)
 {
 	const int y = m_skewTidx / GRIDSIZESKYX;
@@ -1290,13 +1402,13 @@ glm::vec2 editor::getMinMaxVaueParam(parameter param)
 	//Return self-set value of parameter
 	switch (param)
 	{
-	case editor::POTTEMP:
+	case POTTEMP:
 		return { 0, 373.15f };
 		break;
-	case editor::WIND:
+	case WIND:
 		return { -50.0f, 50.0f };
 		break;
-	case editor::GROUND:
+	case PGROUND:
 		break;
 	default:
 		//All mixing rations
@@ -1317,13 +1429,13 @@ const char* editor::getFormatParam(parameter param, int& flagOutput)
 	//Return self-set format of parameter
 	switch (param)
 	{
-	case editor::POTTEMP:
+	case POTTEMP:
 		return "%.2f";
 		break;
-	case editor::WIND:
+	case WIND:
 		return "%.3f";
 		break;
-	case editor::GROUND:
+	case PGROUND:
 		break;
 	default:
 		//All mixing rations
@@ -1346,40 +1458,40 @@ glm::vec2 editor::getValueParam(const int i, parameter param)
 {
 	switch (param)
 	{
-	case editor::POTTEMP:
+	case POTTEMP:
 		return { m_envData->m_envView.potTemp[i], 0.0f };
 		break;
-	case editor::QV:
+	case QV:
 		return { m_envData->m_envView.Qv[i], 0.0f };
 		break;
-	case editor::QW:
+	case QW:
 		return { m_envData->m_envView.Qw[i], 0.0f };
 		break;
-	case editor::QC:
+	case QC:
 		return { m_envData->m_envView.Qc[i], 0.0f };
 		break;
-	case editor::QR:
+	case QR:
 		return { m_envData->m_envView.Qr[i], 0.0f };
 		break;
-	case editor::QS:
+	case QS:
 		return { m_envData->m_envView.Qs[i], 0.0f };
 		break;
-	case editor::QI:
+	case QI:
 		return { m_envData->m_envView.Qi[i], 0.0f };
 		break;
-	case editor::WIND:
+	case WIND:
 		return { m_envData->m_envView.velField[i].x, m_envData->m_envView.velField[i].y };
 		break;
-	case editor::GROUND:
+	case PGROUND:
 		return { 0,0 };
 		break;
-	case editor::DEBUG1:
+	case DEBUG1:
 		return { m_envData->m_debugArray0[i], 0.0f };
 		break;
-	case editor::DEBUG2:
+	case DEBUG2:
 		return { m_envData->m_debugArray1[i], 0.0f };
 		break;
-	case editor::DEBUG3:
+	case DEBUG3:
 		return { m_envData->m_debugArray2[i], 0.0f };
 		break;
 	default:
