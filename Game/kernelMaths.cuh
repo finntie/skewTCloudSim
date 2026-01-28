@@ -2,7 +2,7 @@
 
 #include <cuda_runtime.h>
 
-__global__ void setToValue(float* array, const float value, const int width);
+__global__ void setToValue(float* array, const float value, const int width, const int offset = 0);
 
 __global__ void multiplyValues(float* array1, const float* array2, const int width);
 

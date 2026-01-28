@@ -35,7 +35,7 @@ __global__ void computeIsenTempGroundGPU(float* array, const float* isenTemp, co
 	const int tX = threadIdx.x;
 
 	const int GH = _GHeight[tX] + 1 >= GRIDSIZESKYY ? GRIDSIZESKYY - 1 : _GHeight[tX] + 1;
-	const float T = potentialTempGPU(isenTemp[GH - 1] - 273.15f, groundPressure[tX], pressures[GH]);
+	const float T = potentialTempGPU(isenTemp[GH - 1] - 273.15f, groundPressure[tX], pressures[tX + GH * GRIDSIZESKYX]);
 	array[tX] = T + 273.15f;
 }
 

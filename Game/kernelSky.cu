@@ -34,7 +34,7 @@ void initKernelSky(const int* _GHeight, const float* _defaultVel)
 	cudaMemcpyToSymbol(gammaI, &GammaI, sizeof(float));
 }
 
-__global__ void diffuseRed(const Neigh* neigh, const float* groundT, const float* pressures, const float* groundP, const float* defaultVal, 
+__global__ void diffuseRed(const Neigh* neigh, const float* groundT, const float* pressuresAir, const float* groundP, const float* defaultVal, 
 	const float* input, float* output, const float k, const int type)
 {
 	const int tX = threadIdx.x;
@@ -56,9 +56,9 @@ __global__ void diffuseRed(const Neigh* neigh, const float* groundT, const float
 	switch (type)
 	{
 	case 0: //Temp
-		l = neigh[idx].left == OUTSIDE ? defaultVal[tY] :   (neigh[idx].left == GROUND && isGroundLevel() ? (potentialTempGPU(groundT[idxGL] - 273.15f, pressures[tY], groundP[idxGL]) + 273.15f) : (neigh[idx].left == GROUND  ?input[idx] : input[idxL]));
-		r = neigh[idx].right == OUTSIDE ? defaultVal[tY] : (neigh[idx].right == GROUND && isGroundLevel() ? (potentialTempGPU(groundT[idxGR] - 273.15f, pressures[tY], groundP[idxGR]) + 273.15f) : (neigh[idx].right == GROUND ?input[idx] : input[idxR]));
-		d = neigh[idx].down == GROUND ? potentialTempGPU(groundT[idxGD] - 273.15f, pressures[tY], groundP[idxGD]) + 273.15f : input[idx - GRIDSIZESKYX];
+		l = neigh[idx].left == OUTSIDE ? defaultVal[tY] :   (neigh[idx].left == GROUND && isGroundLevel() ? (potentialTempGPU(groundT[idxGL] - 273.15f, pressuresAir[idx], groundP[idxGL]) + 273.15f) : (neigh[idx].left == GROUND  ?input[idx] : input[idxL]));
+		r = neigh[idx].right == OUTSIDE ? defaultVal[tY] : (neigh[idx].right == GROUND && isGroundLevel() ? (potentialTempGPU(groundT[idxGR] - 273.15f, pressuresAir[idx], groundP[idxGR]) + 273.15f) : (neigh[idx].right == GROUND ?input[idx] : input[idxR]));
+		d = neigh[idx].down == GROUND ? potentialTempGPU(groundT[idxGD] - 273.15f, pressuresAir[idx], groundP[idxGD]) + 273.15f : input[idx - GRIDSIZESKYX];
 		u = neigh[idx].up == OUTSIDE ? defaultVal[tY] : input[idx + GRIDSIZESKYX];
 		break;
 	case 1: case 4: //Vapor or default
@@ -84,7 +84,7 @@ __global__ void diffuseRed(const Neigh* neigh, const float* groundT, const float
 	output[idx] = (input[idx] + k * (l + r + u + d)) / (1 + 4 * k);
 }
 
-__global__ void diffuseBlack(const Neigh* neigh, const float* groundT, const float* pressures, const float* groundP, const float* defaultVal, 
+__global__ void diffuseBlack(const Neigh* neigh, const float* groundT, const float* pressuresAir, const float* groundP, const float* defaultVal, 
 	const float* input, float* output, const float k, const int type)
 {
 
@@ -105,9 +105,9 @@ __global__ void diffuseBlack(const Neigh* neigh, const float* groundT, const flo
 	switch (type)
 	{
 	case 0: //Temp
-		l = neigh[idx].left == OUTSIDE ? defaultVal[tY] : (neigh[idx].left == GROUND && isGroundLevel() ? (potentialTempGPU(groundT[idxGL] - 273.15f, pressures[tY], groundP[idxGL]) + 273.15f) : (neigh[idx].left == GROUND ? input[idx] : input[idxL]));
-		r = neigh[idx].right == OUTSIDE ? defaultVal[tY] : (neigh[idx].right == GROUND && isGroundLevel() ? (potentialTempGPU(groundT[idxGR] - 273.15f, pressures[tY], groundP[idxGR]) + 273.15f) : (neigh[idx].right == GROUND ? input[idx] : input[idxR]));
-		d = neigh[idx].down == GROUND ? potentialTempGPU(groundT[tX] - 273.25f, pressures[tY], groundP[tX]) + 273.15f : input[idx - GRIDSIZESKYX];
+		l = neigh[idx].left == OUTSIDE ? defaultVal[tY] : (neigh[idx].left == GROUND && isGroundLevel() ? (potentialTempGPU(groundT[idxGL] - 273.15f, pressuresAir[idx], groundP[idxGL]) + 273.15f) : (neigh[idx].left == GROUND ? input[idx] : input[idxL]));
+		r = neigh[idx].right == OUTSIDE ? defaultVal[tY] : (neigh[idx].right == GROUND && isGroundLevel() ? (potentialTempGPU(groundT[idxGR] - 273.15f, pressuresAir[idx], groundP[idxGR]) + 273.15f) : (neigh[idx].right == GROUND ? input[idx] : input[idxR]));
+		d = neigh[idx].down == GROUND ? potentialTempGPU(groundT[tX] - 273.25f, pressuresAir[idx], groundP[tX]) + 273.15f : input[idx - GRIDSIZESKYX];
 		u = neigh[idx].up == OUTSIDE ? defaultVal[tY] : input[idx + GRIDSIZESKYX];
 		break;
 	case 1: case 4: //Vapor or default
@@ -261,7 +261,7 @@ __global__ void advectGroundWaterBlack(const float* inputQrs, const float* input
 	Qrs[tX] += flowGroundWater + slopeFlowWater;
 }
 
-__global__ void setTempsAtGroundGPU(float* potTemps, const float* groundTemps, const float* pressures, const float* groundPressures, const float dt)
+__global__ void setTempsAtGroundGPU(float* potTemps, const float* groundTemps, const float* pressuresAir, const float* groundPressures, const float dt)
 {
 	const int tX = threadIdx.x;
 	const int tY = GHeight[tX] + 1;
@@ -269,7 +269,7 @@ __global__ void setTempsAtGroundGPU(float* potTemps, const float* groundTemps, c
 	
 	if (tY >= GRIDSIZESKYY - 1) return;
 
-	const float T = potentialTempGPU(groundTemps[tX] - 273.15f, pressures[tY], groundPressures[tX]) + 273.15f;
+	const float T = potentialTempGPU(groundTemps[tX] - 273.15f, pressuresAir[idx], groundPressures[tX]) + 273.15f;
 	const float dif2 = potTemps[idx] - T;
 	potTemps[idx] -= dif2 * fminf(1.0f, dt);
 }
@@ -431,14 +431,16 @@ __global__ void advectPPMX(const float* __restrict__ arrayIn,
 	{
 		defVal = defaultVal[tY];
 	}
+	else
+	{
+		defVal = arrayIn[idx];
+	}
 
 
 	if (isGroundGPU(tX, tY))
 	{
 		sArray[tX] = defVal;
 		sVelX[tX] = velfieldX[idx];
-		//printf("sArray[%i] = %f\n", tX, sArray[tX]);
-		//printf("sVelX[%i] = %f\n", tX, sVelX[tX]);
 		return;
 	}
 	else
@@ -494,13 +496,15 @@ __global__ void advectPPMY(const float* __restrict__ arrayIn,
 	{
 		defVal = defaultVal[tY];
 	}
+	else
+	{
+		defVal = arrayIn[idx];
+	}
 
 	if (isGroundGPU(idxY, tY))
 	{
 		sArray[tY] = defVal;
 		sVelY[tY] = velfieldY[idx];
-		//printf("(%i, %i) %i sArray[%i] = %f\n", idxY, tY, idx, tY, sArray[tY]);
-		//printf("sVelY[%i] = %f\n", tY, sVelY[tY]);
 		return;
 	}
 	else
@@ -537,7 +541,7 @@ __global__ void advectPPMY(const float* __restrict__ arrayIn,
 }
 
 __global__ void advectPrecipRed(float* array, const Neigh* neigh, const float* potTemp, const float* Qv, const float* Qr, const float* Qs, const float* Qi, 
-	const float* pressures, const float* groundP, const int* GHeight, const int type, const float dt)
+	const float* pressuresAir, const float* groundP, const int* GHeight, const int type, const float dt)
 {
 	const int tX = threadIdx.x;
 	const int tY = blockIdx.x;
@@ -554,18 +558,17 @@ __global__ void advectPrecipRed(float* array, const Neigh* neigh, const float* p
 	float3 fallVelocitiesPrecipUP{ 0.0f };
 
 	{
-		const float T = float(potTemp[idx]) * powf(pressures[tY] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
+		const float T = float(potTemp[idx]) * powf(pressuresAir[idx] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
 		const float Tv = T * (0.608f * Qv[idx] + 1);
-		const float density = pressures[tY] * 100 / (ConstantsGPU::Rsd * Tv); //Convert Pha to Pa
+		const float density = pressuresAir[idx] * 100 / (ConstantsGPU::Rsd * Tv); //Convert Pha to Pa
 		fallVelocitiesPrecip = calculateFallingVelocityGPU(Qr[idx], Qs[idx], Qi[idx], density, type, gammaR, gammaS, gammaI);
 	}
 	if (neigh[idx].up == SKY)
 	{
 		const int iUP = idx + GRIDSIZESKYX;
-		const int yUP = tY + 1;
-		const float T = float(potTemp[iUP]) * powf(pressures[yUP] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
+		const float T = float(potTemp[iUP]) * powf(pressuresAir[iUP] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
 		const float Tv = T * (0.608f * Qv[iUP] + 1);
-		const float density = pressures[yUP] * 100 / (ConstantsGPU::Rsd * Tv); //Convert Pha to Pa
+		const float density = pressuresAir[iUP] * 100 / (ConstantsGPU::Rsd * Tv); //Convert Pha to Pa
 		fallVelocitiesPrecipUP = calculateFallingVelocityGPU(Qr[idx], Qs[idx], Qi[idx], density, type, gammaR, gammaS, gammaI);
 	}
 	switch (type)
@@ -594,7 +597,7 @@ __global__ void advectPrecipRed(float* array, const Neigh* neigh, const float* p
 }
 
 __global__ void advectPrecipBlack(float* array, const Neigh* neigh, const float* potTemp, const float* Qv, const float* Qr, const float* Qs, const float* Qi,
-	const float* pressures, const float* groundP, const int* GHeight, const int type, const float dt)
+	const float* pressuresAir, const float* groundP, const int* GHeight, const int type, const float dt)
 {
 	const int tX = threadIdx.x;
 	const int tY = blockIdx.x;
@@ -611,18 +614,17 @@ __global__ void advectPrecipBlack(float* array, const Neigh* neigh, const float*
 	float3 fallVelocitiesPrecipUP{ 0.0f };
 
 	{
-		const float T = float(potTemp[idx]) * powf(pressures[tY] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
+		const float T = float(potTemp[idx]) * powf(pressuresAir[idx] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
 		const float Tv = T * (0.608f * Qv[idx] + 1);
-		const float density = pressures[tY] * 100 / (ConstantsGPU::Rsd * Tv); //Convert Pha to Pa
+		const float density = pressuresAir[idx] * 100 / (ConstantsGPU::Rsd * Tv); //Convert Pha to Pa
 		fallVelocitiesPrecip = calculateFallingVelocityGPU(Qr[idx], Qs[idx], Qi[idx], density, type, gammaR, gammaS, gammaI);
 	}
 	if (neigh[idx].up == SKY)
 	{
 		const int iUP = idx + GRIDSIZESKYX;
-		const int yUP = tY + 1;
-		const float T = float(potTemp[iUP]) * powf(pressures[yUP] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
+		const float T = float(potTemp[iUP]) * powf(pressuresAir[iUP] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
 		const float Tv = T * (0.608f * Qv[iUP] + 1);
-		const float density = pressures[yUP] * 100 / (ConstantsGPU::Rsd * Tv); //Convert Pha to Pa
+		const float density = pressuresAir[iUP] * 100 / (ConstantsGPU::Rsd * Tv); //Convert Pha to Pa
 		fallVelocitiesPrecipUP = calculateFallingVelocityGPU(Qr[idx], Qs[idx], Qi[idx], density, type, gammaR, gammaS, gammaI);
 	}
 
@@ -661,9 +663,7 @@ __global__ void applyPreconditionerGPU(float* output, const float* precon, const
 		output[idx] = 0.0f;
 		return;
 	}
-	float ADiag = 1.0f / A[idx].z;
-
-	output[idx] = div[idx] * precon[idx] / ADiag;
+	output[idx] = div[idx] * precon[idx];
 }
 
 __global__ void dotProductGPU(float* result, const float* a, const float* b)
@@ -729,7 +729,7 @@ __global__ void applyAGPU(float* output, const float* input, const Neigh* neigh,
 					);
 }
 
-__global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, const float* velX, const float* velY)
+__global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, const float* velX, const float* velY, const float* dens, const float* oldDens, const float dt)
 {
 	const int tX = threadIdx.x;
 	const int tY = blockIdx.x;
@@ -740,41 +740,60 @@ __global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, co
 		divergence[idx] = 0.0f;
 		return;
 	}
+	
 
 	//If Right or Left at the outside cell. We use the default values.
 	//If At Ceiling, we don't have to do anything: y is already set to 0, and ceiling is free-slip
 	//If at Ground, we set velocity to 0, creating divergence, making sure this is no-slip.
 
+	const float densC = dens[idx];
 	const float Ucurr = (neigh[idx].right == OUTSIDE && idx != 0) ? defaultVel[tY] : (neigh[idx].right == GROUND ? 0.0f : velX[idx]);
 	const float Umin1 = (neigh[idx].left == OUTSIDE || idx == 0) ? defaultVel[tY] : (neigh[idx].left == GROUND ? 0.0f : velX[idx - 1]);
 	const float Vcurr = velY[idx];
 	const float Vmin1 = (neigh[idx].down == SKY && idx - GRIDSIZESKYX >= 0) ? velY[idx - GRIDSIZESKYX] : 0.0f;
 
-	divergence[idx] = ((Ucurr - Umin1) + (Vcurr - Vmin1));
+	const float DR = neigh[idx].right == SKY ? 0.5f * (densC + dens[idx + 1]) : densC;
+	const float DL = neigh[idx].left == SKY ? 0.5f * (densC + dens[idx - 1]) : densC;
+	const float DU = neigh[idx].up == SKY ? 0.5f * (densC + dens[idx + GRIDSIZESKYX]) : densC;
+	const float DD = neigh[idx].down == SKY ? 0.5f * (densC + dens[idx - GRIDSIZESKYX]) : densC;
+
+	const float massFluxDiv = ((DR * Ucurr - DL * Umin1) + (DU * Vcurr - DD * Vmin1));
+
+	//Change in density per second (which is why we use dt)
+	const float densityChange = (dens[idx] - oldDens[idx]) / dt;
+
+	//Using divergence minus the change in compressibility
+	//Dividing again by dt to get kg/m3*s2 instead of only s
+	divergence[idx] = (massFluxDiv - densityChange) ;
 }
 
-__global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, float* velX, float* velY)
+__global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, float* velX, float* velY, const float* density,const float* pressureEnv, const float dt)
 {
-	if (isGroundGPU()) return;
-
 	const int tX = threadIdx.x;
 	const int tY = blockIdx.x;
 	const int idx = tX + tY * GRIDSIZESKYX;
 
+	if (isGroundGPU(tX, tY)) return;
+
 	//If at the right or upper cell, we don't add any value
-	const float NxPresProj = (neigh[idx].right != SKY) ? pressure[idx] : pressure[idx + 1];
-	const float NyPresProj = neigh[idx].up != SKY ? pressure[idx] : pressure[idx + GRIDSIZESKYX];
+	const float NxPresProj = neigh[idx].right != SKY ? 0.0f : pressure[idx + 1] - pressure[idx];
+	const float NyPresProj = neigh[idx].up != SKY ? 0.0f : pressure[idx + GRIDSIZESKYX] - pressure[idx];
 
-	const float scale = 1.0f;
 
-	velX[idx] += scale * (NxPresProj - pressure[idx]);
-	velY[idx] += scale * (NyPresProj - pressure[idx]);
+	//Pressure at face
+	const float NxDens = neigh[idx].right != SKY ? density[idx] : (2.0f / (1.0f / density[idx] + 1.0f / density[idx + 1]));
+	const float NyDens = neigh[idx].up != SKY ? density[idx] : (2.0f / (1.0f / density[idx] + 1.0f / density[idx + GRIDSIZESKYX]));
+
+	//Using dt to match dt used in divergence calculation
+	//Dividing by density at cell faces gives for pressure effects
+	velX[idx] += NxPresProj / NxDens;
+	velY[idx] += NyPresProj / NyDens;
 }
 
 __global__ void getMaxDivergence(float* output, const float* div)
 {
 	//To speed up dot product, we make all blocks sum up their values and then connect them together.
-		//This is faster than 1 thead doing all the work.
+	//This is faster than 1 thead doing all the work.
 	__shared__ float sresult[GRIDSIZESKYX];
 	const int tX = threadIdx.x;
 	const int tY = blockIdx.x;
@@ -858,6 +877,16 @@ __global__ void endIteration(float* S1, float* S2, float* s, const float* z)
 	}
 }
 
+__global__ void updatePressure(float* envPressure, const float* presProj)
+{
+	const int tX = threadIdx.x;
+	const int tY = blockIdx.x;
+	const int idx = tX + tY * GRIDSIZESKYX;
+
+	envPressure[idx] -= presProj[idx] / 100.0f; //Pa to Pha
+
+}
+
 //-------------------------------------OTHER-------------------------------------
 
 __global__ void calculateCloudCover(float* output, const float* Qc, const float* Qw, const int* GHeight)
@@ -882,7 +911,7 @@ __global__ void calculateGroundTemp(float* groundT, const float dtSpeed, const f
 	groundT[tX] += dtSpeed * ((1 - LC[tX]) * (((1 - absorbedRadiationAlbedo) * irridiance - ConstantsGPU::ge * ConstantsGPU::oo * T4) / (groundThickness * densityGround * ConstantsGPU::Cpds)));
 }
 
-__device__ float calculateLayerAverage(const float* layer, const float* pressures, const float* groundP, const float maxDistance, const int lY, const bool temp)
+__device__ float calculateLayerAverage(const float* layer, const float maxDistance, const int lY, const bool temp)
 {
 	const int oX = threadIdx.x; //Original X
 	const int oY = blockIdx.x; //Original Y
@@ -894,9 +923,6 @@ __device__ float calculateLayerAverage(const float* layer, const float* pressure
 	const int minLeft = distXL < 0 ? -1 : distXL;
 	const float MDistanceSqr = 1 / (maxDistance * maxDistance);
 	const int distOYY = (oY - lY) * (oY - lY);
-
-	//TODO: when difference in ground pressure, remove optimization:
-	float potTempMultiplier = temp ? powf((pressures[lY] / groundP[0]), ConstantsGPU::Rsd / ConstantsGPU::Cpd) : 1.0f;
 
 	float amount = 0.0f;
 	float average = 0.0f;
@@ -912,7 +938,7 @@ __device__ float calculateLayerAverage(const float* layer, const float* pressure
 		//Smoothing
 		cAmount = cAmount * cAmount * cAmount * cAmount * cAmount;
 		amount = amount + cAmount;
-		average += layer[x] * potTempMultiplier * cAmount;
+		average += layer[x] * cAmount;
 	}
 	for (int x = oX - 1; x > minLeft; x--)
 	{
@@ -925,7 +951,7 @@ __device__ float calculateLayerAverage(const float* layer, const float* pressure
 		//Smoothing
 		cAmount = cAmount * cAmount * cAmount * cAmount * cAmount;
 		amount = amount + cAmount;
-		average += layer[x] * potTempMultiplier * cAmount;
+		average += layer[x] * cAmount;
 	}
 	if (amount == 0.0f) return layer[oX];
 
@@ -959,22 +985,24 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 	//Vapor environment and Vapor Parcel
 	float Qenv = 0.0f, QenvUp = 0.0f, QenvDown = 0.0f;
 	float QP = 0.0f, QPUp = 0.0f, QPDown = 0.0f;
-	int tYCheck = up ? tY + 1 : tY;
+	int idxUp = up ? idx + GRIDSIZESKYX : idx;
+	int idxDown = down ? idx - GRIDSIZESKYX : idx;
 
-	const float T = static_cast<float>(potTemp[idx]) * powf(pressures[tY] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
-	const float T2 = static_cast<float>(potTemp[tX + tYCheck * GRIDSIZESKYX]) * powf(pressures[tYCheck] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
+	const float TDown = static_cast<float>(potTemp[idxDown]) * powf(pressures[idxDown] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
+	const float T = static_cast<float>(potTemp[idx]) * powf(pressures[idx] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
+	const float TUp = static_cast<float>(potTemp[idxUp]) * powf(pressures[idxUp] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
 
 	// ------------ QV ------------
 	if (down)
 	{
-		QenvDown = calculateLayerAverage(sharedLayerDown, pressures, groundP, maxDistance, tY - 1, false);
-		QPDown = Qv[idx]; //Mixing ratio stays the same?
+		QenvDown = calculateLayerAverage(sharedLayerDown, maxDistance, tY - 1, false);
+		QPDown = Qv[idx]; //Amount of vapor stays the same
 	}
-	Qenv = calculateLayerAverage(sharedLayer, pressures, groundP, maxDistance, tY, false);
+	Qenv = calculateLayerAverage(sharedLayer, maxDistance, tY, false);
 	QP = Qv[idx];
 	if (up)
 	{
-		QenvUp = calculateLayerAverage(sharedLayerUp, pressures, groundP, maxDistance, tY + 1, false);
+		QenvUp = calculateLayerAverage(sharedLayerUp, maxDistance, tY + 1, false);
 		QPUp = Qv[idx];
 	}
 
@@ -992,49 +1020,45 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 	__syncthreads();
 
 	//Now check if we are on the edges, if so, we leave
-	if (isGroundGPU(tX, tY) || neigh[idx].left == OUTSIDE || neigh[idx].right == OUTSIDE || neigh[idx].up == OUTSIDE || neigh[idx].down == OUTSIDE)
-	{
-		buoyancyStor[idx] = 0.0f;
-		return;
-	}
+	//if (isGroundGPU(tX, tY) || neigh[idx].left == OUTSIDE || neigh[idx].right == OUTSIDE || neigh[idx].up == OUTSIDE || neigh[idx].down == OUTSIDE)
+	//{
+	//	buoyancyStor[idx] = 0.0f;
+	//	return;
+	//}
 
 	// Temp for up and down based on adiabatics
-	float Tadiab = T, TadiabUp = T, TadiabDown = T;
+	float Tadiab = sharedLayer[tX], TadiabUp = sharedLayer[tX], TadiabDown = sharedLayer[tX];
 	// Environment Temp
-	float Tenv = T, TenvUp = T, TenvDown = T;
+	float Tenv = sharedLayer[tX], TenvUp = sharedLayer[tX], TenvDown = sharedLayer[tX];
 
 	//First we calculate the parcel temps for each different heights
-	if (Qv[idx] >= wsGPU((T2 - 273.15f), pressures[tY + 1]))
+	//This is different when the air is saturated
+	if (down)
 	{
-		//Air is saturated, thus use moist adiabatic
-		if (down)
-		{	
-			//TODO: wrong and not very good if P change > 1
-			TadiabDown = T - MLRGPU(T - 273.15f, pressures[tY]) * (pressures[tY] - pressures[tY - 1]);
-			TenvDown = calculateLayerAverage(sharedLayerDown, pressures, groundP, maxDistance, tY - 1, true);
-			//printf("(%i, %i) AV: %f, P: %f\n", tX, tY, TenvDown, TadiabDown);
-		}
-		if (up)
+		//If going downwards, we still check if this downwards parcel would be saturated
+		if (Qv[idx] >= wsGPU((TDown - 273.15f), pressures[idxDown]))
 		{
-			TadiabUp = MLRGPU(T - 273.15f, pressures[tY]) * (pressures[tY + 1] - pressures[tY]) + T;
-			TenvUp = calculateLayerAverage(sharedLayerUp, pressures, groundP, maxDistance, tY + 1, true);
+			//Need real temperature to calculate moist adiabatic
+			TadiabDown = T - MLRGPU(T - 273.15f, pressures[idx]) * (pressures[idx] - pressures[idxDown]);
+			//Convert back to potTemp
+			TadiabDown = TadiabDown * powf(groundP[tX] / pressures[idxDown], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
 		}
+		TenvDown = calculateLayerAverage(sharedLayerDown, maxDistance, tY - 1, true);
 	}
-	else
+	if (up)
 	{
-		//Air is dry, thus we use dry adiabatic
-		if (down)
+		//Vapor amount would be greater than downwards temp could hold, so we use moist adiabatic
+		if (Qv[idx] >= wsGPU((TUp - 273.15f), pressures[idxUp]))
 		{
-			TadiabDown = T * powf(pressures[tY - 1] / pressures[tY], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
-			TenvDown = calculateLayerAverage(sharedLayerDown, pressures, groundP, maxDistance, tY - 1, true);
+			//Need real temperature to calculate moist adiabatic
+			TadiabUp = MLRGPU(T - 273.15f, pressures[idx]) * (pressures[idxUp] - pressures[idx]) + T;
+			//Convert back to potTemp
+			TadiabUp = TadiabUp * powf(groundP[tX] / pressures[idxUp], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
 		}
-		if (up)
-		{
-			TadiabUp = T * powf(pressures[tY + 1] / pressures[tY], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
-			TenvUp = calculateLayerAverage(sharedLayerUp, pressures, groundP, maxDistance, tY + 1, true);
-		}
+		TenvUp = calculateLayerAverage(sharedLayerUp, maxDistance, tY + 1, true);
 	}
-	Tenv = calculateLayerAverage(sharedLayer, pressures, groundP, maxDistance, tY, true);
+
+	Tenv = calculateLayerAverage(sharedLayer, maxDistance, tY, true);
 
 
 	// ------------ Buoyancy ------------
@@ -1043,7 +1067,6 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 	float B = 0.0f, BUp = 0.0f, BDown = 0.0f;
 
 	const float totalQ = Qr[idx] + Qs[idx] + Qi[idx];
-
 	if (down)
 	{
 		//Temp parcel and Temp environment
@@ -1067,7 +1090,6 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 
 
 	// Now we calculate if we use up or down, this depends if the parcel on the current levels is going up or down
-
 	float buoyancyFinal = B;
 
 	//Using the velocity, we track if the parcel is already going up or down, suggesting which layer we are about to enter.
@@ -1135,55 +1157,106 @@ __global__ void computeNeighbourGPU(Neigh* Neigh)
 	Neigh[idx].up = (tY == GRIDSIZESKYY - 1) ? OUTSIDE : (isGroundGPU(tX, tY + 1) ? GROUND : SKY);
 }
 
-__global__ void initAandPrecon(char3* A, float* precon, const Neigh* neigh)
+
+
+__global__ void initAMatrix(char3* A, const Neigh* neigh, const float* density)
 {
 	int tX = threadIdx.x;
 	int tY = blockIdx.x;
 	int idx = tX + tY * GRIDSIZESKYX;
+	const float densC = density[idx];
 
 	//Fill matrix A	
 	A[idx].x = 0;
 	A[idx].y = 0;
-	A[idx].x = 0;
+	A[idx].z = 0;
 
 	//Right and Left side are neumann, thus we include it into the matrix
 	//Ceiling, and any ground will not be counted
 
-	precon[idx] = 0.0f;
 	if (isGroundGPU(tX, tY))
 	{
 		return;
 	}
 
-	A[idx].x = neigh[idx].right != GROUND ? -1 : 0;
-	A[idx].y = neigh[idx].up == SKY ? -1 : 0;
-	A[idx].z = 0;
+	float densR = neigh[idx].right == SKY ? density[idx + 1] : (neigh[idx].right == GROUND ? 0.0f : densC);
+	float densL = neigh[idx].left  == SKY ? density[idx - 1] : (neigh[idx].left == GROUND ? 0.0f : densC);
+	float densU = neigh[idx].up    == SKY ? density[idx + GRIDSIZESKYX] : (neigh[idx].up == GROUND ? 0.0f : 0.0f);
+	float densD = neigh[idx].down  == SKY ? density[idx - GRIDSIZESKYX] : (neigh[idx].down == GROUND ? 0.0f : densC);
 
-	if (A[idx].x) A[idx].z++;
-	if (A[idx].y) A[idx].z++;
-	if (neigh[idx].left != GROUND) A[idx].z++;
-	if (neigh[idx].down == SKY) A[idx].z++;
+	//Calculate harmonic mean: https://en.wikipedia.org/wiki/Harmonic_mean
+	//Also normalizing (1.225 / answer) to make sure values don't reach below 1.0f (if so, it would crash)
+	//Using max for if density > 1.225, and the -  is to make values negative.
+	densR = densR == 0.0f ? 0.0f : -fmaxf(1.0f, 1.225f / (2.0f / (1.0f / densC + 1.0f / densR)));
+	densL = densL == 0.0f ? 0.0f : -fmaxf(1.0f, 1.225f / (2.0f / (1.0f / densC + 1.0f / densL)));
+	densU = densU == 0.0f ? 0.0f : -fmaxf(1.0f, 1.225f / (2.0f / (1.0f / densC + 1.0f / densU)));
+	densD = densD == 0.0f ? 0.0f : -fmaxf(1.0f, 1.225f / (2.0f / (1.0f / densC + 1.0f / densD)));
 
+	A[idx].x = densR;
+	A[idx].y = densU;
+	//Using - because calculated density is already set to be negative, so this makes positive
+	if (A[idx].y) A[idx].z -= densU;
+	if (A[idx].x) A[idx].z -= densR;
+	if (neigh[idx].down == SKY) A[idx].z -= densD;
+	if (neigh[idx].left != GROUND) A[idx].z -= densL;
+}
 
-	const float Tune = 0.97f;
+__global__ void initPrecon(float* precon, const char3* A)
+{
+	int tX = threadIdx.x;
+	int tY = blockIdx.x;
+	int idx = tX + tY * GRIDSIZESKYX;
 
-	//TODO: for 3D, look at formula 4.34	
-	int Aminxx = tX == 0 ? 0 : A[idx - 1].x; //Minus X looking at x
-	int Aminxy = tX == 0 ? 0 : A[idx - 1].y; //Minus X looking at y
-	int Aminyy = tY == 0 ? 0 : A[idx - GRIDSIZESKYX].y; //Minus Y looking at y
-	int Aminyx = tY == 0 ? 0 : A[idx - GRIDSIZESKYX].x; //Minus Y looking at x
+	precon[idx] = 1.0f;
+	if (isGroundGPU(tX, tY))
+	{
+		return;
+	}
+	precon[idx] = A[idx].z == 0.0f ? 1.0f : 1.0f / A[idx].z;
 
-	//This does not have effect due to precon calculated in parrallel. 
-	const float Preconi = tX == 0 ? precon[idx] : precon[idx - 1];
-	const float Preconj = tY == 0 ? precon[idx] : precon[idx - GRIDSIZESKYX];
+	//const float Tune = 0.97f;
+	//
+	////TODO: for 3D, look at formula 4.34	
+	//int Aminxx = tX == 0 ? 0 : -1;//A[idx - 1].x; //Minus X looking at x
+	//int Aminxy = tX == 0 ? 0 : -1;//A[idx - 1].y; //Minus X looking at y
+	//int Aminyy = tY == 0 ? 0 : -1;//A[idx - GRIDSIZESKYX].y;	//Minus Y looking at y
+	//int Aminyx = tY == 0 ? 0 : -1;//A[idx - GRIDSIZESKYX].x;	//Minus Y looking at x
 
-	const float e = A[idx].z
-		- (Aminxx * Preconi) * (Aminxx * Preconi)
-		- (Aminyy * Preconj) * (Aminyy * Preconj)
-		- Tune * (
-			Aminxx * Aminxy * (Preconi * Preconi) +
-			Aminyy * Aminyx * (Preconj * Preconj));
-	precon[idx] = (1 / sqrtf(e + 1e-30f)); //Prevent division by 0 using small number;
+	////This does not have effect due to precon calculated in parrallel. 
+	//const float Preconi = 0.0f;//tX == 0 ? precon[idx] : precon[idx - 1];
+	//const float Preconj = 0.0f;//tY == 0 ? precon[idx] : precon[idx - GRIDSIZESKYX];
+	//const float e = A[idx].z
+	//	- (Aminxx * Preconi) * (Aminxx * Preconi)
+	//	- (Aminyy * Preconj) * (Aminyy * Preconj)
+	//	- Tune * (
+	//		Aminxx * Aminxy * (Preconi * Preconi) +
+	//		Aminyy * Aminyx * (Preconj * Preconj));
+	//precon[idx] = (1 / sqrtf(e + 1e-30f)); //Prevent division by 0 using small number;
+}
+
+__global__ void initDensity(float* densityAir, const float* potTemp, const float* pressures, const float* Qv, const float* groundP)
+{
+	const int tX = threadIdx.x;
+	const int tY = blockIdx.x;
+	int idx = tX + tY * GRIDSIZESKYX;
+
+	const float T = float(potTemp[idx]) * glm::pow(pressures[idx] / groundP[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
+	const float Tv = T * (0.608f * Qv[idx] + 1);
+	const float density = pressures[idx] * 100 / (ConstantsGPU::Rsd * Tv); //Convert Pha to Pa
+
+	densityAir[idx] = density;
+}
+
+__global__ void calculateNewPressure(float* pressureEnv, const float* densityAir, const float* potTemp, const float* Qv, const float* GPressure)
+{
+	const int tX = threadIdx.x;
+	const int tY = blockIdx.x;
+	int idx = tX + tY * GRIDSIZESKYX;
+
+	//Yes, we use pressure to first calculate T and then calculate pressure, it is double sided but how else?
+	const float T = float(potTemp[idx]) * glm::pow(pressureEnv[idx] / GPressure[tX], ConstantsGPU::Rsd / ConstantsGPU::Cpd);
+	const float Tv = T * (0.608f * Qv[idx] + 1);
+	pressureEnv[idx] = densityAir[idx] * ConstantsGPU::Rsd * Tv / 100.0f;
 }
 
 __global__ void applyBrushGPU(float* array, float* array2, int* groundGridStor, bool* changedGround, parameter paramType, const float brushSize, const float2 mousePos, 
@@ -1271,7 +1344,7 @@ __device__ bool setGround(int* groundHeight, const int x, const int y, const boo
 }
 
 __global__ void compareAndResetValuesOutGround(const int* oldGroundHeight, const int* newGroundHeight, const float* isentropicTemp, const float* isentropicVap, 
-	float* Qv, float* Qw, float* Qc, float* Qr, float* Qs, float* Qi, float* potTemp, float* velX, float* velY)
+	float* Qv, float* Qw, float* Qc, float* Qr, float* Qs, float* Qi, float* potTemp, float* velX, float* velY, float* pres, float* defaultPres)
 {
 	const int tX = threadIdx.x;
 	const int tY = blockIdx.x;
@@ -1289,6 +1362,7 @@ __global__ void compareAndResetValuesOutGround(const int* oldGroundHeight, const
 	potTemp[idx] = isentropicTemp[tY];
 	velX[idx] = 0.0f;
 	velY[idx] = 0.0f;
+	pres[idx] = defaultPres[tY];
 }
 
 

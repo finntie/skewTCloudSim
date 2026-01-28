@@ -6,11 +6,11 @@
 #include <stdio.h>
 
 //TDO add .cu implementations for these.
-__global__ void setToValue(float* array, const float value, const int width)
+__global__ void setToValue(float* array, const float value, const int width, const int offset)
 {
     const int tX = threadIdx.x;
     const int tY = blockIdx.x;
-    const int idx = tX + tY * width;
+    const int idx = tX + tY * width + offset;
 
     array[idx] = value;
 }

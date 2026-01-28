@@ -10,7 +10,7 @@ struct gridDataBounds;
 
 enum parameter : uint16_t
 {
-	POTTEMP, QV, QW, QC, QR, QS, QI, WIND, PGROUND, DEBUG1, DEBUG2, DEBUG3
+	POTTEMP, QV, QW, QC, QR, QS, QI, WIND, PGROUND, PRESSURE, DEBUG1, DEBUG2, DEBUG3
 };
 
 class editor
@@ -23,7 +23,7 @@ public:
 	~editor();
 	void setColors();
 	//We also include m_pressures
-	void setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressures);
+	void setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressure);
 
 	void update(float dt);
 	void panel();
@@ -38,7 +38,7 @@ public:
 	bool changedGround() { return m_changedGround; }
 
 	void setDebugValueNum(const float* array, const int num);
-	void GPUSetEnv(void* _sky, void* _ground, int* _groundHeight);
+	void GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* ps);
 	void setTime(float sec) { m_time = sec; }
 	void setLongitude(float longitude) { m_longitude = longitude; }
 	void setDay(int day) { m_day = day; }
@@ -96,7 +96,7 @@ private:
 	void addDataErasedGround(const int x, const int y);
 
 	//Helpers
-	void dataToSkewTData(float* temp, float* dew);
+	void dataToSkewTData(float* temp, float* dew, float* pres);
 	glm::vec2 getMinMaxVaueParam(parameter param);
 	const char* getFormatParam(parameter param, int& flagOutput);
 	glm::vec2 getValueParam(const int index, parameter param);

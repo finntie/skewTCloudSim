@@ -3,8 +3,8 @@
 #include "half/half.hpp"
 #include <glm/glm.hpp>
 
-#define GRIDSIZESKYX 256	
-#define GRIDSIZESKYY 256
+#define GRIDSIZESKYX 64
+#define GRIDSIZESKYY 64
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY)
 #define GRIDSIZEGROUND (GRIDSIZESKYX)
@@ -39,6 +39,7 @@ public:
 		/*half_float::half*/float Qi[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Ice (precip)
 		float potTemp[GRIDSIZESKY]{ 1.0f };			 // Potential temperature
 		glm::vec2 velField[GRIDSIZESKY]{};				 // Velocity field (fluid sim) needs to be changed to vec3 later
+		float pressure[GRIDSIZESKY]{};
 
 		//float dummy{ 0.0f }; //Room for 4 bytes?		
 	};

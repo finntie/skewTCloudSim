@@ -80,6 +80,30 @@ void editor::setColors()
 	colorScheme.addColor("realistic", 0.001f, bee::Colors::White);
 	colorScheme.addColor("realistic", 0.005f, glm::vec4(0.8f, 0.8f, 0.8f, 1.0f));
 	colorScheme.addColor("realistic", 0.01f, glm::vec4(0.4f, 0.4f, 0.4f, 1.0f));
+
+	colorScheme.createColorScheme("pressure", 0.0f, bee::Colors::Purple, 1050.0f, bee::Colors::White);
+	colorScheme.addColor("pressure", 100.0f, glm::vec4(0.3f, 0.0f, 0.75f, 1.0f));
+	colorScheme.addColor("pressure", 200.0f, glm::vec4(0.1f, 0.8f, 0.9f, 1.0f));
+	colorScheme.addColor("pressure", 300.0f, glm::vec4(0.0f, 0.8f, 1.0f, 1.0f));
+	colorScheme.addColor("pressure", 400.0f, glm::vec4(0.0f, 0.4f, 1.0f, 1.0f));
+	colorScheme.addColor("pressure", 600.0f, glm::vec4(0.0f, 0.8f, 0.8f, 1.0f));
+	colorScheme.addColor("pressure", 700.0f, glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+	colorScheme.addColor("pressure", 800.0f, glm::vec4(0.4f, 0.8f, 0.0f, 1.0f));
+	colorScheme.addColor("pressure", 900.0f, glm::vec4(0.8f, 0.0f, 0.0f, 1.0f));
+	colorScheme.addColor("pressure", 950.0f, glm::vec4(1.0f, 0.6f, 0.6f, 1.0f));
+	colorScheme.addColor("pressure", 975.0f, glm::vec4(0.6f, 0.5f, 0.5f, 1.0f));
+	colorScheme.addColor("pressure", 1000.0f, glm::vec4(0.2f, 0.2f, 0.2f, 1.0f));
+
+	colorScheme.createColorScheme("density", -1, bee::Colors::Purple * 0.0f, 1, bee::Colors::White);
+	colorScheme.addColor("density", 0.15f, bee::Colors::Purple);
+	colorScheme.addColor("density", 0.3f, bee::Colors::Blue);
+	colorScheme.addColor("density", 0.5f, bee::Colors::DodgerBlue);
+	colorScheme.addColor("density", 0.75f, bee::Colors::Cyan);
+	colorScheme.addColor("density", 0.9f, bee::Colors::Green);
+	colorScheme.addColor("density", 1.0f, bee::Colors::Yellow);
+	colorScheme.addColor("density", 1.1f, bee::Colors::Orange);
+	colorScheme.addColor("density", 1.2f, bee::Colors::Red);
+	colorScheme.addColor("density", 1.225f, bee::Colors::Pink + glm::vec4(0, 0.8f, 0, 0));
 }
 
 void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressures)
@@ -90,14 +114,13 @@ void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, floa
 		float* dewPoints = new float[GRIDSIZESKYY];
 		float* ps = new float[GRIDSIZESKYY];
 
-
 #if USE_GPU
 		cudaMemcpy(ps, pressures, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
 #else
 		memcpy(ps, pressures, GRIDSIZESKYY * sizeof(float));
 #endif
 
-		dataToSkewTData(temps, dewPoints);
+		dataToSkewTData(temps, dewPoints, ps);
 
 		skewTer::skewTInfo skewT;
 		skewT.init(GRIDSIZESKYY, temps, dewPoints, ps);
@@ -192,7 +215,7 @@ void editor::setDebugValueNum(const float* array, const int num)
 #endif
 }
 
-void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight)
+void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps)
 {
 #if USE_GPU
 	auto* sky = static_cast<environmentGPU::gridDataSkyGPU*>(_sky);
@@ -215,6 +238,8 @@ void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight)
 	{
 		m_envData->m_envView.velField[i] = { velX[i], velY[i] };
 	}
+	//Set pressure
+	cudaMemcpy(m_envData->m_envView.pressure, _ps, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
 
 	//Set Ground values	
 	cudaMemcpy(m_envData->m_groundView.T, ground->T, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
@@ -229,6 +254,7 @@ void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight)
 	_sky;
 	_ground;
 	_groundHeight;
+	_ps;
 #endif
 }
 
@@ -465,7 +491,7 @@ void editor::viewParamInformation()
 	ImGui::Indent();
 	ImGui::Text(std::string("X: " + std::to_string(m_mousePointingIndex % GRIDSIZESKYX) + ", Y: " + std::to_string(int(float(m_mousePointingIndex) / GRIDSIZESKYX))).c_str());
 	ImGui::Text(std::string("Meters Per Voxel: " + std::to_string(VOXELSIZE)).c_str());
-	ImGui::Text("--Sky--\nPot Temp: \nQv: \nQw: \nQc: \nQr: \nQs: \nQi: \nWind: \nDebug1: \nDebug2: \nDebug3: \n--Ground--\nTemp: \nWater: \nQr: \nQs: \nQi: "); ImGui::SameLine();
+	ImGui::Text("--Sky--\nPot Temp: \nQv: \nQw: \nQc: \nQr: \nQs: \nQi: \nWind: \nPressure: \nDebug1: \nDebug2: \nDebug3: \n--Ground--\nTemp: \nWater: \nQr: \nQs: \nQi: "); ImGui::SameLine();
 	ImGui::Text(("\n" + //Sky
 		std::to_string(m_envData->m_envView.potTemp[m_mousePointingIndex] - 273.15) + "\n" +
 		std::to_string(m_envData->m_envView.Qv[m_mousePointingIndex]) + "\n" +
@@ -476,6 +502,7 @@ void editor::viewParamInformation()
 		std::to_string(m_envData->m_envView.Qi[m_mousePointingIndex]) + "\n" +
 		//ImGui::Text((std::string("Wind: ") + std::to_string(getUV(mousePointingIndex).x) + ", " + std::to_string(getUV(mousePointingIndex).y)).c_str());
 		std::to_string(m_envData->m_envView.velField[m_mousePointingIndex].x) + ", " + std::to_string(m_envData->m_envView.velField[m_mousePointingIndex].y) + "\n" +
+		std::to_string(m_envData->m_envView.pressure[m_mousePointingIndex]) + "\n" +
 		std::to_string(m_envData->m_debugArray0[m_mousePointingIndex]) + "\n" +
 		std::to_string(m_envData->m_debugArray1[m_mousePointingIndex]) + "\n" +
 		std::to_string(m_envData->m_debugArray2[m_mousePointingIndex]) + "\n" +
@@ -502,6 +529,7 @@ void editor::setView()
 		ImGui::Text("View parameter of:");
 		if (ImGui::Button("Temp")) m_viewParamSky = POTTEMP;	ImGui::SameLine();
 		if (ImGui::Button("Wind")) m_viewParamSky = WIND;	ImGui::SameLine();
+		if (ImGui::Button("Ps"))   m_viewParamSky = PRESSURE;		ImGui::SameLine();
 		if (ImGui::Button("Qv"))   m_viewParamSky = QV;		ImGui::SameLine();
 		if (ImGui::Button("Qw"))   m_viewParamSky = QW;
 		if (ImGui::Button("Qc"))   m_viewParamSky = QC;		ImGui::SameLine();
@@ -533,6 +561,7 @@ void editor::setView()
 #if USE_GPU
 		if (ImGui::Button("Temp")) Game.EnvGPU().resetParameterGPU(POTTEMP); ImGui::SameLine();
 		if (ImGui::Button("Wind")) Game.EnvGPU().resetParameterGPU(WIND); ImGui::SameLine();
+		if (ImGui::Button("Ps")) Game.EnvGPU().resetParameterGPU(PRESSURE);
 		if (ImGui::Button("Qv")) Game.EnvGPU().resetParameterGPU(QV); ImGui::SameLine();
 		if (ImGui::Button("Qw")) Game.EnvGPU().resetParameterGPU(QW); ImGui::SameLine();
 		if (ImGui::Button("Qc")) Game.EnvGPU().resetParameterGPU(QC);
@@ -916,6 +945,7 @@ void editor::viewSky()
 	{
 		for (int x = 0; x < GRIDSIZESKYX; x++)
 		{
+			const int idx = x + y * GRIDSIZESKYX;
 			if (y <= m_envData->m_groundHeight[x])
 			{
 				bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.015f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::Brown);
@@ -928,40 +958,42 @@ void editor::viewSky()
 			case POTTEMP:
 			{
 				//Get temp
-				const float Tz = float(m_envData->m_envView.potTemp[int(x) + int(y) * GRIDSIZESKYX]) - 273.15f;
-				const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], m_envData->m_envPressure[y]) + 273.15f;
+				const float Tz = float(m_envData->m_envView.potTemp[idx]) - 273.15f;
+				const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[x], m_envData->m_envView.pressure[idx]) + 273.15f;
 
 				colorScheme.getColor("TemperatureSky", T, color);
 				break;
 			}
 			case QV:
-				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qv[int(x) + int(y) * GRIDSIZESKYX], color);
+				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qv[idx], color);
 				break;
 			case QW:
-				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qw[int(x) + int(y) * GRIDSIZESKYX], color);
+				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qw[idx], color);
 				break;
 			case QC:
-				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qc[int(x) + int(y) * GRIDSIZESKYX], color);
+				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qc[idx], color);
 				break;
 			case QR:
-				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qr[int(x) + int(y) * GRIDSIZESKYX], color);
+				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qr[idx], color);
 				break;
 			case QS:
-				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qs[int(x) + int(y) * GRIDSIZESKYX], color);
+				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qs[idx], color);
 				break;
 			case QI:
-				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qi[int(x) + int(y) * GRIDSIZESKYX], color);
+				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qi[idx], color);
 				break;
 			case WIND:
 				const glm::vec2 VelUV = Game.Environment().getUV(m_envData->m_envView.velField, x + y * GRIDSIZESKYX);
-				// = m_envData->m_envView.velField[x + y * GRIDSIZESKYX];// getUV(int(x) + int(y) * GRIDSIZESKYX);
+				// = m_envData->m_envView.velField[x + y * GRIDSIZESKYX];// getUV(idx);
 				colorScheme.getColor("velField", glm::length(VelUV), color);
 				bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, 0.1f), glm::vec3(0.0f, 0.0f, 1.0f), VelUV, 0.9f, bee::Colors::Black);
+				break;
+			case PRESSURE:
+				colorScheme.getColor("pressure", m_envData->m_envView.pressure[idx], color);
 				break;
 			case DEBUG1:
 			{
 				//Currently for realistic view
-				const int idx = int(x) + int(y) * GRIDSIZESKYX;
 				const float allValues = m_envData->m_envView.Qw[idx] + m_envData->m_envView.Qc[idx] +
 					m_envData->m_envView.Qr[idx] + m_envData->m_envView.Qs[idx] + m_envData->m_envView.Qi[idx];
 
@@ -1084,12 +1116,13 @@ void editor::viewToolTipData()
 {
 	const int x = m_mousePointingIndex % GRIDSIZESKYX;
 	const int y = m_mousePointingIndex / GRIDSIZESKYX;
+	const int idx = x + y * GRIDSIZESKYX;
 
 	const float height = y * VOXELSIZE;
-	const float Tz = float(m_envData->m_envView.potTemp[int(x) + int(y) * GRIDSIZESKYX]) - 273.15f;
-	const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], m_envData->m_envPressure[y]);
+	const float Tz = float(m_envData->m_envView.potTemp[idx]) - 273.15f;
+	const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], m_envData->m_envView.pressure[idx]);
 
-	const float rs = meteoformulas::ws(T, m_envData->m_envPressure[y]);
+	const float rs = meteoformulas::ws(T, m_envData->m_envView.pressure[idx]);
 	const float RH = m_envData->m_envView.Qv[m_mousePointingIndex] / rs * 100;
 	//Dew point calculation https://www.omnicalculator.com/physics/dew-point
 	float dew = 0.0f;
@@ -1140,9 +1173,10 @@ void editor::viewSkewT()
 {
 	float* temps = new float[GRIDSIZESKYY];
 	float* dewPoints = new float[GRIDSIZESKYY];
-	dataToSkewTData(temps, dewPoints);
+	float* pressures = new float[GRIDSIZESKYY];
+	dataToSkewTData(temps, dewPoints, pressures);
 
-	Game.SkewT().setAllArrays(temps, dewPoints, m_envData->m_envPressure);
+	Game.SkewT().setAllArrays(temps, dewPoints, pressures);
 
 	//Small check just in case
 	if (m_skewTidx / GRIDSIZESKYX <= m_envData->m_groundHeight[m_skewTidx % GRIDSIZESKYX])
@@ -1363,9 +1397,10 @@ void editor::addDataErasedGround(const int x, const int y)
 	m_envData->m_envView.Qi[idx] = 0.0f;
 	m_envData->m_envView.potTemp[idx] = m_envData->m_envTemp[y];
 	m_envData->m_envView.velField[idx] = { 0,0 };
+	m_envData->m_envView.pressure[idx] = m_envData->m_envPressure[y];
 }
 
-void editor::dataToSkewTData(float* temp, float* dew)
+void editor::dataToSkewTData(float* temp, float* dew, float* pres)
 {
 	const int y = m_skewTidx / GRIDSIZESKYX;
 	const int x = m_skewTidx % GRIDSIZESKYX;
@@ -1373,16 +1408,18 @@ void editor::dataToSkewTData(float* temp, float* dew)
 	{
 		if (i < y)
 		{
-			temp[i] = 0;
-			dew[i] = 0;
+			temp[i] = 0.0f;
+			dew[i]  = 0.0f;
+			pres[i] = 0.0f;
 			continue;
 		}
+		const int idx = x + i * GRIDSIZESKYX;
 
-		const float Tz = float(m_envData->m_envView.potTemp[x + i * GRIDSIZESKYX]) - 273.15f;
-		const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], m_envData->m_envPressure[i]);
+		const float Tz = float(m_envData->m_envView.potTemp[idx]) - 273.15f;
+		const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], m_envData->m_envView.pressure[idx]);
 
-		const float rs = meteoformulas::ws(T, m_envData->m_envPressure[i]);
-		const float RH = m_envData->m_envView.Qv[x + i * GRIDSIZESKYX] / rs * 100;
+		const float rs = meteoformulas::ws(T, m_envData->m_envView.pressure[idx]);
+		const float RH = m_envData->m_envView.Qv[idx] / rs * 100;
 		//Dew point calculation https://www.omnicalculator.com/physics/dew-point
 		float dewpoint = 0.0f;
 		{
@@ -1394,6 +1431,7 @@ void editor::dataToSkewTData(float* temp, float* dew)
 
 		temp[i] = T;
 		dew[i] = RH == 0 ? 0.0f : dewpoint;
+		pres[i] = m_envData->m_envView.pressure[idx];
 	}
 }
 

@@ -211,7 +211,7 @@ void readTable::readDWDFile(const char* _file)
 	//srand(static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1)));
 	//int dateNum = rand() % 734;
 
-	//targetDate = AllDates[dateNum] + "12"; // 2024 05 01 - 1700 Cape?
+	//targetDate = AllDates[243] + "12"; // AllDates[243] = 2024 05 01 - 1700 Cape?
 
 	printf("Reading file %s\n", targetDate.c_str());
 
@@ -380,10 +380,12 @@ void readTable::initEnvironment()
 	std::vector<float> groundTemp;
 	std::vector<float>  groundPressure;
 	std::vector<float>  pressures;
+	std::vector<float>  pressuresSmall;
 
 	groundTemp.resize(GRIDSIZEGROUND);
 	groundPressure.resize(GRIDSIZEGROUND);
-	pressures.resize(GRIDSIZESKYY);
+	pressures.resize(GRIDSIZESKY);
+	pressuresSmall.resize(GRIDSIZESKY);
 
 	int j = 0;
 	for (float y = 0; y < GRIDSIZESKYY * VOXELSIZE; y += VOXELSIZE)
@@ -391,14 +393,18 @@ void readTable::initEnvironment()
 		const float H0 = skewTData.data.altitude[0];
 		int i = getIndexAtHeight(y + H0);
 		int Pi = i == 0 ? 0 : i - 1;
-		pressures[j] = lerpEnvValue(skewTData.data.altitude[Pi] - H0, skewTData.data.altitude[i] - H0, y, skewTData.data.pressure[Pi], skewTData.data.pressure[i]);
+		pressuresSmall[j] = lerpEnvValue(skewTData.data.altitude[Pi] - H0, skewTData.data.altitude[i] - H0, y, skewTData.data.pressure[Pi], skewTData.data.pressure[i]);
+		for (int x = 0; x < GRIDSIZESKYX; x++)
+		{
+			pressures[x + j * GRIDSIZESKYX] = pressuresSmall[j];
+		}
 		potTempSmall[j] = lerpEnvValue(skewTData.data.altitude[Pi] - H0, skewTData.data.altitude[i] - H0, y, skewTData.data.temperature[Pi], skewTData.data.temperature[i]);
 		//potTempSmall[j] = skewTData.data.temperature[i];
 		indices[j] = i;
 		j++;
 	}
 
-	meteoformulas::getPotentialTempArray(potTempSmall.data(), skewTData.data.pressure[0], pressures.data(), potTempSmall.data(), GRIDSIZESKYY);
+	meteoformulas::getPotentialTempArray(potTempSmall.data(), skewTData.data.pressure[0], pressuresSmall.data(), potTempSmall.data(), GRIDSIZESKYY);
 	//Duplicate across x direction
 	for (int i = 0; i < GRIDSIZESKYY; i++)
 	{
@@ -417,7 +423,7 @@ void readTable::initEnvironment()
 
 		float velFieldValue = std::sinf((skewTData.data.windDir[idx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[idx];
 		float QvValue = meteoformulas::ws(lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, skewTData.data.dewPoint[Pidx], skewTData.data.dewPoint[idx]), 
-			pressures[i]);
+			pressuresSmall[i]);
 
 		for (int x = 0; x < GRIDSIZESKYX; x++)
 		{
@@ -446,7 +452,7 @@ void readTable::initEnvironment()
 	}
 
 #if USE_GPU
-	Game.EnvGPU().init(potTemp.data(), velField.data(), Qv.data(), groundTemp.data(), groundPressure.data(), pressures.data());
+	Game.EnvGPU().init(potTemp.data(), velField.data(), Qv.data(), groundTemp.data(), groundPressure.data(), pressures.data(), pressuresSmall.data());
 #else
 	Game.Environment().init(potTemp.data(), velField.data(), Qv.data(), groundTemp.data(), groundPressure.data(), pressures.data());
 #endif

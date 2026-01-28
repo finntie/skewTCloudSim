@@ -21,6 +21,7 @@ public:
 		float* potTemp;			 // Potential temperature
 		float* velfieldX;
 		float* velfieldY;
+		float* pressure;
 	};
 
 	struct gridDataGroundGPU // 28 bytes
@@ -37,7 +38,7 @@ public:
 	environmentGPU();
 	~environmentGPU();
 
-	void init(float* potTemps, glm::vec2* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures);
+	void init(float* potTemps, glm::vec2* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures, float* smallPressure);
 
 	void updateGPU(float dt, const float speed);
 
@@ -59,7 +60,7 @@ public:
 
 	void advectGroundWaterGPU(const float dt, const float speed);
 	void setTempsAtGround(const float dt, const float speed);
-	void advectAddDensity(float* array, const float* defaultVal, const float dt, const bool density);
+	void advectWithoutDensity(float* array, const float* defaultVal, const float dt);
 	void advectPPMWGPU(float* array, const float* defaultVal, const float dt);
 	// fallVelType: rain = 0, snow = 1, hail = 2
 	void advectPrecip(float* array, const int fallVelType, const float dt);
@@ -67,14 +68,13 @@ public:
 
 
 	//-------------Pressure Project-------------
-	void pressureProject();
-	void calculatePressureProject(float* outputPressure);
+	void pressureProject(const float dt);
+	void calculatePressureProject(float* outputPressure, const float dt);
 	//------------------------------------------
 
 
 	//-------------------Other------------------
 
-	void resetValues();
 	void editorDataGPU();
 	float irridianceGPU();
 	void groundCoverageFactorGPU();
@@ -125,13 +125,16 @@ private:
 	float* m_defaultVal;
 	float* m_density;
 
+	float* m_oldDensityAir;
+	float* m_densityAir;// kg/m3 Used to pressure project
+
 	Neigh* m_neighbourData;
 	microPhysicsParams* m_microPhysRes;//Used for microphysics
 
 	int* m_GHeight;
 	int* m_dummyGHeight;
 
-	float* m_pressures;
+	float* m_defaultPressure;
 	float* m_defaultVel;
 	float* m_isentropicTemp;
 	float* m_isentropicVapor;

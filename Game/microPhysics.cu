@@ -1030,7 +1030,7 @@ __device__ float FPGRFR(const float tempAirK, const float tempGroundC, const flo
 
 
 __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, float* _Qr, float* _Qs, float* _Qi, 
-    const float dt, const float speed, const float* _temp, const float* _pressure, const int* _groundHeight, const float* _groundpressure,
+    const float dt, const float speed, const float* _temp, const float* _densAir, const float* _pressure, const int* _groundHeight, const float* _groundpressure,
     float* condens, float* depos, float* freeze, 
     const bool graphActive, const int2 minSelectPos, const int2 maxSelectPos, microPhysicsParams& microPhysicsResult)
 {
@@ -1101,19 +1101,15 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     float tempK = 0.0f;
     float tempC = 0.0f;
 
-    const float ps = _pressure[tY];
+    const float ps = _pressure[idx];
     float3 fallVel = { 0.0f, 0.0f, 0.0f };
-    float Dair = 0.0f;
+    float Dair = _densAir[idx];
 
-    //Setting density and falling velocity
-    {
-        tempK = float(_temp[idx]) * powf(ps / _groundpressure[tX], Rsd / Cpd);
-        const float Tv = tempK * (0.608f * Qv + 1);
-        Dair = ps * 100 / (Rsd * Tv); //Convert Pha to Pa
-        tempC = tempK - 273.15f;
-
-        if (Qr > 0.0f || Qs > 0.0f || Qi > 0.0f) fallVel = calculateFallingVelocityGPU(Qr, Qs, Qi, Dair, 3, m_gammaQr, m_gammaQs, m_gammaQi);
-    }
+    //Setting temperature and falling velocity 
+    tempK = float(_temp[idx]) * powf(ps / _groundpressure[tX], Rsd / Cpd);
+    tempC = tempK - 273.15f;
+    if (Qr > 0.0f || Qs > 0.0f || Qi > 0.0f) fallVel = calculateFallingVelocityGPU(Qr, Qs, Qi, Dair, 3, m_gammaQr, m_gammaQs, m_gammaQi);
+    
 
     const float QWS = wsGPU(tempC, ps); //Maximum water vapor air can hold
     const float QWI = wiGPU(tempC, ps); //Maximum water vapor cold air can hold
@@ -1407,7 +1403,7 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
 }
 
 __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _Qgr, float* _Qgs, float* _Qgi,
-    const float dt, const float speed, float* _tempGround, const float* _tempAir, const float* _pressure, const float* groundPressure,
+    const float dt, const float speed, float* _tempGround, const float* _tempAir, const float* _densAir, const float* _pressure, const float* groundPressure,
     float* _time, const float irradiance, const float* _windSpeedX, const float* _cloudCover,
     const int* _groundHeight)
 {
@@ -1444,19 +1440,15 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
 
     const float tempGroundC = _tempGround[tX] - 273.15f;
     float tempAirK = 0.0f;
-    const float ps = _pressure[tY];
+    const float ps = _pressure[idx];
     const float windSpeed = _windSpeedX[idx];
     const float cloudCover = _cloudCover[tX];
-    float Dair = 0.0f;
+    float Dair = _densAir[idx];
     float* time = &_time[tX];
 
-    //Setting density and falling velocity
-    {
-        const float tempAirK = float(_tempAir[idx]) * powf(ps / groundPressure[tX], Rsd / Cpd);
-        const float Tv = tempAirK * (0.608f * Qv + 1);
-        Dair = ps * 100 / (Rsd * Tv); //Convert Pha to Pa
-    }
-    tempAirK += 273.15f;
+    //Calculating T from potential temp
+    tempAirK = float(_tempAir[idx]) * powf(ps / groundPressure[tX], Rsd / Cpd);
+    
 
     //printf("tempGroundC[(%i, %i), %i (Y + 1)]: %f\n", tX, tY, idx, tempGroundC);
     //printf("TempK[(%i, %i), %i (Y + 1)]: %f\n", tX, tY, idx, tempAirK);
@@ -1534,7 +1526,7 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
 
 
 __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _Qr, float* _Qs, float* _Qi, float* _Qgr, float* _Qgs, float* _Qgi,
-    const float dt, const float speed, float* _tempGround, const float* _tempAir, const float* _pressure, const float* groundPressure, 
+    const float dt, const float speed, float* _tempGround, const float* _tempAir, const float* _densAir, const float* _pressure, const float* groundPressure,
     const float* _windSpeedX, const int* _groundHeight)
 {
     const int tX = threadIdx.x;
@@ -1558,23 +1550,19 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
     float freeze = 0.0f;
 
     const float tempGroundC = _tempGround[tX] - 273.15f;
-    const float tempAirK = _tempAir[idx];
-    const float ps = _pressure[tY];
+    float tempAirK = _tempAir[idx];
+    const float ps = _pressure[idx];
     const float windSpeed = _windSpeedX[idx];
     float3 fallVel = { 0.0f, 0.0f, 0.0f };
-    float Dair = 0.0f;
+    float Dair = _densAir[idx];
 
-    //Setting density and falling velocity
+    //Setting falling velocity and calculate air temp from pottemp  
+    tempAirK = _tempAir[idx] * powf(ps / groundPressure[tX], Rsd / Cpd);
+    if (Qgr > 0.0f || Qgs > 0.0f || Qgi > 0.0f)
     {
-        const float T = float(tempAirK) * powf(ps / groundPressure[tX], Rsd / Cpd);
-        const float Tv = T * (0.608f * Qv + 1);
-        Dair = ps * 100 / (Rsd * Tv); //Convert Pha to Pa
-
-        if (Qgr > 0.0f || Qgs > 0.0f || Qgi > 0.0f)
-        {
-            fallVel = calculateFallingVelocityGPU(Qgr, Qgs, Qgi, Dair, 3, m_gammaQr, m_gammaQs, m_gammaQi);
-        }
+        fallVel = calculateFallingVelocityGPU(Qgr, Qgs, Qgi, Dair, 3, m_gammaQr, m_gammaQs, m_gammaQi);
     }
+    
 
 
     float GR{ 0.0f };
