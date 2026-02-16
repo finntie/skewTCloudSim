@@ -101,6 +101,12 @@
     <ClInclude Include="dataClass.cuh">
       <Filter>Cuda Header</Filter>
     </ClInclude>
+    <ClInclude Include="config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils.cuh">
+      <Filter>Cuda Header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="environment.cu">

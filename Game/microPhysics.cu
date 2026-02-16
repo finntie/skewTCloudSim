@@ -1,11 +1,10 @@
 #include "microPhysics.cuh"
 
 //Game includes
-#include "environment.h"
+#include "config.h"
 
 #include "meteoconstants.cuh"
 #include "meteoformulas.cuh"
-#include "game.h"
 #include "dataClass.cuh"
 
 #include <CUDA/include/cuda_runtime.h>
@@ -177,8 +176,8 @@ __device__ float FPRAUT(const float Qw, const float QwMin, const float temp)
         const float L = Qw * 1.225f * 1e-3f; //From kg/kg to g/cm3
 
         // Aggregation rate of liquid to rain rate coefficient: // Liu–Daum–McGraw–Wood (LD) scheme: https://journals.ametsoc.org/view/journals/atsc/63/3/jas3675.1.xml
-        return 1e3f * kBAW * dispersion * (L * L * L) * std::powf(Nc, -1) *
-            static_cast<float>(1 - std::exp(-std::powf(1.03e16f * std::powf(Nc, -2.0f / 3.0f) * (L * L), shapeParam))); //First 1e3 is conversion to kg/m3
+        return 1e3f * kBAW * dispersion * (L * L * L) * powf(Nc, -1) *
+            static_cast<float>(1 - expf(-powf(1.03e16f * powf(Nc, -2.0f / 3.0f) * (L * L), shapeParam))); //First 1e3 is conversion to kg/m3
     }
     return 0.0f;
 }

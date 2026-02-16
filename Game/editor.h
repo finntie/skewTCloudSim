@@ -1,17 +1,13 @@
 #pragma once
 #include <memory>
 #include "game.h"
+#include "config.h"
+#include <glm/glm.hpp>
 
 class environment;
 class environmentGPU;
 struct gridDataSky;
 struct gridDataGround;
-struct gridDataBounds;
-
-enum parameter : uint16_t
-{
-	POTTEMP, QV, QW, QC, QR, QS, QI, WIND, PGROUND, PRESSURE, DEBUG1, DEBUG2, DEBUG3
-};
 
 class editor
 {

@@ -1,11 +1,10 @@
 #pragma once
 
 #include <cuda_runtime.h> 
-struct Neigh;
-enum parameter : uint16_t;
+#include "config.h"
 
 
-void initKernelSky(const int* _GHeight, const float* _defaultVel);
+void initKernelSky(const int* _GHeight, const float* _defaultVelX, const float* _defaultVelZ);
 
 //-----------------Diffusing----------------
 
@@ -92,7 +91,13 @@ __global__ void compareAndResetValuesOutGround(const int* oldGroundHeight, const
 __global__ void resetVelPressProj(const Neigh* neigh, float* velX, float* velY);
 __device__ bool isGroundLevel(); //Uses the thread idxs
 __device__ bool isGroundGPU(); //Uses the thread idxs
-__device__ bool isGroundGPU(const int x, const int y);
+__device__ bool isGroundGPU(const int x, const int y, const int z);
 
 __global__ void setToDefault(float* array, const float* defaultValue);
+
+
+__device__ void fillSharedNeigh(float* sharedData, const float* data, const float* customData, const int z, boundCon ground, boundCon sky);
+
+__device__ __forceinline__ void fillDataBoundCon(boundCon condition, float& sharedData, const float data, const float customData);
+
 //------------------------------------------

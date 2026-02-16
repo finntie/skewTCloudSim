@@ -1,8 +1,7 @@
 #pragma once
 
+#include "config.h"
 #include <cuda_runtime.h> 
-struct Neigh;
-enum parameter : uint16_t;
 struct microPhysicsParams;
 struct envDebugData;
 
@@ -10,7 +9,7 @@ class environmentGPU
 {
 public:
 
-	struct gridDataSkyGPU // 36 bytes
+	struct gridDataSkyGPU // 88 bytes
 	{
 		float* Qv; //  Mixing Ratio of Water Vapor
 		float* Qw; //	Mixing Ratio of	Liquid Water
@@ -21,10 +20,11 @@ public:
 		float* potTemp;			 // Potential temperature
 		float* velfieldX;
 		float* velfieldY;
+		float* velfieldZ;
 		float* pressure;
 	};
 
-	struct gridDataGroundGPU // 28 bytes
+	struct gridDataGroundGPU // 56 bytes
 	{
 		float* Qrs; // Subsurface water content
 		float* Qgr; // Rain content
@@ -38,7 +38,7 @@ public:
 	environmentGPU();
 	~environmentGPU();
 
-	void init(float* potTemps, glm::vec2* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures, float* smallPressure);
+	void init(float* potTemps, glm::vec3* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures, float* smallPressure);
 
 	void updateGPU(float dt, const float speed);
 
@@ -135,7 +135,8 @@ private:
 	int* m_dummyGHeight;
 
 	float* m_defaultPressure;
-	float* m_defaultVel;
+	float* m_defaultVelX;
+	float* m_defaultVelZ;
 	float* m_isentropicTemp;
 	float* m_isentropicVapor;
 	float* m_dummyArray;
@@ -167,5 +168,6 @@ private:
 	//CPU storage
 	float m_velXCPU[GRIDSIZESKY];
 	float m_velYCPU[GRIDSIZESKY];
+	float m_velZCPU[GRIDSIZESKY];
 
 };

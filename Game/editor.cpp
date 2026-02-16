@@ -232,11 +232,13 @@ void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps
 	
 	static float velX[GRIDSIZESKY];
 	static float velY[GRIDSIZESKY];
+	static float velZ[GRIDSIZESKY];
 	cudaMemcpy(velX, sky->velfieldX, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
 	cudaMemcpy(velY, sky->velfieldY, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(velZ, sky->velfieldZ, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
 	for (int i = 0; i < GRIDSIZESKY; i++)
 	{
-		m_envData->m_envView.velField[i] = { velX[i], velY[i] };
+		m_envData->m_envView.velField[i] = { velX[i], velY[i], velZ[i]};
 	}
 	//Set pressure
 	cudaMemcpy(m_envData->m_envView.pressure, _ps, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);

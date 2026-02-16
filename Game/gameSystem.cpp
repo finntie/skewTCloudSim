@@ -59,8 +59,6 @@ void gameSystem::Update(float dt)
 
 void gameSystem::Render() {}
 
-//#ifdef BEE_INSPECTOR
-
 // ImGui integration.
 std::string gameSystem::GetName() const { return Title; }
 std::string gameSystem::GetIcon() const { return ICON_FA_GAMEPAD; }
@@ -85,4 +83,3 @@ void gameSystem::OnPanel()
 	//
 	//ImGui::End();
 }
-//#endif

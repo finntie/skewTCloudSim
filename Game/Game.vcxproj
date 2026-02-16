@@ -204,6 +204,7 @@
     <ClCompile Include="skewTer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="config.h" />
     <ClInclude Include="dataClass.cuh" />
     <ClInclude Include="editor.h" />
     <ClInclude Include="environment.cuh" />
@@ -223,6 +224,7 @@
     <ClInclude Include="microPhysics.cuh" />
     <ClInclude Include="readTable.h" />
     <ClInclude Include="skewTer.h" />
+    <ClInclude Include="utils.cuh" />
     <ClInclude Include="zip_file.hpp" />
   </ItemGroup>
   <ItemGroup>

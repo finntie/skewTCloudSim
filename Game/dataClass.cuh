@@ -1,11 +1,8 @@
 #pragma once
 
-#include <cuda.h>
 #include <cuda_runtime.h> 
 #include <CUDA/cmath>
-#include <stdio.h>
-
-#define MAXGRAPHLENGTH 100
+#include "config.h"
 
 struct microPhysicsParams;
 

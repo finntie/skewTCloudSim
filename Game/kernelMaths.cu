@@ -5,56 +5,80 @@
 
 #include <stdio.h>
 
-//TDO add .cu implementations for these.
-__global__ void setToValue(float* array, const float value, const int width, const int offset)
+__global__ void setToValue(float* array, const float value, const int depth, const int offset)
 {
-    const int tX = threadIdx.x;
-    const int tY = blockIdx.x;
-    const int idx = tX + tY * width + offset;
+    const int x = threadIdx.x;
+    const int y = blockIdx.x;
+    int z = 0;
 
-    array[idx] = value;
+    for (z = 0; z < depth; z++)
+    {
+        const int idx = x + y * blockDim.x + z * blockDim.x * gridDim.x;
+        array[idx] = value;
+    }
 }
 
-__global__ void multiplyValues(float* array1, const float* array2, const int width)
+__global__ void multiplyValues(float* array1, const float* array2, const int depth)
 {
-    const int tX = threadIdx.x;
-    const int tY = blockIdx.x;
-    const int idx = tX + tY * width;
+    const int x = threadIdx.x;
+    const int y = blockIdx.x;
+    int z = 0;
 
-    array1[idx] *= array2[idx];
+    for (z = 0; z < depth; z++)
+    {
+        const int idx = x + y * blockDim.x + z * blockDim.x * gridDim.x;
+        array1[idx] *= array2[idx];
+    }
 }
 
-__global__ void divideValues(float* array1, const float* array2, const int width)
+__global__ void divideValues(float* array1, const float* array2, const int depth)
 {
-    const int tX = threadIdx.x;
-    const int tY = blockIdx.x;
-    const int idx = tX + tY * width;
-    array1[idx] /= array2[idx];
+    const int x = threadIdx.x;
+    const int y = blockIdx.x;
+    int z = 0;
+
+    for (z = 0; z < depth; z++)
+    {
+        const int idx = x + y * blockDim.x + z * blockDim.x * gridDim.x;
+        array1[idx] /= array2[idx];
+    }
 }
 
-__global__ void subtractValue(float* array, const float value, const int width)
+__global__ void subtractValue(float* array, const float value, const int depth)
 {
-    const int tX = threadIdx.x;
-    const int tY = blockIdx.x;
-    const int idx = tX + tY * width;
+    const int x = threadIdx.x;
+    const int y = blockIdx.x;
+    int z = 0;
 
-    array[idx] -= value;
+    for (z = 0; z < depth; z++)
+    {
+        const int idx = x + y * blockDim.x + z * blockDim.x * gridDim.x;
+        array[idx] -= value;
+    }
 }
 
-__global__ void debugPrintArray(const float* array)
+__global__ void debugPrintArray(const float* array, const int depth)
 {
-    const int tX = threadIdx.x;
-    const int tY = blockIdx.x;
-    const int idx = tX + tY * blockDim.x;
+    const int x = threadIdx.x;
+    const int y = blockIdx.x;
+    int z = 0;
 
-    printf("DebugPrintArray (%i, %i) = array[%i]: %f\n", tX, tY, idx, array[idx]);
+    for (z = 0; z < depth; z++)
+    {
+        const int idx = x + y * blockDim.x + z * blockDim.x * gridDim.x;
+        printf("DebugPrintArray (X: %i, Y: %i, Z: %i) = array[%i]: %f\n", x, y, z, idx, array[idx]);
+    }
 }
 
-__global__ void debugPrintArray(const int* array)
+__global__ void debugPrintArray(const int* array, const int depth)
 {
-    const int tX = threadIdx.x;
-    const int tY = blockIdx.x;
-    const int idx = tX + tY * blockDim.x;
+    const int x = threadIdx.x;
+    const int y = blockIdx.x;
+    int z = 0;
 
-    printf("DebugPrintArray (%i, %i) = array[%i]: %i\n", tX, tY, idx, array[idx]);
+    for (z = 0; z < depth; z++)
+    {
+        const int idx = x + y * blockDim.x + z * blockDim.x * gridDim.x;
+        printf("DebugPrintArray (X: %i, Y: %i, Z: %i) = array[%i]: %i\n", x, y, z, idx, array[idx]);
+    }
 }
