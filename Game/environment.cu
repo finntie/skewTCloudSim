@@ -425,10 +425,10 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 		calculateBuoyancy(dt * speed);
 		diffuseGPU(m_envGrid.velfieldX, 2, dt * speed);
 		diffuseGPU(m_envGrid.velfieldY, 3, dt * speed);
-		advectPPMWGPU(m_envGrid.velfieldX, m_defaultVel, dt * speed);
+		advectPPMWGPU(m_envGrid.velfieldX, m_defaultVelX, dt * speed);
 		cudaMemset(m_dummyArray, 0, GRIDSIZESKYY * sizeof(float));
 		advectPPMWGPU(m_envGrid.velfieldY, m_dummyArray, dt * speed);
-
+		advectPPMWGPU(m_envGrid.velfieldZ, m_defaultVelZ, dt * speed);
 		initDensity << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_densityAir, m_envGrid.potTemp, m_envGrid.pressure, m_envGrid.Qv, m_groundGrid.P);
 		cudaDeviceSynchronize();
 		cudaMemcpy(m_oldDensityAir, m_densityAir, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToDevice);
@@ -544,28 +544,41 @@ void environmentGPU::microPhysicsSkyGPU(const float dt, const float speed)
 
 void environmentGPU::diffuseGPU(float* diffuseArray, int type, const float dt)
 {
-	//TODO: shared memory somewhere?
-
-	const int threads = GRIDSIZESKYX;
-	const int blocks = GRIDSIZESKYY;
+	dim3 grid(GRIDSIZEX, GRIDSIZEY);
+	dim3 block(BLOCKSIZEX, BLOCKSIZEY);
 
 	float* defaultArray = nullptr;
+	boundsEnv boundsConditions{ NEUMANN, DIRICHLET, DIRICHLET };
 
 	switch (type)
 	{
 	case 0: //Temp
 		defaultArray = m_isentropicTemp;
+		// Sides boundaries are not actually dirichlet, but we customize inside the function for temp
+		boundsConditions.sides = CUSTOM;
 		break;
 	case 1: //Vapor
 		defaultArray = m_isentropicVapor;
+		boundsConditions.ground = NEUMANN;
+		boundsConditions.sides = CUSTOM;
+		boundsConditions.up = CUSTOM;
 		break;
 	case 2: //Vel-X
-		defaultArray = m_defaultVel;
+		defaultArray = m_defaultVelX;
+		boundsConditions.sides = CUSTOM;
+		boundsConditions.up = CUSTOM;
 		break;
 	case 3: //Vel-Y
-		defaultArray = m_defaultVel; //Not going to even use this
+		defaultArray = nullptr; //Not going to even use this
+		boundsConditions.sides = NEUMANN;
+		boundsConditions.up = DIRICHLET;
 		break;
-	case 4: //Default
+	case 4: //Vel-Z
+		defaultArray = m_defaultVelZ; //Not going to even use this
+		boundsConditions.sides = CUSTOM;
+		boundsConditions.up = CUSTOM;
+		break;
+	case 5: //Default
 		cudaMemset(m_dummyArray, 0, GRIDSIZESKYY * sizeof(float));
 		defaultArray = m_dummyArray;
 		break;
@@ -583,15 +596,15 @@ void environmentGPU::diffuseGPU(float* diffuseArray, int type, const float dt)
 
 	for (int L = 0; L < LOOPS; L++)
 	{
-		diffuseRed << <blocks, threads >> > (m_neighbourData, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_array, m_outputArray, k, type);
+		diffuseRedBlack << <grid, block >> > (m_neighbourData, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_array, m_outputArray, k, type, boundsConditions, true);
 		cudaDeviceSynchronize();
-		diffuseBlack << <blocks, threads >> > (m_neighbourData, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_array, m_outputArray, k, type);
+		diffuseRedBlack << <grid, block >> > (m_neighbourData, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_array, m_outputArray, k, type, boundsConditions, false);
 		cudaDeviceSynchronize();
 
 		//Switch output and input around
-		diffuseRed << <blocks, threads >> > (m_neighbourData, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_outputArray, m_array, k, type);
+		diffuseRedBlack << <grid, block >> > (m_neighbourData, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_outputArray, m_array, k, type, boundsConditions, true);
 		cudaDeviceSynchronize();
-		diffuseBlack << <blocks, threads >> > (m_neighbourData, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_outputArray, m_array, k, type);
+		diffuseRedBlack << <grid, block >> > (m_neighbourData, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_outputArray, m_array, k, type, boundsConditions, false);
 		cudaDeviceSynchronize();
 	}
 	cudaMemcpy(diffuseArray, m_array, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToDevice);
@@ -628,82 +641,10 @@ void environmentGPU::setTempsAtGround(const float dt, const float speed)
 	cudaDeviceSynchronize();
 }
 
-void environmentGPU::advectWithoutDensity(float* advectArray, const float* defaultVal, const float dt)
-{
-	//For now use just the size, since we have no intend (yet) of going larger than 256 or even 1024.
-	const int threads = GRIDSIZESKYX;
-	const int blocks = GRIDSIZESKYY;
-
-	//Reset data
-	cudaMemset(m_outputArray, 0, GRIDSIZESKY * sizeof(float));
-
-	//Recollect all threads before starting kernels
-	cudaDeviceSynchronize();
-
-
-	// Substeps based on highest courant number
-	// This is to make sure that the advecting value can not pass over 1 cell, for example:
-	// If velocity is too high, the value actually never passes this cell in one time frame but passes over.
-	// To fix this we use sub-steps.
-	cudaMemset(m_singleStor0, 0, sizeof(float));
-	// Get max velocity and base C of this.
-	getMaxDivergence << <blocks, threads >> > (m_singleStor0, m_envGrid.velfieldX);
-	getMaxDivergence << <blocks, threads >> > (m_singleStor0, m_envGrid.velfieldY);
-	float maxVel = 0.0f;
-	cudaMemcpy(&maxVel, m_singleStor0, sizeof(float), cudaMemcpyDeviceToHost);
-
-	const float C = maxVel * dt / VOXELSIZE;
-	const float MAXSUBSTEPS = 100;
-
-	const int subSteps = int(fminf(ceilf(fabsf(C)), MAXSUBSTEPS));
-	const float dtSub = dt / subSteps;
-	if (C > 100)
-	{
-		printf("WARNING: Courant number is high: %f, increase size of voxels or decrease timesteps, %f, %i\n", C, dtSub, subSteps);
-	}
-
-	// We advect the default value and density. 
-	// After each time we advect, we need to divide by the density, this is to make sure any errors that accumulate are immediately resolved.
-	// Using half x, full y and half x, we use second order accuracy, making sure we treat x and y equally. 
-
-	for (int i = 0; i < subSteps; i++)
-	{
-
-		//Its kernel time, advecting 2 times half X and 1 time Y
-
-		//First advect density and array on half X
-		advectPPMX << <blocks, threads >> > (advectArray, m_outputArray, defaultVal, m_envGrid.velfieldX, m_neighbourData, dtSub * 0.5f);
-		cudaDeviceSynchronize();
-
-		//Switch blocks and threads around (x and y are swapped)
-		//Also input and output are swapped because of previous result
-		advectPPMY << <threads, blocks >> > (m_outputArray, advectArray, defaultVal, m_envGrid.velfieldY, m_neighbourData, dtSub);
-		cudaDeviceSynchronize();
-
-		advectPPMX << <blocks, threads >> > (advectArray, m_outputArray, defaultVal, m_envGrid.velfieldX, m_neighbourData, dtSub * 0.5f);
-		cudaDeviceSynchronize();
-
-		//Switch over input and output for our next iteration or return result.
-		cudaMemcpy(advectArray, m_outputArray, sizeof(GRIDSIZESKY) * sizeof(float), cudaMemcpyDeviceToDevice);
-	}
-
-	cudaError_t err = cudaGetLastError();
-	if (err != cudaSuccess) {
-
-		std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-		__debugbreak();
-	}
-}
-
 void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, const float dt)
 {
-	//For now use just the size, since we have no intend (yet) of going larger than 256 or even 1024.
-	const int threads = GRIDSIZESKYX;
-	const int blocks = GRIDSIZESKYY;
-	//const int totalThreads = GRIDSIZESKY;
-	//const int numBlocks = cuda::ceil_div(totalThreads, threads); //Using CUDA function to do the amount of blocks calculation
-	//const int numOvertimes = cuda::ceil_div(numBlocks, blocks); //We won't go over the amount of max blocks
-
+	dim3 grid(GRIDSIZEX, GRIDSIZEY);
+	dim3 block(BLOCKSIZEX, BLOCKSIZEY);
 
 	//Create events to track time taking of parts
 	//cudaEvent_t start;
@@ -718,10 +659,12 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 	cudaMemset(m_stor0, 0, GRIDSIZESKY * sizeof(float));
 	setToValue << <GRIDSIZESKYY, 1 >> > (m_dummyArraySky2, 1.0f, 1);
 
-
 	//Recollect all threads before starting kernels
 	cudaDeviceSynchronize();
 
+	boundsEnv boundsX{ CUSTOM, CUSTOM, DIRICHLET };
+	boundsEnv boundsY{ NEUMANN, DIRICHLET, DIRICHLET };
+	boundsEnv boundsZ{ CUSTOM, CUSTOM, DIRICHLET };
 
 	// Substeps based on highest courant number
 	// This is to make sure that the advecting value can not pass over 1 cell, for example:
@@ -729,8 +672,9 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 	// To fix this we use sub-steps.
 	cudaMemset(m_singleStor0, 0, sizeof(float));
 	// Get max velocity and base C of this.
-	getMaxDivergence<<<blocks, threads>>>(m_singleStor0, m_envGrid.velfieldX);
-	getMaxDivergence<<<blocks, threads>>>(m_singleStor0, m_envGrid.velfieldY);
+	getMaxDivergence << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_singleStor0, m_envGrid.velfieldX);
+	getMaxDivergence << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_singleStor0, m_envGrid.velfieldY);
+	getMaxDivergence << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_singleStor0, m_envGrid.velfieldZ);
 	float maxVel = 0.0f;
 	cudaMemcpy(&maxVel, m_singleStor0, sizeof(float), cudaMemcpyDeviceToHost);
 
@@ -746,41 +690,72 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 
 	// We advect the default value and density. 
 	// After each time we advect, we need to divide by the density, this is to make sure any errors that accumulate are immediately resolved.
-	// Using half x, full y and half x, we use second order accuracy, making sure we treat x and y equally. 
+	// Using half x, half y and full z, we use second order accuracy, making sure we treat x, y and z equally. 
 	for (int i = 0; i < subSteps; i++)
 	{
-
-		//Its kernel time, advecting 2 times half X and 1 time Y
+		// Using strang method
+		// Also used in flash https://flash.rochester.edu/site/flashcode/user_support/flash2_users_guide/docs/FLASH2.5/flash2_ug.pdf
+		// in 6.1.3, strang is done using X, Y, Z, then another timestep for Z, Y, X. Combining that in 1 timestep, we can do:
+		// 0.5X, 0.5Y, Z, 0.5Y, 0.5X
 		
+
+		//Its kernel time, advecting 2 times half X, 2 times half Y and 1 time Z
+		
+		//------------------------------ 0.5 X -----------------------------------
+
 		//First advect density and array on half X
-		advectPPMX << <blocks, threads >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldX, m_neighbourData, dtSub * 0.5f);
-		advectPPMX << <blocks, threads >> > (advectArray, m_outputArray, defaultVal, m_envGrid.velfieldX, m_neighbourData, dtSub * 0.5f);
+		advectPPMX << <grid, block >> > (m_density, m_stor0, m_dummyArraySky2, m_defaultVelX, m_envGrid.velfieldX, m_neighbourData, boundsX, dtSub * 0.5f);
+		advectPPMX << <grid, block >> > (advectArray, m_outputArray, defaultVal, m_defaultVelX, m_envGrid.velfieldX, m_neighbourData, boundsX, dtSub * 0.5f);
 		cudaDeviceSynchronize();
 
 		//Divide to get them both up to speed
-		divideValues << <blocks, threads >> > (m_outputArray, m_stor0, GRIDSIZESKYX);
-		setToValue << <blocks, threads >> > (m_density, 1.0f, GRIDSIZESKYX);
+		divideValues << <grid, threads >> > (m_outputArray, m_stor0, GRIDSIZESKYX);
+		setToValue << <grid, threads >> > (m_density, 1.0f, GRIDSIZESKYX);
 		cudaDeviceSynchronize();
+
+		//------------------------------ 0.5 Y -----------------------------------
 
 		//Switch blocks and threads around (x and y are swapped)
 		//Also input and output are swapped because of previous result
-		advectPPMY << <threads, blocks >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldY, m_neighbourData, dtSub);
-		advectPPMY << <threads, blocks >> > (m_outputArray, advectArray, defaultVal, m_envGrid.velfieldY, m_neighbourData, dtSub);
+		advectPPMY << <grid, block >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldY, m_neighbourData, boundsY, dtSub * 0.5f);
+		advectPPMY << <grid, block >> > (m_outputArray, advectArray, defaultVal, m_envGrid.velfieldY, m_neighbourData, boundsY, dtSub * 0.5f);
 		cudaDeviceSynchronize();
 
 		//Divide to get them both up to speed
-		divideValues << <blocks, threads >> > (advectArray, m_stor0, GRIDSIZESKYX);
-		setToValue << <blocks, threads >> > (m_density, 1.0f, GRIDSIZESKYX);
+		divideValues << <GRIDSIZESKYY, GRIDSIZESKYX >> > (advectArray, m_stor0, GRIDSIZESKYZ);
+		setToValue << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_density, 1.0f, GRIDSIZESKYZ);
 		cudaDeviceSynchronize();
 
-		advectPPMX << <blocks, threads >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldX, m_neighbourData, dtSub * 0.5f);
-		advectPPMX << <blocks, threads >> > (advectArray, m_outputArray, defaultVal, m_envGrid.velfieldX, m_neighbourData, dtSub * 0.5f);
+		//------------------------------ 1.0 Z -----------------------------------
+
+		advectPPMZ << <grid, block >> > (m_density, m_stor0, m_dummyArraySky2, m_defaultVelZ, m_envGrid.velfieldZ, m_neighbourData, boundsZ, dtSub);
+		advectPPMZ << <grid, block >> > (advectArray, m_outputArray, defaultVal, m_defaultVelZ, m_envGrid.velfieldZ, m_neighbourData, boundsZ, dtSub);
 		cudaDeviceSynchronize();
 
-		//Divide to get them both up to speed
-		divideValues << <blocks, threads >> > (m_outputArray, m_stor0, GRIDSIZESKYX);
-		setToValue << <blocks, threads >> > (m_density, 1.0f, GRIDSIZESKYX);
+		divideValues << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_outputArray, m_stor0, GRIDSIZESKYZ);
+		setToValue << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_density, 1.0f, GRIDSIZESKYZ);
 		cudaDeviceSynchronize();
+
+		//------------------------------ 0.5 Y -----------------------------------
+
+		advectPPMY << <grid, block >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldY, m_neighbourData, boundsY, dtSub * 0.5f);
+		advectPPMY << <grid, block >> > (m_outputArray, advectArray, defaultVal, m_envGrid.velfieldY, m_neighbourData, boundsY, dtSub * 0.5f);
+		cudaDeviceSynchronize();
+
+		divideValues << <GRIDSIZESKYY, GRIDSIZESKYX >> > (advectArray, m_stor0, GRIDSIZESKYZ);
+		setToValue << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_density, 1.0f, GRIDSIZESKYZ);
+		cudaDeviceSynchronize();
+
+		//------------------------------ 0.5 X -----------------------------------
+
+		advectPPMX << <grid, block >> > (m_density, m_stor0, m_dummyArraySky2, m_defaultVelX, m_envGrid.velfieldX, m_neighbourData, boundsX, dtSub * 0.5f);
+		advectPPMX << <grid, block >> > (advectArray, m_outputArray, defaultVal, m_defaultVelX, m_envGrid.velfieldX, m_neighbourData, boundsX, dtSub * 0.5f);
+		cudaDeviceSynchronize();
+
+		divideValues << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_outputArray, m_stor0, GRIDSIZESKYZ);
+		setToValue << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_density, 1.0f, GRIDSIZESKYZ);
+		cudaDeviceSynchronize();
+
 		//Switch over input and output for our next iteration or return result.
 		cudaMemcpy(advectArray, m_outputArray, sizeof(GRIDSIZESKY) * sizeof(float), cudaMemcpyDeviceToDevice);
 	}

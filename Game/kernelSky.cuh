@@ -8,10 +8,8 @@ void initKernelSky(const int* _GHeight, const float* _defaultVelX, const float* 
 
 //-----------------Diffusing----------------
 
-__global__ void diffuseRed(const Neigh* neigh, const float* groundT, const float* pressures, const float* groundP, const float* defaultVal,
-	const float* input, float* output, const float k, const int type);
-__global__ void diffuseBlack(const Neigh* neigh, const float* groundT, const float* pressures, const float* groundP, const float* defaultVal,
-	const float* input, float* output, const float k, const int type);
+__global__ void diffuseRedBlack(const Neigh* neigh, const float* groundT, const float* pressures, const float* groundP, const float* defaultVal,
+	const float* input, float* output, const float k, const int type, boundsEnv bounds, bool red);
 //------------------------------------------
 
 
@@ -21,19 +19,29 @@ __global__ void advectGroundWaterRed(const float* inputQrs, const float* inputQg
 __global__ void advectGroundWaterBlack(const float* inputQrs, const float* inputQgr, float* Qrs, float* Qgr, const float dt, const float speed);
 
 __global__ void setTempsAtGroundGPU(float* potTemps, const float* groundTemps, const float* pressures, const float* groundPressures, const float dt);
-__device__ float advectPPMFlux(const float* array, const float defaultVal, const float velfield, const Neigh neighbour, const Neigh downWindNeigh,
-	const float dt, const int tX, const bool x, const bool isRight);
+__device__ float advectPPMFlux(const float velocity, const float valL, const float valC, const float valR, const float dt);
 __global__ void advectPPMX(const float* __restrict__ arrayIn,
 	float* __restrict__ arrayOut,
 	const float* __restrict__ defaultVal,
+	const float* __restrict__ defaultVelX,
 	const float* __restrict__ velfieldX,
 	const Neigh* __restrict__  neighbour,
+	const boundsEnv bounds,
 	const float dt);
 __global__ void advectPPMY(const float* __restrict__ arrayIn,
 	float* __restrict__ arrayOut,
 	const float* __restrict__ defaultVal,
 	const float* __restrict__ velfieldY,
 	const Neigh* __restrict__  neighbour,
+	const boundsEnv bounds,
+	const float dt);
+__global__ void advectPPMZ(const float* __restrict__ arrayIn,
+	float* __restrict__ arrayOut,
+	const float* __restrict__ defaultVal,
+	const float* __restrict__ defaultVelZ,
+	const float* __restrict__ velfieldZ,
+	const Neigh* __restrict__  neighbour,
+	const boundsEnv bounds,
 	const float dt);
 
 __global__ void advectPrecipRed(float* array, const Neigh* neigh, const float* potTemp, const float* Qv, const float* Qr, const float* Qs, const float* Qi,
@@ -96,8 +104,10 @@ __device__ bool isGroundGPU(const int x, const int y, const int z);
 __global__ void setToDefault(float* array, const float* defaultValue);
 
 
-__device__ void fillSharedNeigh(float* sharedData, const float* data, const float* customData, const int z, boundCon ground, boundCon sky);
+__device__ void fillSharedNeigh(float* sharedData, const float* data, const float* customData, const int z, boundsEnv boundaryConditions);
 
-__device__ __forceinline__ void fillDataBoundCon(boundCon condition, float& sharedData, const float data, const float customData);
+__device__ __forceinline__ float fillNeighbourData(envType neighbourType, boundsEnv condition, const float* data, const int idx, const int offset, const float customData, bool up = false);
+
+__device__ __forceinline__ void fillDataBoundCon(boundCon condition, float& output, const float data, const float customData);
 
 //------------------------------------------

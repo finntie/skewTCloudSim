@@ -31,6 +31,19 @@ enum boundCon
 	NEUMANN, DIRICHLET, CUSTOM
 };
 
+///- Sides 
+///- Up
+///- Ground
+///Holds bounds for different direction, downwards is ALWAYS ground
+struct boundsEnv
+{
+	//Sides meaning left, right, forward and backwards
+	boundCon sides;
+	boundCon up;
+	//Ground includes downwards and possibly left and righ when there is ground
+	boundCon ground;
+};
+
 // Parameter type
 enum parameter
 {

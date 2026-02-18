@@ -1,5 +1,6 @@
 #pragma once
 
+#include <glm/glm.hpp> //TODO: we do not want this
 #include "config.h"
 #include <cuda_runtime.h> 
 struct microPhysicsParams;
@@ -51,7 +52,7 @@ public:
 
 	//-----------------Diffusing----------------
 
-	// type: temp = 0, vapor = 1, velX = 2, velY = 3, default = 4
+	// type: temp = 0, vapor = 1, velX = 2, velY = 3, velZ = 4, default = 4
 	void diffuseGPU(float* diffuseArray, int type, const float dt);
 	//------------------------------------------
 
@@ -60,7 +61,6 @@ public:
 
 	void advectGroundWaterGPU(const float dt, const float speed);
 	void setTempsAtGround(const float dt, const float speed);
-	void advectWithoutDensity(float* array, const float* defaultVal, const float dt);
 	void advectPPMWGPU(float* array, const float* defaultVal, const float dt);
 	// fallVelType: rain = 0, snow = 1, hail = 2
 	void advectPrecip(float* array, const int fallVelType, const float dt);
