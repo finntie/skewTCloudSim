@@ -431,10 +431,10 @@ void readTable::initEnvironment()
 		{
 			for (int x = 0; x < GRIDSIZESKYX; x++)
 			{
-				const int idx = getIdx(x, j, z);
-				velField[idx] = { velFieldValueX, 0, velFieldValueZ };
-				Qv[idx] = QvValue;
-				pressures[idx] = psValue;
+				const int idxFull = getIdx(x, j, z);
+				velField[idxFull] = { velFieldValueX, 0, velFieldValueZ };
+				Qv[idxFull] = QvValue;
+				pressures[idxFull] = psValue;
 			}
 		}
 	}

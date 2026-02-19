@@ -14,6 +14,7 @@
 #include "imgui/IconsFontAwesome.h"
 #include "math/math.hpp"
 #include "rendering/colors.hpp"
+#include "utils.cuh"
 
 #include "math/geometry.hpp"
 #include "rendering/debug_render.hpp"
@@ -39,7 +40,7 @@ environment::environment()
 		m_envGrid.Qs[i] = 0.0f;
 		m_envGrid.Qi[i] = 0.0f;
 		m_envGrid.potTemp[i] = 301.15f;
-		m_envGrid.velField[i] = { 0,1 };
+		m_envGrid.velField[i] = { 0,1,0 };
 	}
 	for (int i = 0; i < GRIDSIZEGROUND; i++)
 	{
@@ -104,7 +105,7 @@ void environment::init(float* potTemps, glm::vec2* velField, float* Qv, float* g
 			m_envGrid.Qr[x + y * GRIDSIZESKYX] = 0.0f;
 			m_envGrid.Qs[x + y * GRIDSIZESKYX] = 0.0f;
 			m_envGrid.Qi[x + y * GRIDSIZESKYX] = 0.0f;
-			m_envGrid.velField[x + y * GRIDSIZESKYX] = { 0.0f, 0.0f };
+			m_envGrid.velField[x + y * GRIDSIZESKYX] = { 0.0f, 0.0f, 0.0f };
 		}
 	}
 
@@ -1093,7 +1094,7 @@ void environment::updateVelocityField(const float dt)
 					const glm::vec2 up    = m_NeighData[i].up    != SKY ? glm::vec2(dif[i].x, 0.0f) : dif[i + GRIDSIZESKYX]; // free slip
 					const glm::vec2 down  = m_NeighData[i].down  != SKY ? glm::vec2(0.0f) : dif[i - GRIDSIZESKYX]; // no slip
 	
-					dif[i] = (m_envGrid.velField[i] + k * (left + right + up + down)) / (1 + 4 * k);
+					dif[i] = ((m_envGrid.velField[i].x, m_envGrid.velField[i].y) + k * (left + right + up + down)) / (1 + 4 * k);
 				}
 			}
 		}
@@ -2079,16 +2080,18 @@ glm::vec2 environment::getUV(const int i)
 	return glm::vec2((Pu + u) / 2, (Pv + v) / 2);
 }
 
-glm::vec2 environment::getUV(const glm::vec2* velField, const int i)
+glm::vec3 environment::getUV(const glm::vec3* velField, const int x, const int y, const int z)
 {
+	const int idx = getIdx(x, y, z);
 	//Casual avaraging
-	const int x = i % GRIDSIZESKYX;
-	const float u = velField[i].x;
-	const float v = velField[i].y;
-	const float Pu = x == 0 ? velField[i].x :velField[i - 1].x;
-	const float Pv = i - GRIDSIZESKYX < 0 ? 0.0f : velField[i - GRIDSIZESKYX].y;
+	const float u = velField[idx].x;
+	const float v = velField[idx].y;
+	const float w = velField[idx].z;
+	const float Pu = x == 0 ? velField[idx].x :velField[idx - 1].x;
+	const float Pv = y == 0 ? 0.0f : velField[idx - GRIDSIZESKYX].y;
+	const float Pw = z == 0 ? 0.0f : velField[idx - GRIDSIZESKYX * GRIDSIZESKYY].y;
 
-	return glm::vec2((Pu + u) / 2, (Pv + v) / 2);
+	return glm::vec3((Pu + u) / 2, (Pv + v) / 2, (Pw + w) / 2);
 }
 
 float environment::getIsentropicTemp(const float coordy)

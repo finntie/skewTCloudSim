@@ -985,7 +985,7 @@ void editor::viewSky()
 				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qi[idx], color);
 				break;
 			case WIND:
-				const glm::vec2 VelUV = Game.Environment().getUV(m_envData->m_envView.velField, x + y * GRIDSIZESKYX);
+				const glm::vec2 VelUV = Game.Environment().getUV(m_envData->m_envView.velField, x, y, 0);
 				// = m_envData->m_envView.velField[x + y * GRIDSIZESKYX];// getUV(idx);
 				colorScheme.getColor("velField", glm::length(VelUV), color);
 				bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, 0.1f), glm::vec3(0.0f, 0.0f, 1.0f), VelUV, 0.9f, bee::Colors::Black);

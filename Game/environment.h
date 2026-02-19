@@ -89,7 +89,7 @@ public:
 
 	/// <summary> Get UV from the velocity field which is in MAC grid</summary>
 	glm::vec2 getUV(const int index);
-	glm::vec2 getUV(const glm::vec2* velField, const int index);
+	glm::vec3 getUV(const glm::vec3* velField, const int x, const int y, const int z);
 
 	/// <summary>Get ambient temp at height. Using avaraged lapse rate between 5 and 2 km. </summary>
 	float getIsentropicTemp(const float y);
