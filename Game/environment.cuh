@@ -59,7 +59,7 @@ public:
 
 	//-----------------Advecting----------------
 
-	void advectGroundWaterGPU(const float dt, const float speed);
+	void advectGroundWater(const float dt, const float speed);
 	void setTempsAtGround(const float dt, const float speed);
 	void advectPPMWGPU(float* array, const float* defaultVal, const float dt);
 	// fallVelType: rain = 0, snow = 1, hail = 2
@@ -77,8 +77,8 @@ public:
 
 	void editorDataGPU();
 	float irridianceGPU();
-	void groundCoverageFactorGPU();
-	void updateGroundTempsGPU(const float dt, const float speed, const float irridiance);
+	void groundCoverageFactor();
+	void updateGroundTemps(const float dt, const float speed, const float irridiance);
 	void calculateBuoyancy(const float dt);
 	bool isGround(int x, int y);
 	float* getParamArray(parameter type, const bool windX = true);
@@ -163,7 +163,7 @@ private:
 
 	bool m_groundChanged{ true };
 	float* m_precon; //Precon (pressure projection)
-	char3* m_A; //A matrix (pressure projection)
+	char4* m_A; //A matrix (pressure projection)
 
 	//CPU storage
 	float m_velXCPU[GRIDSIZESKY];

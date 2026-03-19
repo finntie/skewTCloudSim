@@ -214,8 +214,7 @@ __device__ inline float slopePrecipGPU(const float D, const float Qj, const int 
 /// <param name = "Qs"> Mixing ratio of snow in kg/kg</param>
 /// <param name = "Qi"> Mixing ratio of hail in kg/kg</param>
 /// <param name = "densAir"> Density of air in Pa</param>
-/// <param name = "type"> 1 = rain, 2 = snow, 3 = hail, 4 = all</param>
-
+/// <param name = "type"> 0 = rain, 1 = snow, 2 = hail, 3 = all</param>
 /// <returns>x: rain, y: snow, z: ice</returns>
 __device__ inline float3 calculateFallingVelocityGPU(const float Qr, const float Qs, const float Qi, const float densAir, const int type, const float GammaR, const float GammaS, const float GammaI)
 {

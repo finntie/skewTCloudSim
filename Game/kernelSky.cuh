@@ -15,8 +15,7 @@ __global__ void diffuseRedBlack(const Neigh* neigh, const float* groundT, const 
 
 //-----------------Advecting----------------
 
-__global__ void advectGroundWaterRed(const float* inputQrs, const float* inputQgr, float* Qrs, float* Qgr, const float dt, const float speed);
-__global__ void advectGroundWaterBlack(const float* inputQrs, const float* inputQgr, float* Qrs, float* Qgr, const float dt, const float speed);
+__global__ void advectGroundWaterGPU(float* Qrs, float* Qgr, const float dt, const float speed);
 
 __global__ void setTempsAtGroundGPU(float* potTemps, const float* groundTemps, const float* pressures, const float* groundPressures, const float dt);
 __device__ float advectPPMFlux(const float velocity, const float valL, const float valC, const float valR, const float dt);
@@ -42,10 +41,8 @@ __global__ void advectPPMZ(const float* __restrict__ arrayIn,
 	const boundsEnv bounds,
 	const float dt);
 
-__global__ void advectPrecipRed(float* array, const Neigh* neigh, const float* potTemp, const float* Qv, const float* Qr, const float* Qs, const float* Qi,
-	const float* pressures, const float* groundP, const int* GHeight, const int type, const float dt);
-__global__ void advectPrecipBlack(float* array, const Neigh* neigh, const float* potTemp, const float* Qv, const float* Qr, const float* Qs, const float* Qi,
-	const float* pressures, const float* groundP, const int* GHeight, const int type, const float dt);
+__global__ void advectPrecipGPU(float* Qj, const Neigh* neigh, const float* potTemp, const float* Qv,
+	const float* pressures, const float* groundP, const int type, const float dt);
 //------------------------------------------
 
 
@@ -54,7 +51,7 @@ __global__ void advectPrecipBlack(float* array, const Neigh* neigh, const float*
 __global__ void dotProductGPU(float* result, const float* a, const float* b);
 __global__ void applyAGPU(float* ouput, const float* input, const Neigh* neigh, const char4* A, boundsEnv bounds);
 __global__ void applyPreconditionerGPU(float* output, const float* precon, const float* div, char4* A);
-__global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, const float* velX, const float* velY, const float velZ, const float* dens, const float* oldDens, boundsEnv boundsDens, boundsEnv boundsVel, const float dt);
+__global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, const float* velX, const float* velY, const float* velZ, const float* dens, const float* oldDens, boundsEnv boundsDens, boundsEnv boundsVel, const float dt);
 __global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, float* velX, float* velY, float* velZ, const float* density, const float* pressureEnv, 
 	boundsEnv boundsX, boundsEnv boundsY, boundsEnv boundsZ, boundsEnv boundsDens, const float dt);
 __global__ void getMaxDivergence(float* output, const float* div);
@@ -66,9 +63,8 @@ __global__ void updatePressure(float* envPressure, const float* presProj);
 
 //-------------------Other------------------
 
-__global__ void calculateCloudCover(float* output, const float* Qc, const float* Qw, const int* GHeight);
-__global__ void calculateGroundTemp(float* groundT, const float dtSpeed, const float irridiance, const float* LC);
-__device__ float calculateLayerAverage(const float* layer, const float maxDistance, const int lY, const bool temp);
+__global__ void calculateCloudCoverGPU(float* output, const float* Qc, const float* Qw, const int* GHeight);
+__global__ void calculateGroundTempGPU(float* groundT, const float dtSpeed, const float irridiance, const float* LC);
 __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTemp, const float* Qv, const float* Qr, const float* Qs, const float* Qi,
 	const float* pressures, const float* groundP, float* buoyancyStor, const float maxDistance, boundsEnv bounds, const float dt);
 __global__ void addHeatGPU(const float* _Qv, float* potTemp, float* condens, float* depos, float* freeze);

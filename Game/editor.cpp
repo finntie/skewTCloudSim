@@ -1356,7 +1356,7 @@ void editor::setValueOfParam(const int i, const parameter p, const bool add, con
 		m_envData->m_envView.Qi[i] = add ? m_envData->m_envView.Qi[i] + value : value;
 		break;
 	case WIND:
-		m_envData->m_envView.velField[i] = add ? m_envData->m_envView.velField[i] + glm::vec2{ value, value2 } : glm::vec2{ value, value2 };
+		m_envData->m_envView.velField[i] = add ? m_envData->m_envView.velField[i] + glm::vec3{ value, value2, 0.0f } : glm::vec3{ value, value2, 0.0f };
 		break;
 	default:
 		break;
@@ -1398,7 +1398,7 @@ void editor::addDataErasedGround(const int x, const int y)
 	m_envData->m_envView.Qs[idx] = 0.0f;
 	m_envData->m_envView.Qi[idx] = 0.0f;
 	m_envData->m_envView.potTemp[idx] = m_envData->m_envTemp[y];
-	m_envData->m_envView.velField[idx] = { 0,0 };
+	m_envData->m_envView.velField[idx] = { 0, 0, 0 };
 	m_envData->m_envView.pressure[idx] = m_envData->m_envPressure[y];
 }
 

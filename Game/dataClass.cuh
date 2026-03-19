@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cuda_runtime.h> 
-#include <CUDA/cmath>
 #include "config.h"
 
 struct microPhysicsParams;
