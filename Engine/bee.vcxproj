@@ -25,7 +25,7 @@
   </PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Platform)'=='x64'">
     <PlatformToolset Condition="$(BeeLint)">ClangCl</PlatformToolset>
-    <PlatformToolset Condition="!$(BeeLint)">v145</PlatformToolset>
+    <PlatformToolset Condition="!$(BeeLint)">v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -37,7 +37,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.props" />
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.9.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="properties\bee_debug.props" />
@@ -54,13 +54,33 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <CudaCompile>
       <GenerateRelocatableDeviceCode>false</GenerateRelocatableDeviceCode>
+      <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120
+</CodeGeneration>
     </CudaCompile>
+    <CudaLink>
+      <AdditionalLibraryDirectories>$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
+    </CudaLink>
+    <CudaLink>
+      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
+      <UseHostLibraryDirectories>false</UseHostLibraryDirectories>
+      <UseHostLibraryDependencies>false</UseHostLibraryDependencies>
+    </CudaLink>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <CudaCompile>
       <GenerateRelocatableDeviceCode>false</GenerateRelocatableDeviceCode>
       <CudaRuntime>Shared</CudaRuntime>
+      <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120
+</CodeGeneration>
     </CudaCompile>
+    <CudaLink>
+      <AdditionalLibraryDirectories>$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
+    </CudaLink>
+    <CudaLink>
+      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
+      <UseHostLibraryDirectories>false</UseHostLibraryDirectories>
+      <UseHostLibraryDependencies>false</UseHostLibraryDependencies>
+    </CudaLink>
   </ItemDefinitionGroup>
   <!-- Shared -->
   <ItemGroup>
@@ -233,6 +253,6 @@
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.2.targets" />
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.9.targets" />
   </ImportGroup>
 </Project>

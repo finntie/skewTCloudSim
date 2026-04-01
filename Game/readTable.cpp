@@ -419,12 +419,12 @@ void readTable::initEnvironment()
 		const float H0 = skewTData.data.altitude[0];
 		const int idx = indices[i];
 		int Pidx = idx == 0 ? 0 : idx - 1;
-
+		int Pi = i == 0 ? 0 : i - 1;
 		//Sin for X and cos for Y
 		const float velFieldValueX = std::sinf((skewTData.data.windDir[idx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[idx];
 		const float velFieldValueZ = std::cosf((skewTData.data.windDir[idx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[idx];
 
-		const float psValue = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, pressuresSmall[Pidx], pressuresSmall[idx]);
+		const float psValue = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, pressuresSmall[Pi], pressuresSmall[i]);
 		const float QvValue = meteoformulas::ws(lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, 
 			skewTData.data.dewPoint[Pidx], skewTData.data.dewPoint[idx]), psValue);
 		for (int z = 0; z < GRIDSIZESKYZ; z++)

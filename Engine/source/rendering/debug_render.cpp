@@ -82,13 +82,14 @@ void bee::DebugRenderer::AddRectangle(DebugCategory::Enum category,
 {
     if (!(m_categoryFlags & category)) return;
 
-    const auto& rotation = glm::rotation(vec3(0, 0, 1), normal);
+    const glm::vec3 diagonal = to - from;
+    const glm::vec3 middle = from + diagonal * 0.5f;
+    const glm::vec3 side = glm::cross(normal, diagonal) * 0.5f;
 
-    const glm::vec3 s = glm::rotate(rotation, to) - glm::rotate(rotation, from);
-    auto A = from;
-    auto B = from + glm::rotate(rotation, vec3(s.x, 0.0f, 0.0f));
-    auto C = to;
-    auto D = from + glm::rotate(rotation, vec3(0.0f, s.y, 0.0f));
+    const glm::vec3 A = from;
+    const glm::vec3 B = middle + side;
+    const glm::vec3 C = to;
+    const glm::vec3 D = middle - side;
 
     AddLine(category, A, B, color);
     AddLine(category, B, C, color);
@@ -124,23 +125,82 @@ void DebugRenderer::AddCylinder(DebugCategory::Enum category,
 void bee::DebugRenderer::AddArrow(DebugCategory::Enum category,
                                   const glm::vec3& center,
                                   const glm::vec3& normal,
-                                  const glm::vec2& pointDir,
+                                  const glm::vec3& pointDir,
                                   float size,
                                   const glm::vec4& color)
 {
     if (!(m_categoryFlags & category)) return;
 
-    const auto& rotation1 = glm::rotation(vec3(1, 0, 0), vec3(glm::normalize(pointDir), 0.0f));
-
-    const auto& rotation2 = glm::rotation(vec3(0, 0, 1), normal);
+    const glm::vec3 forward = glm::normalize(pointDir);
+    const glm::vec3 side = glm::normalize(glm::cross(normal, forward));
 
     const float s = size * 0.5f;
-    auto A = center + glm::rotate(rotation2, glm::rotate(rotation1, vec3(-s, 0.0f, 0.0f)));
-    auto B = center + glm::rotate(rotation2, glm::rotate(rotation1, vec3(s, 0.0f, 0.0f)));
-    auto C = center + glm::rotate(rotation2, glm::rotate(rotation1, vec3(0.0f, s, 0.0f)));
-    auto D = center + glm::rotate(rotation2, glm::rotate(rotation1, vec3(0.0f, -s, 0.0f)));
+
+    auto A = center - forward * s;  // tail
+    auto B = center + forward * s;  // tip
+
+    auto C = B - forward * (s * 0.5f) + side * (s * 0.5f);
+    auto D = B - forward * (s * 0.5f) - side * (s * 0.5f);
 
     AddLine(category, A, B, color);
     AddLine(category, B, C, color);
     AddLine(category, B, D, color);
+}
+
+void bee::DebugRenderer::AddVoxel(DebugCategory::Enum category, const glm::vec3& center, float size, const glm::vec4& color) 
+{
+    // Add rectangles on all 6 sides
+
+    // First add left and right plane (x values)
+
+    float halfSize = size * 0.5f;
+
+    glm::vec3 normal = glm::normalize(center - glm::vec3(center.x + halfSize, center.y, center.z));
+    glm::vec3 fromPos = center + glm::vec3(halfSize, -halfSize, -halfSize); // Move half to right, back and down
+    glm::vec3 toPos = fromPos + glm::vec3(0, size, size); // Move fully back
+    AddRectangle(category, fromPos, toPos, normal, color);
+
+    // Left
+    normal = glm::normalize(center - glm::vec3(center.x - halfSize, center.y, center.z));
+    fromPos.x -= size;
+    toPos.x -= size;
+    AddRectangle(category, fromPos, toPos, normal, color);
+
+    AddLine(category, fromPos, glm::vec3(fromPos.x + size, fromPos.y, fromPos.z), color);
+    AddLine(category,
+            glm::vec3(fromPos.x, fromPos.y + size, fromPos.z),
+            glm::vec3(fromPos.x + size, fromPos.y + size, fromPos.z),
+            color);
+    AddLine(category, toPos, glm::vec3(toPos.x + size, toPos.y, toPos.z), color);
+    AddLine(category,
+            glm::vec3(toPos.x, toPos.y - size, toPos.z), glm::vec3(toPos.x + size, toPos.y - size, toPos.z),
+            color);
+
+
+
+    //// Now all the y values
+    //// Up
+    //normal = glm::normalize(center - glm::vec3(center.x, center.y + halfSize, center.z));
+    //fromPos = center + glm::vec3(-halfSize, halfSize, -halfSize);// Move half to left, up and back
+    //toPos = fromPos + glm::vec3(size, 0, size);                     // Move fully back
+    //AddRectangle(category, fromPos, toPos, normal, color);
+    //
+    //// Down
+    //normal = glm::normalize(center - glm::vec3(center.x, center.y - halfSize, center.z));
+    //fromPos.y -= size;
+    //toPos.y -= size;
+    //AddRectangle(category, fromPos, toPos, normal, color);
+
+    //// Lastly, the z values
+    //// Forward
+    //normal = glm::normalize(center - glm::vec3(center.x, center.y, center.z + halfSize));
+    //fromPos = center + glm::vec3(-halfSize, -halfSize, halfSize);  // Move half to left, down and forward
+    //toPos = fromPos + glm::vec3(size, size, 0);                    // Move fully back
+    //AddRectangle(category, fromPos, toPos, normal, color);
+
+    //// Back
+    //normal = glm::normalize(center - glm::vec3(center.x, center.y, center.z - halfSize));
+    //fromPos.z -= size;
+    //toPos.z -= size;
+    //AddRectangle(category, fromPos, toPos, normal, color);
 }

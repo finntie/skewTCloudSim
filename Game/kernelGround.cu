@@ -6,7 +6,7 @@
 
 //Game includes
 #include "utils.cuh"
-#include "meteoconstants.cuh"
+//#include "meteoconstants.cuh"
 #include "meteoformulas.cuh"
 
 
@@ -23,7 +23,7 @@ __global__ void resetValueInGround(float* array, const int* _GHeight)
 	const int x = threadIdx.x;
 	const int y = blockIdx.x;
 	int z = 0;
-
+	
 	for (z = 0; z < GRIDSIZESKYZ; z++)
 	{
 		const int idx = getIdx(x, y, z);
@@ -40,7 +40,7 @@ __global__ void computeIsenTempGroundGPU(float* array, const float* isenTemp, co
 	const int tX = threadIdx.x;
 	const int tZ = blockIdx.x;
 	const int idx = tX + tZ * GRIDSIZESKYX;
-
+	
 	const int GH = _GHeight[idx] + 1 >= GRIDSIZESKYY ? GRIDSIZESKYY - 1 : _GHeight[idx] + 1;
 	const float T = potentialTempGPU(isenTemp[GH - 1] - 273.15f, groundPressure[idx], pressures[getIdx(tX, GH, tZ)]);
 	array[idx] = T + 273.15f;

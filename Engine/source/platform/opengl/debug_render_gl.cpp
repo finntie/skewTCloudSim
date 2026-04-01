@@ -22,8 +22,8 @@ public:
     bool AddTriangle(const vec3& first, const vec3& second, const vec3& last, const vec4& color);
     void Render(const mat4& view, const mat4& projection);
 
-    static int const m_maxLines = 32760 * 4;
-    static int const m_maxTriangles = 32760 * 4;
+    static int const m_maxLines = 32760 * 4 * 4;
+    static int const m_maxTriangles = 32760 * 4 * 4;
 
     int m_linesCount = 0;
     int m_trianglesCount = 0;

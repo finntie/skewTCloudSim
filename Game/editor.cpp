@@ -23,6 +23,7 @@
 
 #include "imgui/IconsFontAwesome.h"
 #include "imgui/imgui.h"
+#include "utils.cuh"
 
 #if USE_GPU
 #include "environment.cuh"
@@ -162,6 +163,7 @@ void editor::panel()
 	viewParamInformation();
 	ImGui::Begin("Viewset");
 	setView();
+	setSlice();
 	ImGui::End();
 	editModeParams();
 	setSkewTData();
@@ -290,8 +292,6 @@ void editor::cameraControl()
 		SaveMousePos = MousePos3D;
 		Save2DPos = bee::Engine.Input().GetMousePosition();
 		glm::vec2 mousePos2D = bee::Engine.Input().GetMousePosition();
-		SaveRoll = mousePos2D.x - Save2DPos.x;
-		SavePitch = mousePos2D.y - Save2DPos.y;
 		MouseWheel = bee::Engine.Input().GetMouseWheel();
 		MousePos3D = bee::screenToGround(bee::Engine.Input().GetMousePosition());
 		return;
@@ -299,8 +299,8 @@ void editor::cameraControl()
 //#endif
 
 	//At cursor
-	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::General, MousePos3D, 0.5f, glm::vec4(0, 0, 1, 1), glm::vec4(1.0));
-	bee::Engine.DebugRenderer().AddFilledSquare(bee::DebugCategory::General, MousePos3D, 0.5f, glm::vec4(0, 0, 1, 1), glm::vec4(1.0));
+	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::General, MousePos3D, 0.5f, glm::vec3(0, 1, 0), glm::vec4(1.0));
+	bee::Engine.DebugRenderer().AddFilledSquare(bee::DebugCategory::General, MousePos3D, 0.5f, glm::vec3(0, 1, 0), glm::vec4(1.0));
 
 	//Keybinds = Left-Shift + mouse
 	bool LeftShift = bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::LeftShift);
@@ -324,27 +324,26 @@ void editor::cameraControl()
 			cameraSpeed *= 10.0f;
 		}
 
+		
+		glm::vec3 forward = transform.GetRotation() * glm::vec3(0,0,-1) * cameraSpeed;
+		glm::vec3 right = transform.GetRotation() * glm::vec3(1, 0, 0) * cameraSpeed;
 
 		//Using keys
 		if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::W))
 		{
-			glm::vec3 offset = { 0, m_deltatime * cameraSpeed,0 };
-			transform.SetTranslation(transform.GetTranslation() + offset);
+			transform.SetTranslation(transform.GetTranslation() + forward * m_deltatime);
 		}
 		if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::A))
 		{
-			glm::vec3 offset = { m_deltatime * -cameraSpeed,0,0 };
-			transform.SetTranslation(transform.GetTranslation() + offset);
+			transform.SetTranslation(transform.GetTranslation() - right * m_deltatime);
 		}
 		if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::S))
 		{
-			glm::vec3 offset = { 0,m_deltatime * -cameraSpeed,0 };
-			transform.SetTranslation(transform.GetTranslation() + offset);
+			transform.SetTranslation(transform.GetTranslation() - forward * m_deltatime);
 		}
 		if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::D))
 		{
-			glm::vec3 offset = { m_deltatime * cameraSpeed,0,0 };
-			transform.SetTranslation(transform.GetTranslation() + offset);
+			transform.SetTranslation(transform.GetTranslation() + right * m_deltatime);
 		}
 
 		//Using mouse
@@ -361,7 +360,6 @@ void editor::cameraControl()
 		//------------------------------------------------------------------------------
 		//--------------------------Looking around--------------------------------------
 		//------------------------------------------------------------------------------
-
 		if (LeftShift && bee::Engine.Input().GetMouseButtonOnce(bee::Input::MouseButton::Right))
 		{
 			Save2DPos = bee::Engine.Input().GetMousePosition();
@@ -380,18 +378,18 @@ void editor::cameraControl()
 			SavePitch = mousePos2D.y - Save2DPos.y;
 
 			//Apply sensitivity 
-			SaveRoll *= 0.1f;
-			SavePitch *= 0.1f;
+			SaveRoll *= 0.075f;
+			SavePitch *= 0.075f;
 
 			//Apply previous roll and pitch
 			SaveRoll = SaveRoll + roll;
 			SavePitch = SavePitch + pitch;
 
-			if (SavePitch > 179.9f) SavePitch = 179.9f;
-			if (SavePitch < 0.5f) SavePitch = 0.5f;
+			if (SavePitch > 89.9f) SavePitch = 89.9f;
+			if (SavePitch < -89.9f) SavePitch = -89.9f;
 
 			//Quats for roll and pitch
-			glm::quat qRoll = glm::angleAxis(glm::radians(SaveRoll), glm::vec3(0, 0, 1));
+			glm::quat qRoll = glm::angleAxis(glm::radians(SaveRoll), glm::vec3(0, 1, 0));
 			glm::quat qPitch = glm::angleAxis(glm::radians(SavePitch), glm::vec3(1, 0, 0));
 			//Combine them
 			glm::quat InputRotation = qRoll * qPitch;
@@ -430,17 +428,22 @@ void editor::setVariables()
 	MousePos3D = bee::screenToGround(bee::Engine.Input().GetMousePosition());
 
 	//Mouse pos
-	if (MousePos3D.x < GRIDSIZESKYX && MousePos3D.x >= 0 && MousePos3D.y < GRIDSIZESKYY && MousePos3D.y >= 0)
+	if (MousePos3D.x < GRIDSIZESKYX && MousePos3D.x >= 0 && MousePos3D.z < GRIDSIZESKYZ && MousePos3D.z >= 0)
 	{
-		m_mousePointingIndex = (int(MousePos3D.x) + int(MousePos3D.y) * GRIDSIZESKYX);
+		glm::ivec3 mousePos = { 0,0,0 };
+		if (!m_viewSlice)mousePos = glm::ivec3(int(MousePos3D.x), int(MousePos3D.z), int(m_atSliceViewSlice));
+		else if (m_viewSliceCoord == 0)mousePos = glm::ivec3{ int(m_atSliceViewSlice), int(MousePos3D.x), int(MousePos3D.z) };
+		else if (m_viewSliceCoord == 1)mousePos = glm::ivec3{ int(MousePos3D.x),  int(m_atSliceViewSlice), int(MousePos3D.z) };
+		else if (m_viewSliceCoord == 2)mousePos = glm::ivec3{ int(MousePos3D.x), int(MousePos3D.z), int(m_atSliceViewSlice) };
+
+		m_mousePointingIndex = getIdx(mousePos.x, mousePos.y, mousePos.z);
 	}
 	if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::Space))
 	{
 		m_skewTidx = m_mousePointingIndex;
-		if (m_skewTidx / GRIDSIZESKYX <= m_envData->m_groundHeight[m_skewTidx % GRIDSIZESKYX])
-		{
-			m_skewTidx = m_skewTidx % GRIDSIZESKYX + (m_envData->m_groundHeight[m_skewTidx % GRIDSIZESKYX] + 1) * GRIDSIZESKYX;
-		}
+		int x, y, z;
+		getCoord(m_skewTidx, x, y, z);		
+		m_skewTidx = getIdx(x, y, z);
 	}
 }
 
@@ -490,8 +493,12 @@ void editor::mainButtons()
 
 void editor::viewParamInformation()
 {
+	int x, y, z;
+	getCoord(m_mousePointingIndex, x, y, z);
+	const int Gidx = x + z * GRIDSIZESKYX;
+
 	ImGui::Indent();
-	ImGui::Text(std::string("X: " + std::to_string(m_mousePointingIndex % GRIDSIZESKYX) + ", Y: " + std::to_string(int(float(m_mousePointingIndex) / GRIDSIZESKYX))).c_str());
+	ImGui::Text(std::string("X: " + std::to_string(x) + ", Y: " + std::to_string(y) + ", Z: " + std::to_string(z)).c_str());
 	ImGui::Text(std::string("Meters Per Voxel: " + std::to_string(VOXELSIZE)).c_str());
 	ImGui::Text("--Sky--\nPot Temp: \nQv: \nQw: \nQc: \nQr: \nQs: \nQi: \nWind: \nPressure: \nDebug1: \nDebug2: \nDebug3: \n--Ground--\nTemp: \nWater: \nQr: \nQs: \nQi: "); ImGui::SameLine();
 	ImGui::Text(("\n" + //Sky
@@ -503,24 +510,22 @@ void editor::viewParamInformation()
 		std::to_string(m_envData->m_envView.Qs[m_mousePointingIndex]) + "\n" +
 		std::to_string(m_envData->m_envView.Qi[m_mousePointingIndex]) + "\n" +
 		//ImGui::Text((std::string("Wind: ") + std::to_string(getUV(mousePointingIndex).x) + ", " + std::to_string(getUV(mousePointingIndex).y)).c_str());
-		std::to_string(m_envData->m_envView.velField[m_mousePointingIndex].x) + ", " + std::to_string(m_envData->m_envView.velField[m_mousePointingIndex].y) + "\n" +
+		std::to_string(m_envData->m_envView.velField[m_mousePointingIndex].x) + ", " + std::to_string(m_envData->m_envView.velField[m_mousePointingIndex].y) + ", " + std::to_string(m_envData->m_envView.velField[m_mousePointingIndex].z) + "\n" +
 		std::to_string(m_envData->m_envView.pressure[m_mousePointingIndex]) + "\n" +
 		std::to_string(m_envData->m_debugArray0[m_mousePointingIndex]) + "\n" +
 		std::to_string(m_envData->m_debugArray1[m_mousePointingIndex]) + "\n" +
 		std::to_string(m_envData->m_debugArray2[m_mousePointingIndex]) + "\n" +
 		"\n" + //Ground
-		std::to_string(m_envData->m_groundView.T[m_mousePointingIndex % GRIDSIZESKYX] - 273.15) + "\n" +
-		std::to_string(m_envData->m_groundView.Qrs[m_mousePointingIndex % GRIDSIZESKYX]) + "\n" +
-		std::to_string(m_envData->m_groundView.Qgr[m_mousePointingIndex % GRIDSIZESKYX]) + "\n" +
-		std::to_string(m_envData->m_groundView.Qgs[m_mousePointingIndex % GRIDSIZESKYX]) + "\n" +
-		std::to_string(m_envData->m_groundView.Qgi[m_mousePointingIndex % GRIDSIZESKYX]) + "\n"
+		std::to_string(m_envData->m_groundView.T[Gidx] - 273.15) + "\n" +
+		std::to_string(m_envData->m_groundView.Qrs[Gidx]) + "\n" +
+		std::to_string(m_envData->m_groundView.Qgr[Gidx]) + "\n" +
+		std::to_string(m_envData->m_groundView.Qgs[Gidx]) + "\n" +
+		std::to_string(m_envData->m_groundView.Qgi[Gidx]) + "\n"
 		).c_str());
 
 	//Also render a square
-	const int x = m_mousePointingIndex % GRIDSIZESKYX;
-	const int y = m_mousePointingIndex / GRIDSIZESKYX;
-
-	bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.15f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
+	//bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, float(z) + 0.5f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
+	bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, float(z) + 0.5f), 1.0f, bee::Colors::White);
 
 }
 
@@ -597,6 +602,46 @@ void editor::setView()
 #endif
 
 
+
+		ImGui::TreePop();
+	}
+}
+
+void editor::setSlice()
+{
+	if (ImGui::TreeNode("View-Slice"))
+	{
+		if (ImGui::Checkbox("Use Slice View", &m_viewSlice))
+		{
+			setSliceMinMax(!m_viewSlice);
+		}
+		
+		static int sliceMaxCoord = GRIDSIZESKYX - 1;
+
+		if (ImGui::RadioButton("Slice X", &m_viewSliceCoord, 0))
+		{
+			setSliceMinMax(!m_viewSlice);
+			sliceMaxCoord = GRIDSIZESKYX - 1;
+		}
+		ImGui::SameLine();
+		if (ImGui::RadioButton("Slice Y", &m_viewSliceCoord, 1))
+		{
+			setSliceMinMax(!m_viewSlice);
+			sliceMaxCoord = GRIDSIZESKYY - 1;
+		}
+		ImGui::SameLine();
+		if (ImGui::RadioButton("Slice Z", &m_viewSliceCoord, 2))
+		{
+			setSliceMinMax(!m_viewSlice);
+			sliceMaxCoord = GRIDSIZESKYZ - 1;
+		}
+
+		if (ImGui::SliderInt("Slice Layer", &m_atSliceViewSlice, 0, sliceMaxCoord))
+		{
+			setSliceMinMax(!m_viewSlice);
+		}
+
+		ImGui::Checkbox("Show Ground", &m_viewGround);
 
 		ImGui::TreePop();
 	}
@@ -943,122 +988,120 @@ void editor::viewSky()
 {
 	auto& colorScheme = bee::Engine.DebugRenderer().GetColorScheme();
 
-	for (int y = 0; y < GRIDSIZESKYY; y++)
+	// Usage of min and max view to possibly use slices
+	for (int z = m_minViewZ; z < m_maxViewZ; z++)
 	{
-		for (int x = 0; x < GRIDSIZESKYX; x++)
+		for (int y = m_minViewY; y < m_maxViewY; y++)
 		{
-			const int idx = x + y * GRIDSIZESKYX;
-			if (y <= m_envData->m_groundHeight[x])
+			for (int x = m_minViewX; x < m_maxViewX; x++)
 			{
-				bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.015f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::Brown);
-				continue;
-			}
+				const int idx = getIdx(x, y, z);
+				const int idxG = x + z * GRIDSIZESKYX;
+				if (y <= m_envData->m_groundHeight[idxG])
+				{
+					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.015f, z + 0.5f), 1.0f, bee::Colors::Brown);
+					continue;
+				}
 
-			glm::vec3 color{};
-			switch (m_viewParamSky)
-			{
-			case POTTEMP:
-			{
-				//Get temp
-				const float Tz = float(m_envData->m_envView.potTemp[idx]) - 273.15f;
-				const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[x], m_envData->m_envView.pressure[idx]) + 273.15f;
+				glm::vec3 color{};
+				switch (m_viewParamSky)
+				{
+				case POTTEMP:
+				{
+					//Get temp
+					const float Tz = float(m_envData->m_envView.potTemp[idx]) - 273.15f;
+					const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[idxG], m_envData->m_envView.pressure[idx]) + 273.15f;
 
-				colorScheme.getColor("TemperatureSky", T, color);
-				break;
-			}
-			case QV:
-				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qv[idx], color);
-				break;
-			case QW:
-				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qw[idx], color);
-				break;
-			case QC:
-				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qc[idx], color);
-				break;
-			case QR:
-				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qr[idx], color);
-				break;
-			case QS:
-				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qs[idx], color);
-				break;
-			case QI:
-				colorScheme.getColor("mixingRatio", m_envData->m_envView.Qi[idx], color);
-				break;
-			case WIND:
-				const glm::vec2 VelUV = Game.Environment().getUV(m_envData->m_envView.velField, x, y, 0);
-				// = m_envData->m_envView.velField[x + y * GRIDSIZESKYX];// getUV(idx);
-				colorScheme.getColor("velField", glm::length(VelUV), color);
-				bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, 0.1f), glm::vec3(0.0f, 0.0f, 1.0f), VelUV, 0.9f, bee::Colors::Black);
-				break;
-			case PRESSURE:
-				colorScheme.getColor("pressure", m_envData->m_envView.pressure[idx], color);
-				break;
-			case DEBUG1:
-			{
-				//Currently for realistic view
-				const float allValues = m_envData->m_envView.Qw[idx] + m_envData->m_envView.Qc[idx] +
-					m_envData->m_envView.Qr[idx] + m_envData->m_envView.Qs[idx] + m_envData->m_envView.Qi[idx];
+					colorScheme.getColor("TemperatureSky", T, color);
+					break;
+				}
+				case QV:
+					colorScheme.getColor("mixingRatio", m_envData->m_envView.Qv[idx], color);
+					break;
+				case QW:
+					colorScheme.getColor("mixingRatio", m_envData->m_envView.Qw[idx], color);
+					break;
+				case QC:
+					colorScheme.getColor("mixingRatio", m_envData->m_envView.Qc[idx], color);
+					break;
+				case QR:
+					colorScheme.getColor("mixingRatio", m_envData->m_envView.Qr[idx], color);
+					break;
+				case QS:
+					colorScheme.getColor("mixingRatio", m_envData->m_envView.Qs[idx], color);
+					break;
+				case QI:
+					colorScheme.getColor("mixingRatio", m_envData->m_envView.Qi[idx], color);
+					break;
+				case WIND:
+					const glm::vec3 VelUV = Game.Environment().getUV(m_envData->m_envView.velField, x, y, z);
+					// = m_envData->m_envView.velField[x + y * GRIDSIZESKYX];// getUV(idx);
+					colorScheme.getColor("velField", glm::length(VelUV), color);
+					bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), glm::vec3(0.0f, 0.0f, 1.0f), VelUV, 0.9f, bee::Colors::Black);
+					break;
+				case PRESSURE:
+					colorScheme.getColor("pressure", m_envData->m_envView.pressure[idx], color);
+					break;
+				case DEBUG1:
+				{
+					//Currently for realistic view
+					const float allValues = m_envData->m_envView.Qw[idx] + m_envData->m_envView.Qc[idx] +
+						m_envData->m_envView.Qr[idx] + m_envData->m_envView.Qs[idx] + m_envData->m_envView.Qi[idx];
 
-				colorScheme.getColor("realistic", allValues, color);
-				break;
-			}
-			case DEBUG2:
-				colorScheme.getColor("debugColor", m_envData->m_debugArray1[int(x) + int(y) * GRIDSIZESKYX], color);
-				break;
-			case DEBUG3:
-				colorScheme.getColor("debugColor", m_envData->m_debugArray2[int(x) + int(y) * GRIDSIZESKYX], color);
-				break;
-			default:
-				break;
-			}
+					colorScheme.getColor("realistic", allValues, color);
+					break;
+				}
+				case DEBUG2:
+					colorScheme.getColor("debugColor", m_envData->m_debugArray1[idx], color);
+					break;
+				case DEBUG3:
+					colorScheme.getColor("debugColor", m_envData->m_debugArray2[idx], color);
+					break;
+				default:
+					break;
+				}
 
-			//bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.0f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
-			bee::Engine.DebugRenderer().AddFilledSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.01f), 1.0f, glm::vec3(0, 0, 1), { color, 1.0f });
+				//bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.0f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
+				bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, { color, 1.0f });
+			}
 		}
 	}
 }
 
 void editor::viewGround()
 {
+	if (!m_viewGround) return;
+
 	auto& colorScheme = bee::Engine.DebugRenderer().GetColorScheme();
 
-	for (int x = 0; x < GRIDSIZEGROUND; x++)
+	for (int z = 0; z < GRIDSIZESKYZ; z++)
 	{
-		glm::vec3 color{};
-		switch (m_viewParamGround)
+		for (int x = 0; x < GRIDSIZESKYX; x++)
 		{
-		case 0:
-			colorScheme.getColor("TemperatureSky", float(m_envData->m_groundView.T[x]), color);
-			break;
-		case 1:
-			colorScheme.getColor("mixingRatio", m_envData->m_groundView.Qrs[int(x)], color);
-			break;
-		case 2:
-			colorScheme.getColor("mixingRatio", m_envData->m_groundView.Qgr[int(x)], color);
-			break;
-		case 3:
-			colorScheme.getColor("mixingRatio", m_envData->m_groundView.Qgs[int(x)], color);
-			break;
-		case 4:
-			colorScheme.getColor("mixingRatio", m_envData->m_groundView.Qgi[int(x)], color);
-			break;
+			const int idx = x + z * GRIDSIZESKYX;
+			glm::vec3 color{};
+			switch (m_viewParamGround)
+			{
+			case 0:
+				colorScheme.getColor("TemperatureSky", float(m_envData->m_groundView.T[idx]), color);
+				break;
+			case 1:
+				colorScheme.getColor("mixingRatio", m_envData->m_groundView.Qrs[idx], color);
+				break;
+			case 2:
+				colorScheme.getColor("mixingRatio", m_envData->m_groundView.Qgr[idx], color);
+				break;
+			case 3:
+				colorScheme.getColor("mixingRatio", m_envData->m_groundView.Qgs[idx], color);
+				break;
+			case 4:
+				colorScheme.getColor("mixingRatio", m_envData->m_groundView.Qgi[idx], color);
+				break;
+			}
+
+			bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x] + 0.5f, z + 0.5f), 1.0f, { color, 1.0f });
 		}
-
-		bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x] +  0.5f, 0.0f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
-		bee::Engine.DebugRenderer().AddFilledSquare(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x] + 0.5f, 0.01f), 1.0f, glm::vec3(0, 0, 1), { color, 1.0f });
 	}
-}
-
-void editor::renderVelSquare(glm::vec2 vel, const int x, const int y)
-{
-	auto& colorScheme = bee::Engine.DebugRenderer().GetColorScheme();
-
-	glm::vec3 color{};
-	colorScheme.getColor("velField", glm::length(vel), color);
-	bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, 0.1f), glm::vec3(0.0f, 0.0f, 1.0f), vel, 0.9f, bee::Colors::Black);
-
-	bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.0f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
-	bee::Engine.DebugRenderer().AddFilledSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.01f), 1.0f, glm::vec3(0, 0, 1), { color, 1.0f });
 }
 
 void editor::viewBrush()
@@ -1181,11 +1224,16 @@ void editor::viewSkewT()
 	Game.SkewT().setAllArrays(temps, dewPoints, pressures);
 
 	//Small check just in case
-	if (m_skewTidx / GRIDSIZESKYX <= m_envData->m_groundHeight[m_skewTidx % GRIDSIZESKYX])
+	int x = 0, y = 0, z = 0;
+	getCoord(m_skewTidx, x, y, z);
+	int idxG = x + z * GRIDSIZESKYX;
+	if (y <= m_envData->m_groundHeight[idxG])
 	{
-		m_skewTidx = m_skewTidx % GRIDSIZESKYX + (m_envData->m_groundHeight[m_skewTidx % GRIDSIZESKYX] + 1) * GRIDSIZESKYX;
+		m_skewTidx = getIdx(x, (m_envData->m_groundHeight[idxG] + 1), z);
+		getCoord(m_skewTidx, x, y, z); // Regain coordinates
+		idxG = x + z * GRIDSIZESKYX;
 	}
-	Game.SkewT().setStartIdx(m_skewTidx / GRIDSIZESKYX);
+	Game.SkewT().setStartIdx(y);
 	Game.SkewT().drawSkewT();
 
 
@@ -1404,8 +1452,13 @@ void editor::addDataErasedGround(const int x, const int y)
 
 void editor::dataToSkewTData(float* temp, float* dew, float* pres)
 {
-	const int y = m_skewTidx / GRIDSIZESKYX;
-	const int x = m_skewTidx % GRIDSIZESKYX;
+	// Get coordinates from index
+	const int xy = m_skewTidx % (GRIDSIZESKYX * GRIDSIZESKYY);
+	const int x = xy % GRIDSIZESKYX;
+	const int y = (xy - x) / GRIDSIZESKYX;
+	const int z = (m_skewTidx - xy) / (GRIDSIZESKYX * GRIDSIZESKYY);
+
+	// Use i for our y lookup, gathering all data up into the sky
 	for (int i = 0; i < GRIDSIZESKYY; i++)
 	{
 		if (i < y)
@@ -1415,10 +1468,11 @@ void editor::dataToSkewTData(float* temp, float* dew, float* pres)
 			pres[i] = 0.0f;
 			continue;
 		}
-		const int idx = x + i * GRIDSIZESKYX;
+		const int idx = getIdx(x, i, z);
+		const int idxG = x + z * GRIDSIZESKYX;
 
 		const float Tz = float(m_envData->m_envView.potTemp[idx]) - 273.15f;
-		const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[int(x)], m_envData->m_envView.pressure[idx]);
+		const float T = meteoformulas::potentialTemp(Tz, m_envData->m_groundView.P[idxG], m_envData->m_envView.pressure[idx]);
 
 		const float rs = meteoformulas::ws(T, m_envData->m_envView.pressure[idx]);
 		const float RH = m_envData->m_envView.Qv[idx] / rs * 100;
@@ -1556,6 +1610,59 @@ void editor::dayToMonthDay(int dayOfYear, int& month, int& dayOfMonth)
 		if (count > dayOfYear - 1) {
 			month = i;
 			return;
+		}
+	}
+}
+
+void editor::setSliceMinMax(bool fullView)
+{
+	// If going to full view, we reset
+	if (fullView)
+	{
+		m_minViewX = 0;
+		m_minViewY = 0;
+		m_minViewZ = 0;
+		m_maxViewX = GRIDSIZESKYX;
+		m_maxViewY = GRIDSIZESKYY;
+		m_maxViewZ = GRIDSIZESKYZ;
+	}
+	else
+	{
+		// Based on the coordinate, we set our min and max to limit the current coord.
+		switch (m_viewSliceCoord)
+		{
+		case 0: // Slice X
+			m_atSliceViewSlice = std::min(m_atSliceViewSlice, GRIDSIZESKYX - 1);
+			m_minViewX = m_atSliceViewSlice;
+			m_maxViewX = m_atSliceViewSlice + 1;
+
+			m_minViewY = 0;
+			m_minViewZ = 0;
+			m_maxViewY = GRIDSIZESKYY;
+			m_maxViewZ = GRIDSIZESKYZ;
+			break;
+		case 1: // Slice Y
+			m_atSliceViewSlice = std::min(m_atSliceViewSlice, GRIDSIZESKYY - 1);
+			m_minViewY = m_atSliceViewSlice;
+			m_maxViewY = m_atSliceViewSlice + 1;
+
+			m_minViewX = 0;
+			m_minViewZ = 0;
+			m_maxViewX = GRIDSIZESKYX;
+			m_maxViewZ = GRIDSIZESKYZ;
+			break;
+		case 2: // Slice Z
+			m_atSliceViewSlice = std::min(m_atSliceViewSlice, GRIDSIZESKYZ - 1);
+			m_minViewZ = m_atSliceViewSlice;
+			m_maxViewZ = m_atSliceViewSlice + 1;
+
+			m_minViewX = 0;
+			m_minViewY = 0;
+			m_maxViewX = GRIDSIZESKYX;
+			m_maxViewY = GRIDSIZESKYY;
+			break;
+		default:
+			break;
 		}
 	}
 }

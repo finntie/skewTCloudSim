@@ -15,6 +15,7 @@
 #include "kernelGround.cuh"
 #include "microPhysics.cuh"
 #include "dataClass.cuh"
+#include "utils.cuh"
 
 #include "math/meteoformulas.h"
 #include "meteoformulas.cuh"
@@ -23,6 +24,40 @@
 
 #include "editor.h"
 #include "game.h"
+
+namespace ConstantsGPU
+{
+	__constant__ float Lb = -0.0065f; //Standard lapse rate in K/m
+	__constant__ float g = 9.8076f; //Earth's gravitational acceleration in m/s2
+	__constant__ float Hv = 2501000; //Heat vaporation of water in J/kg (also written as L) what about 2501000?2268000 https://library.wmo.int/viewer/59923/?offset=#page=220&viewer=picture&o=search&n=0&q=Lv
+	__constant__ float R = 8.3145f; //Universal gas constant in J/mol*k
+	__constant__ float Rsd = 287.0528f; //specific gas constant of dry air in J/kg*K
+	__constant__ float Rsw = 461.5f; //specific gas constant of water vapor in J/kg*K
+	__constant__ float E = 287.0528f / 461.5f; //(Rsd / Rsw) the dimensionless ratio of the specific gas constant of dry air to the specific gas constant for water vapour
+	__constant__ float Cvv = 1418.0f; // specific heat	capacity of water vapor at constant volume
+	__constant__ float Cva = 719.0f; // (Probably) The specific heat capicity of dry air? (refering to https://escholarship.org/content/qt0d72911v/qt0d72911v.pdf?t=pghwe7)
+	__constant__ float Cpa = 287.0528f + 719.0f; // (Rsd + Cva) specific heat capacity at constant pressure for dry air in j/kg*K
+	__constant__ float Cpd = 1003.5f; //The specific heat of dry air at constant pressure in j/kg*K
+	__constant__ float Cpv = 717.0f; //The specific heat of dry air at constant Volume in j/kg*K
+	__constant__ float Cpvw = 1418.0f + 461.5f; //(Cvv + Rsw) the specific heat capacity of water vapor at constant pressure
+	__constant__ float Cvl = 4119.0f; //Specific heat capacity at constant volume for liquid water in J/kg*K
+	__constant__ float Cpi = 2093.0f; //Specific heat of ice in J/kg/K
+	__constant__ float Cpds = 800.0f; //Specific heat capacity of dry soil
+	__constant__ float Cpws = 1480.0f; // Specific heat capacity of wet soil
+	__constant__ float Mda = 28.966f; //Molair mass of dry air at constant pressure in g/mol
+	__constant__ float Mw = 18.02f; //Molair mass of water in g/mol
+	__constant__ float ptrip = 611.2f; //Triple point of water in pascal (6.11657 hPa)
+	__constant__ float Ttrip = 273.16f; //Triple point of water in Kelvin
+	__constant__ float E0v = 2.374e+6f; // Heat latency of vaporising water in J/kg
+	__constant__ float Lf = 3.3355e+5f;  // Heat latency of Fusion of water in J/kg
+	__constant__ float Ls = 2.834e+6f;  // Heat latency of deposition of water in J/kg
+	__constant__ float E0s = 0.3337e+6f; // The difference in specific internal energy between liquid and solid at the triple point. in J/kg
+	__constant__ float euler = 2.7182818284f; //Euler's number
+	__constant__ float Ka = 2.40e-2f; // thermal conductivity of air in J/m/s/K
+	__constant__ float PI = 3.14159265359f;
+	__constant__ float oo = 5.67e-8f; // Boltzmann constant in W / m-2 / K-4
+	__constant__ float ge = 0.95f; // Ground emissivity
+}
 
 // Grid and Block size based on size of simulation
 constexpr int GRIDSIZEX = ((GRIDSIZESKYX + 15) / 16);
@@ -41,7 +76,6 @@ environmentGPU::environmentGPU()
 
 	size_t freeMem, totalMem;
 	cudaMemGetInfo(&freeMem, &totalMem);
-
 
 	// Environment Values
 	cudaMalloc((void**)&m_envGrid.Qv, GRIDSIZESKY * sizeof(float));
@@ -101,6 +135,11 @@ environmentGPU::environmentGPU()
 	cudaMalloc((void**)&m_firstValid, sizeof(int));
 	cudaMalloc((void**)&m_storBool, sizeof(bool));
 
+	cudaError_t err = cudaGetLastError();
+	if (err != cudaSuccess) {
+		std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+		__debugbreak();
+	}
 
 	//Extra storage
 	cudaMalloc((void**)&m_stor0, GRIDSIZESKY * sizeof(float));
@@ -120,12 +159,12 @@ environmentGPU::environmentGPU()
 	cudaMemset(m_envGrid.velfieldY, 0, GRIDSIZESKY * sizeof(float));
 	cudaMemset(m_envGrid.velfieldZ, 0, GRIDSIZESKY * sizeof(float));
 
-	setToValue << <1, GRIDSIZEGROUND >> > (m_groundGrid.Qrs, 0.001f, GRIDSIZEGROUND);
+	setToValue << <GRIDSIZESKYZ, GRIDSIZESKYX >> > (m_groundGrid.Qrs, 0.001f, 1);
 	cudaMemset(m_groundGrid.Qgr, 0, GRIDSIZEGROUND * sizeof(float));
 	cudaMemset(m_groundGrid.Qgs, 0, GRIDSIZEGROUND * sizeof(float));
 	cudaMemset(m_groundGrid.Qgi, 0, GRIDSIZEGROUND * sizeof(float));
-	setToValue << <1, GRIDSIZEGROUND >> > (m_groundGrid.P, 1000.0f, GRIDSIZEGROUND);
-	setToValue << <1, GRIDSIZEGROUND >> > (m_groundGrid.T, 315.15f, GRIDSIZEGROUND);
+	setToValue << <GRIDSIZESKYZ, GRIDSIZESKYX >> > (m_groundGrid.P, 1000.0f, 1);
+	setToValue << <GRIDSIZESKYZ, GRIDSIZESKYX >> > (m_groundGrid.T, 315.15f, 1);
 	cudaMemset(m_groundGrid.t, 0, GRIDSIZEGROUND * sizeof(float));
 
 	size_t freeMem2;
@@ -133,11 +172,16 @@ environmentGPU::environmentGPU()
 	size_t memUsed = (freeMem / 1024 / 1024) - (freeMem2 / 1024 / 1024);
 
 	printf("GPU Memory used: %zu\n",memUsed);
-
 	cudaDeviceProp prop;
 	cudaGetDeviceProperties(&prop, 0);
 	printf("Max blocks: %i, Max Threads: %i\n", prop.maxBlocksPerMultiProcessor * prop.multiProcessorCount, prop.maxThreadsPerBlock);
 	printf("GPU: %s\n", prop.name);
+
+	err = cudaGetLastError();
+	if (err != cudaSuccess) {
+		std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+		__debugbreak();
+	}
 }
 
 environmentGPU::~environmentGPU()
@@ -204,6 +248,7 @@ environmentGPU::~environmentGPU()
 
 void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures, float* smallPressure)
 {
+	potTemps[getIdx(0, 16, 16)] = 310.0f;
 	//Init sky
 	cudaMemcpy(m_envGrid.potTemp, potTemps, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice);
 	
@@ -213,8 +258,6 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 		std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
 		__debugbreak();
 	}
-
-	cudaMemcpy(potTemps, m_envGrid.potTemp, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
 
 	{
 		float* velX = new float[GRIDSIZESKY];
@@ -254,6 +297,7 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 	cudaMemcpy2D(m_isentropicTemp, sizeof(float), m_envGrid.potTemp, GRIDSIZESKYX * sizeof(float), sizeof(float), GRIDSIZESKYY, cudaMemcpyHostToDevice);
 	cudaMemcpy2D(m_isentropicVapor, sizeof(float), m_envGrid.Qv, GRIDSIZESKYX * sizeof(float), sizeof(float), GRIDSIZESKYY, cudaMemcpyHostToDevice);
 	cudaMemcpy2D(m_defaultVelX, sizeof(float), m_envGrid.velfieldX, GRIDSIZESKYX * sizeof(float), sizeof(float), GRIDSIZESKYY, cudaMemcpyHostToDevice);
+	cudaMemcpy2D(m_defaultVelZ, sizeof(float), m_envGrid.velfieldY, GRIDSIZESKYX * sizeof(float), sizeof(float), GRIDSIZESKYY, cudaMemcpyHostToDevice);
 	cudaMemcpy2D(m_defaultVelZ, sizeof(float), m_envGrid.velfieldZ, GRIDSIZESKYX * sizeof(float), sizeof(float), GRIDSIZESKYY, cudaMemcpyHostToDevice);
 	setToValue << <GRIDSIZESKYY, 1 >> > (m_dummyArray, 1.0f, 1);
 	cudaDeviceSynchronize();
@@ -271,13 +315,20 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 	cudaMalloc(&noiseGPU, GRIDSIZEGROUND * sizeof(float));
 	//Generate noise
 	PNoise2D(100, noise, GRIDSIZESKYX, GRIDSIZESKYZ, 12);
-
+	err = cudaGetLastError();
+	if (err != cudaSuccess) {
+		std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
+		__debugbreak();
+	}
 	cudaMemcpy(noiseGPU, noise, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDefault);
 	const float maxHeight = 0;
 	initGroundHeightGPU << <GRIDSIZESKYZ, GRIDSIZESKYX >> > (m_GHeight, noiseGPU, maxHeight);
 	cudaDeviceSynchronize();
+
+	debugPrintArray<<<1, 25>>>(m_GHeight, 1);
+	cudaDeviceSynchronize();
 	cudaFree(noiseGPU);
-	cudaFree(noise);
+	cudaFreeHost(noise);
 
 	err = cudaGetLastError();
 	if (err != cudaSuccess) {
@@ -301,6 +352,7 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 	resetValueInGround << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_envGrid.Qi, m_GHeight);
 	resetValueInGround << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_envGrid.velfieldX, m_GHeight);
 	resetValueInGround << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_envGrid.velfieldY, m_GHeight);
+	resetValueInGround << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_envGrid.velfieldZ, m_GHeight);
 	cudaDeviceSynchronize();
 	err = cudaGetLastError();
 	if (err != cudaSuccess) {
@@ -420,63 +472,63 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 		calculateBuoyancy(dt * speed);
 		diffuseGPU(m_envGrid.velfieldX, 2, dt * speed);
 		diffuseGPU(m_envGrid.velfieldY, 3, dt * speed);
+		diffuseGPU(m_envGrid.velfieldZ, 4, dt * speed);
 		advectPPMWGPU(m_envGrid.velfieldX, m_defaultVelX, dt * speed);
 		cudaMemset(m_dummyArray, 0, GRIDSIZESKYY * sizeof(float));
 		advectPPMWGPU(m_envGrid.velfieldY, m_dummyArray, dt * speed);
 		advectPPMWGPU(m_envGrid.velfieldZ, m_defaultVelZ, dt * speed);
-		initDensity << <GRIDSIZESKYY, GRIDSIZESKYX>> > (m_densityAir, m_envGrid.potTemp, m_envGrid.pressure, m_envGrid.Qv, m_groundGrid.P);
-		cudaDeviceSynchronize();
-		cudaMemcpy(m_oldDensityAir, m_densityAir, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToDevice);
+		//initDensity << <GRIDSIZESKYY, GRIDSIZESKYX>> > (m_densityAir, m_envGrid.potTemp, m_envGrid.pressure, m_envGrid.Qv, m_groundGrid.P);
+		//cudaDeviceSynchronize();
+		//cudaMemcpy(m_oldDensityAir, m_densityAir, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToDevice);
 
-		pressureProject(dt * speed);
-		err = cudaGetLastError();
-		if (err != cudaSuccess) {
-			std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
-			__debugbreak();
-		}
-		//Game.Editor().setDebugValueNum(m_densityAir, 2);
+		//pressureProject(dt * speed);
+		//err = cudaGetLastError();
+		//if (err != cudaSuccess) {
+		//	std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
+		//	__debugbreak();
+		//}
 
-		calculateNewPressure << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_envGrid.pressure, m_densityAir, m_envGrid.potTemp, m_envGrid.Qv, m_groundGrid.P);
-		cudaDeviceSynchronize();
-
+		//calculateNewPressure << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_envGrid.pressure, m_densityAir, m_envGrid.potTemp, m_envGrid.Qv, m_groundGrid.P);
+		//cudaDeviceSynchronize();
 
 
 
-		// 3.	
-		diffuseGPU(m_envGrid.Qv, 1, dt * speed);//Vapor
-		advectPPMWGPU(m_envGrid.Qv, m_isentropicVapor, dt * speed);
-		err = cudaGetLastError();
-		if (err != cudaSuccess) {
 
-			std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
-			__debugbreak();
-		}
+		//// 3.	
+		//diffuseGPU(m_envGrid.Qv, 1, dt * speed);//Vapor
+		//advectPPMWGPU(m_envGrid.Qv, m_isentropicVapor, dt * speed);
+		//err = cudaGetLastError();
+		//if (err != cudaSuccess) {
 
-		diffuseGPU(m_envGrid.Qw, 4, dt * speed);//Water cloud
-		advectPPMWGPU(m_envGrid.Qw, m_dummyArray, dt* speed);
+		//	std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
+		//	__debugbreak();
+		//}
 
-		diffuseGPU(m_envGrid.Qc, 4, dt * speed);//Ice cloud
-		advectPPMWGPU(m_envGrid.Qc, m_dummyArray, dt * speed);
-		
-		diffuseGPU(m_envGrid.Qr, 4, dt * speed);//Rain
-		advectPrecip(m_envGrid.Qr, 0, dt * speed);
-		advectPPMWGPU(m_envGrid.Qr, m_dummyArray, dt * speed);
+		//diffuseGPU(m_envGrid.Qw, 5, dt * speed);//Water cloud
+		//advectPPMWGPU(m_envGrid.Qw, m_dummyArray, dt* speed);
 
-		diffuseGPU(m_envGrid.Qs, 4, dt* speed);//Snow
-		advectPrecip(m_envGrid.Qs, 1, dt* speed);
-		advectPPMWGPU(m_envGrid.Qs, m_dummyArray, dt* speed);
+		//diffuseGPU(m_envGrid.Qc, 5, dt * speed);//Ice cloud
+		//advectPPMWGPU(m_envGrid.Qc, m_dummyArray, dt * speed);
+		//
+		//diffuseGPU(m_envGrid.Qr, 5, dt * speed);//Rain
+		//advectPrecip(m_envGrid.Qr, 0, dt * speed);
+		//advectPPMWGPU(m_envGrid.Qr, m_dummyArray, dt * speed);
 
-		diffuseGPU(m_envGrid.Qi, 4, dt * speed);//Ice
-		advectPrecip(m_envGrid.Qi, 2, dt * speed);
-		advectPPMWGPU(m_envGrid.Qi, m_dummyArray, dt * speed);
-		err = cudaGetLastError();
-		if (err != cudaSuccess) {
-			std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
-			__debugbreak();
-		}
+		//diffuseGPU(m_envGrid.Qs, 5, dt* speed);//Snow
+		//advectPrecip(m_envGrid.Qs, 1, dt* speed);
+		//advectPPMWGPU(m_envGrid.Qs, m_dummyArray, dt* speed);
 
-		// 4.	
-		microPhysicsSkyGPU(dt, speed);
+		//diffuseGPU(m_envGrid.Qi, 5, dt * speed);//Ice
+		//advectPrecip(m_envGrid.Qi, 2, dt * speed);
+		//advectPPMWGPU(m_envGrid.Qi, m_dummyArray, dt * speed);
+		//err = cudaGetLastError();
+		//if (err != cudaSuccess) {
+		//	std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
+		//	__debugbreak();
+		//}
+
+		//// 4.	
+		//microPhysicsSkyGPU(dt, speed);
 		err = cudaGetLastError();
 		if (err != cudaSuccess) {
 			std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
@@ -545,7 +597,9 @@ void environmentGPU::diffuseGPU(float* diffuseArray, int type, const float dt)
 	case 0: //Temp
 		defaultArray = m_isentropicTemp;
 		// Sides boundaries are not actually dirichlet, but we customize inside the function for temp
+		boundsConditions.ground = CUSTOM;
 		boundsConditions.sides = CUSTOM;
+		boundsConditions.up = CUSTOM;
 		break;
 	case 1: //Vapor
 		defaultArray = m_isentropicVapor;
@@ -611,8 +665,8 @@ void environmentGPU::diffuseGPU(float* diffuseArray, int type, const float dt)
 void environmentGPU::advectGroundWater(const float dt, const float speed)
 {
 	// For the ground we use also 16 x 16 blocks when necessary, but now X and Z instead of Y
-	dim3 grid(GRIDSIZEX, GRIDSIZEY);
-	dim3 block(BLOCKSIZEX, BLOCKSIZEY);
+	dim3 grid(GRIDSIZEX, GRIDSIZEZ);
+	dim3 block(BLOCKSIZEX, BLOCKSIZEZ);
 
 	//Need red-black due to accessing previous index
 	advectGroundWaterGPU<<<grid, block>>> (m_groundGrid.Qrs, m_groundGrid.Qgr, dt, speed);
@@ -644,7 +698,7 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 	//Reset data
 	cudaMemset(m_outputArray, 0, GRIDSIZESKY * sizeof(float));
 	cudaMemset(m_stor0, 0, GRIDSIZESKY * sizeof(float));
-	setToValue << <GRIDSIZESKYY, 1 >> > (m_dummyArraySky2, 1.0f, 1);
+	setToValue << <1, GRIDSIZESKYY >> > (m_dummyArraySky2, 1.0f, 1);
 
 	//Recollect all threads before starting kernels
 	cudaDeviceSynchronize();
@@ -670,7 +724,7 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 
 	const int subSteps = int(fminf(ceilf(fabsf(C)), MAXSUBSTEPS));
 	const float dtSub = dt / subSteps;
-	if (C > 100)
+	if (C > 25)
 	{
 		printf("WARNING: Courant number is high: %f, increase size of voxels or decrease timesteps, %f, %i\n", C, dtSub, subSteps);
 	}
@@ -696,8 +750,8 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 		cudaDeviceSynchronize();
 
 		//Divide to get them both up to speed
-		divideValues << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_outputArray, m_stor0, GRIDSIZESKYX);
-		setToValue << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_density, 1.0f, GRIDSIZESKYX);
+		divideValues << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_outputArray, m_stor0, GRIDSIZESKYZ);
+		setToValue << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_density, 1.0f, GRIDSIZESKYZ);
 		cudaDeviceSynchronize();
 
 		//------------------------------ 0.5 Y -----------------------------------
@@ -729,7 +783,7 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 		advectPPMY << <grid, block >> > (m_outputArray, advectArray, defaultVal, m_envGrid.velfieldY, m_neighbourData, boundsY, dtSub * 0.5f);
 		cudaDeviceSynchronize();
 
-		divideValues << <GRIDSIZESKYY, GRIDSIZESKYX >> > (advectArray, m_stor0, GRIDSIZESKYZ);
+		divideValues << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_outputArray, m_stor0, GRIDSIZESKYZ);
 		setToValue << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_density, 1.0f, GRIDSIZESKYZ);
 		cudaDeviceSynchronize();
 
@@ -744,7 +798,7 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 		cudaDeviceSynchronize();
 
 		//Switch over input and output for our next iteration or return result.
-		cudaMemcpy(advectArray, m_outputArray, sizeof(GRIDSIZESKY) * sizeof(float), cudaMemcpyDeviceToDevice);
+		cudaMemcpy(advectArray, m_outputArray, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToDevice);
 	}
 
 	cudaError_t err = cudaGetLastError();
@@ -767,9 +821,6 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 
 void environmentGPU::advectPrecip(float* array, const int fallVelType, const float dt)
 {
-	const int threads = GRIDSIZESKYY;
-	const int blocks = GRIDSIZESKYX;
-
 	// Substeps based on highest courant number
 	// This is to make sure that the advecting value can not pass over 1 cell, for example:
 	// If velocity is too high, the value actually never passes this cell in one time frame but passes over.
@@ -810,6 +861,8 @@ void environmentGPU::pressureProject(const float dt)
 	//Initialize A and precon every frame due to changed based on density
 	initAMatrix << <grid, block >> > (m_A, m_neighbourData, m_densityAir, boundsDensity);
 	cudaDeviceSynchronize();
+
+
 	initPrecon << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_precon, m_A);
 	cudaDeviceSynchronize();
 
@@ -838,9 +891,6 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 	dim3 grid(GRIDSIZEX, GRIDSIZEY);
 	dim3 block(BLOCKSIZEX, BLOCKSIZEY);
 
-	const int threads = GRIDSIZESKYX;
-	const int blocks = GRIDSIZESKYY;
-
 	boundsEnv boundsVel{ CUSTOM, CUSTOM, DIRICHLET };
 	boundsEnv boundsDensity{ NEUMANN, DIRICHLET, DIRICHLET };
 
@@ -863,7 +913,11 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 	//Divergence
 	calculateDivergenceGPU << <grid, block >> > (m_stor0, m_neighbourData, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ, m_densityAir, m_oldDensityAir, boundsDensity, boundsVel, dt);
 	cudaDeviceSynchronize();
+
+	//Debug
 	Game.Editor().setDebugValueNum(m_stor0, 2);
+	cudaDeviceSynchronize();
+
 
 	//Check max divergence
 	getMaxDivergence << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_singleStor0, m_stor0);
@@ -1124,7 +1178,7 @@ void environmentGPU::resetParameterGPU(parameter paramType)
 	if (paramType == WIND)
 	{
 		setToDefault << <blocks, threads >> > (m_envGrid.velfieldX, m_defaultVelX);
-		setToValue << <blocks, threads >> > (m_envGrid.velfieldY, 0.0f, GRIDSIZESKYX);
+		setToValue << <blocks, threads >> > (m_envGrid.velfieldY, 0.0f, GRIDSIZESKYZ);
 		setToDefault << <blocks, threads >> > (m_envGrid.velfieldZ, m_defaultVelZ);
 	}
 	if (paramType == PRESSURE)
@@ -1132,11 +1186,11 @@ void environmentGPU::resetParameterGPU(parameter paramType)
 		setToDefault << <blocks, threads >> > (m_envGrid.pressure, m_defaultPressure);
 	}
 	if (paramType == QV) setToDefault << <blocks, threads >> > (m_envGrid.Qv, m_isentropicVapor);
-	if (paramType == QW) setToValue << <blocks, threads >> > (m_envGrid.Qw, 0.0f, GRIDSIZESKYX);
-	if (paramType == QC) setToValue << <blocks, threads >> > (m_envGrid.Qc, 0.0f, GRIDSIZESKYX);
-	if (paramType == QR) setToValue << <blocks, threads >> > (m_envGrid.Qr, 0.0f, GRIDSIZESKYX);
-	if (paramType == QS) setToValue << <blocks, threads >> > (m_envGrid.Qs, 0.0f, GRIDSIZESKYX);
-	if (paramType == QI) setToValue << <blocks, threads >> > (m_envGrid.Qi, 0.0f, GRIDSIZESKYX);
+	if (paramType == QW) setToValue << <blocks, threads >> > (m_envGrid.Qw, 0.0f, GRIDSIZESKYZ);
+	if (paramType == QC) setToValue << <blocks, threads >> > (m_envGrid.Qc, 0.0f, GRIDSIZESKYZ);
+	if (paramType == QR) setToValue << <blocks, threads >> > (m_envGrid.Qr, 0.0f, GRIDSIZESKYZ);
+	if (paramType == QS) setToValue << <blocks, threads >> > (m_envGrid.Qs, 0.0f, GRIDSIZESKYZ);
+	if (paramType == QI) setToValue << <blocks, threads >> > (m_envGrid.Qi, 0.0f, GRIDSIZESKYZ);
 }
 
 envDebugData* environmentGPU::getDebugData()

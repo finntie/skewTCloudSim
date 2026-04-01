@@ -1,7 +1,8 @@
 #include "kernelMaths.cuh"
 
+#include <CUDA/include/cuda_runtime.h>
+#include <CUDA/include/cuda.h>
 #include <CUDA/cmath>
-#include <cuda.h>
 
 #include <stdio.h>
 
@@ -53,7 +54,10 @@ __global__ void subtractValue(float* array, const float value, const int depth)
     for (z = 0; z < depth; z++)
     {
         const int idx = x + y * blockDim.x + z * blockDim.x * gridDim.x;
+       // if (z == 16 && x == 16)printf("x %i, y %i, z %i, value = %f\n", x, y, z, array[idx]);
         array[idx] -= value;
+        //if (z == 16 && x == 16)printf("x %i, y %i, z %i, value2 = %f\n", x, y, z, array[idx]);
+
     }
 }
 
@@ -66,7 +70,7 @@ __global__ void debugPrintArray(const float* array, const int depth)
     for (z = 0; z < depth; z++)
     {
         const int idx = x + y * blockDim.x + z * blockDim.x * gridDim.x;
-        printf("DebugPrintArray (X: %i, Y: %i, Z: %i) = array[%i]: %f\n", x, y, z, idx, array[idx]);
+        printf("DebugPrintArray (X: %i, Y: %i, Z: %i) = array[%i]: %e\n", x, y, z, idx, array[idx]);
     }
 }
 

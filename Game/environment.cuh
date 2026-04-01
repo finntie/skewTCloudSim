@@ -112,8 +112,8 @@ private:
 	gridDataGroundGPU m_groundGrid;
 
 	float m_time = 43200.0f; //0 to 86.400 time in seconds
-	const float m_dayLightDuration = 14.0f;
-	const float m_hourOfSunrise = 6.0f;
+	static constexpr float m_dayLightDuration = 14.0f;
+	static constexpr float m_hourOfSunrise = 6.0f;
 	float m_longitude = 52.37f; //Longitude on earth, 52.37 is Amsterdam
 	int m_day = 130; //Day of the year
 	float m_sunStrength = 1.0f;

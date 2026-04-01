@@ -92,8 +92,8 @@ __global__ void compareAndResetValuesOutGround(const int* oldGroundHeight, const
 //------------------Helper------------------
 
 __global__ void resetVelPressProj(const Neigh* neigh, float* velX, float* velY, float* velZ);
-__device__ bool isGroundLevel(); //Uses the thread idxs
-__device__ bool isGroundGPU(); //Uses the thread idxs
+__device__ bool isGroundLevel(const int z); //Uses the thread idxs
+__device__ bool isGroundGPU(const int z); //Uses the thread idxs
 __device__ bool isGroundGPU(const int x, const int y, const int z);
 
 __global__ void setToDefault(float* array, const float* defaultValue);
@@ -104,5 +104,8 @@ __device__ void fillSharedNeigh(float* sharedData, const float* data, const floa
 __device__ __forceinline__ float fillNeighbourData(envType neighbourType, boundsEnv condition, const float* data, const int idx, const int offset, const float customData, bool up = false);
 
 __device__ __forceinline__ void fillDataBoundCon(boundCon condition, float& output, const float data, const float customData);
+
+__device__ __forceinline__ envType getSafeNeighbourAtOffset(const Neigh* neigh, const int idx, const int offset, direction dir);
+
 
 //------------------------------------------

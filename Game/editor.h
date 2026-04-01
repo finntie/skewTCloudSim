@@ -61,6 +61,7 @@ private:
 	void mainButtons();
 	void viewParamInformation();
 	void setView();
+	void setSlice();
 	void editModeParams();
 	void editModeParamsSun();
 	int chooseDateDay();
@@ -75,7 +76,6 @@ private:
 	void viewSky();
 	void viewGround();
 	void viewSkewT();
-	void renderVelSquare(glm::vec2 vel, const int x, const int y);
 	void viewBrush();
 	void viewSelection();
 	void viewToolTipData();
@@ -98,6 +98,7 @@ private:
 	glm::vec2 getValueParam(const int index, parameter param);
 	int getDaysInMonth(int month);
 	void dayToMonthDay(int dayOfYear, int& month, int& dayOfMonth);
+	void setSliceMinMax(bool fullView);
 
 	//Variables
 	envDebugData* m_envData;
@@ -118,6 +119,19 @@ private:
 	float m_simulationSpeed{ 1.0f };
 	bool m_changedGround = false;
 	int m_skewTidx = GRIDSIZESKYX / 2;
+
+	// Viewing Settings
+	bool m_viewSlice{ false };
+	bool m_viewGround{ false };
+	// X = 0, Y = 1, Z = 2
+	int m_viewSliceCoord{ 0 };
+	int m_atSliceViewSlice{ 0 };
+	int m_minViewX = 0;
+	int m_minViewY = 0;
+	int m_minViewZ = 0;
+	int m_maxViewX = GRIDSIZESKYX;
+	int m_maxViewY = GRIDSIZESKYY;
+	int m_maxViewZ = GRIDSIZESKYZ;
 
 	//General apply variables
 	float m_applyValue{ 1.0f };

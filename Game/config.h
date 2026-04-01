@@ -25,6 +25,11 @@ struct Neigh
 	envType left, right, up, down, forward, backward;
 };
 
+enum direction
+{
+	LEFT, RIGHT, UP, DOWN, FORWARD, BACKWARD
+};
+
 //Boundary condition
 enum boundCon
 {

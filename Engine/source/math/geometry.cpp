@@ -65,7 +65,7 @@ glm::vec3 bee::screenToGround(glm::vec2 screenPos)
     // Ray formula:
     // P = O + D * t
 
-    t = -camPos.z / worldDir.z;  // Direct intersection calculation for z=0 plane
+    t = -camPos.y / worldDir.y;  // Direct intersection calculation for y=0 plane
 
     return camPos + worldDir * t;
 }

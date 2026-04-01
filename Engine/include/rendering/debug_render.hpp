@@ -110,7 +110,15 @@ public:
     void AddArrow(DebugCategory::Enum category,
                   const glm::vec3& center,
                   const glm::vec3& normal,
-                  const glm::vec2& pointDir,
+                  const glm::vec3& pointDir,
+                  float size,
+                  const glm::vec4& color);
+
+    /// <summary>
+    /// Add a voxel to be rendered
+    /// </summary>
+    void AddVoxel(DebugCategory::Enum category,
+                  const glm::vec3& center,
                   float size,
                   const glm::vec4& color);
 
