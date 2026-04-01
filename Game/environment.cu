@@ -494,41 +494,41 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 
 
 
-		//// 3.	
+		// 3.	
 		//diffuseGPU(m_envGrid.Qv, 1, dt * speed);//Vapor
-		//advectPPMWGPU(m_envGrid.Qv, m_isentropicVapor, dt * speed);
-		//err = cudaGetLastError();
-		//if (err != cudaSuccess) {
+		advectPPMWGPU(m_envGrid.Qv, m_isentropicVapor, dt * speed);
+		err = cudaGetLastError();
+		if (err != cudaSuccess) {
 
-		//	std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
-		//	__debugbreak();
-		//}
+			std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
+			__debugbreak();
+		}
 
 		//diffuseGPU(m_envGrid.Qw, 5, dt * speed);//Water cloud
-		//advectPPMWGPU(m_envGrid.Qw, m_dummyArray, dt* speed);
-
+		advectPPMWGPU(m_envGrid.Qw, m_dummyArray, dt* speed);
+		//
 		//diffuseGPU(m_envGrid.Qc, 5, dt * speed);//Ice cloud
-		//advectPPMWGPU(m_envGrid.Qc, m_dummyArray, dt * speed);
+		advectPPMWGPU(m_envGrid.Qc, m_dummyArray, dt * speed);
 		//
 		//diffuseGPU(m_envGrid.Qr, 5, dt * speed);//Rain
-		//advectPrecip(m_envGrid.Qr, 0, dt * speed);
-		//advectPPMWGPU(m_envGrid.Qr, m_dummyArray, dt * speed);
-
+		////advectPrecip(m_envGrid.Qr, 0, dt * speed);
+		advectPPMWGPU(m_envGrid.Qr, m_dummyArray, dt * speed);
+		//
 		//diffuseGPU(m_envGrid.Qs, 5, dt* speed);//Snow
-		//advectPrecip(m_envGrid.Qs, 1, dt* speed);
-		//advectPPMWGPU(m_envGrid.Qs, m_dummyArray, dt* speed);
-
+		////advectPrecip(m_envGrid.Qs, 1, dt* speed);
+		advectPPMWGPU(m_envGrid.Qs, m_dummyArray, dt* speed);
+		//
 		//diffuseGPU(m_envGrid.Qi, 5, dt * speed);//Ice
-		//advectPrecip(m_envGrid.Qi, 2, dt * speed);
-		//advectPPMWGPU(m_envGrid.Qi, m_dummyArray, dt * speed);
-		//err = cudaGetLastError();
-		//if (err != cudaSuccess) {
-		//	std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
-		//	__debugbreak();
-		//}
+		////advectPrecip(m_envGrid.Qi, 2, dt * speed);
+		advectPPMWGPU(m_envGrid.Qi, m_dummyArray, dt * speed);
+		err = cudaGetLastError();
+		if (err != cudaSuccess) {
+			std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
+			__debugbreak();
+		}
 
-		//// 4.	
-		//microPhysicsSkyGPU(dt, speed);
+		// 4.	
+		microPhysicsSkyGPU(dt, speed);
 		err = cudaGetLastError();
 		if (err != cudaSuccess) {
 			std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
@@ -675,10 +675,7 @@ void environmentGPU::advectGroundWater(const float dt, const float speed)
 
 void environmentGPU::setTempsAtGround(const float dt, const float speed)
 {
-	const int threads = GRIDSIZESKYX;
-	const int blocks = GRIDSIZESKYZ;
-
-	setTempsAtGroundGPU<<<blocks, threads>>>(m_envGrid.potTemp, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, dt * speed);
+	setTempsAtGroundGPU<<<GRIDSIZESKYZ, GRIDSIZESKYX >>>(m_envGrid.potTemp, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, dt * speed);
 	cudaDeviceSynchronize();
 }
 
@@ -740,7 +737,7 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 		// 0.5X, 0.5Y, Z, 0.5Y, 0.5X
 		
 
-		//Its kernel time, advecting 2 times half X, 2 times half Y and 1 time Z
+		// Its kernel time, advecting 2 times half X, 2 times half Y and 1 time Z
 		
 		//------------------------------ 0.5 X -----------------------------------
 
@@ -777,17 +774,17 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 		setToValue << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_density, 1.0f, GRIDSIZESKYZ);
 		cudaDeviceSynchronize();
 
-		//------------------------------ 0.5 Y -----------------------------------
+		////------------------------------ 0.5 Y -----------------------------------
 
 		advectPPMY << <grid, block >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldY, m_neighbourData, boundsY, dtSub * 0.5f);
 		advectPPMY << <grid, block >> > (m_outputArray, advectArray, defaultVal, m_envGrid.velfieldY, m_neighbourData, boundsY, dtSub * 0.5f);
 		cudaDeviceSynchronize();
 
-		divideValues << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_outputArray, m_stor0, GRIDSIZESKYZ);
+		divideValues << <GRIDSIZESKYY, GRIDSIZESKYX >> > (advectArray, m_stor0, GRIDSIZESKYZ);
 		setToValue << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_density, 1.0f, GRIDSIZESKYZ);
 		cudaDeviceSynchronize();
 
-		//------------------------------ 0.5 X -----------------------------------
+		////------------------------------ 0.5 X -----------------------------------
 
 		advectPPMX << <grid, block >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldX, m_neighbourData, boundsX, dtSub * 0.5f);
 		advectPPMX << <grid, block >> > (advectArray, m_outputArray, defaultVal, m_envGrid.velfieldX, m_neighbourData, boundsX, dtSub * 0.5f);

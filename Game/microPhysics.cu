@@ -1418,7 +1418,7 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
     const int z = blockIdx.x;
     const int idxG = x + z * GRIDSIZESKYX;
 
-    const int y = _groundHeight[x]; //Y to use index on environment variables
+    const int y = _groundHeight[idxG]; //Y to use index on environment variables
     const int idx = getIdx(x, y + 1, z);
 
 

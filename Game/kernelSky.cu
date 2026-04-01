@@ -318,10 +318,10 @@ __global__ void advectGroundWaterBlack(const float* inputQrs, const float* input
 __global__ void setTempsAtGroundGPU(float* potTemps, const float* groundTemps, const float* pressuresAir, const float* groundPressures, const float dt)
 {
 	const int x = threadIdx.x;
-	const int y = GHeight[x] + 1;
 	const int z = blockIdx.x;
-	const int idx = getIdx(x, y, z);
 	const int Gidx = x + z * GRIDSIZESKYX; // Ground index
+	const int y = GHeight[Gidx] + 1;
+	const int idx = getIdx(x, y, z);
 
 	if (y >= GRIDSIZESKYY - 1) return;
 
@@ -466,7 +466,7 @@ __global__ void advectPPMX(const float* __restrict__ arrayIn,
 		if (!downWind)
 		{
 			// Make sure to safely check if this index will be outside
-			if (getSafeNeighbourAtOffset(neigh, idx, 2, RIGHT) != SKY)
+			if (getSafeNeighbourAtOffset(neigh, idx, 1, RIGHT) != SKY)
 			{
 				fillDataBoundCon(bounds.sides, extraRight, sharedBlock[idxsData], defaultVal[y]);
 			}
@@ -477,8 +477,8 @@ __global__ void advectPPMX(const float* __restrict__ arrayIn,
 			}
 		}
 
-		float valL = downWind ? sharedBlock[idxsData - 1] : sharedBlock[idxsData];
-		float valR = downWind ? sharedBlock[idxsData + 1] : extraRight;
+		float valL = downWind ? sharedBlock[idxsData - 1] : extraRight;
+		float valR = downWind ? sharedBlock[idxsData + 1] : sharedBlock[idxsData];
 		float valC = downWind ? sharedBlock[idxsData] : sharedBlock[idxsData + 1];
 
 		float fluxRight = advectPPMFlux(velfieldX[idx], valL, valC, valR, dt);
@@ -494,7 +494,7 @@ __global__ void advectPPMX(const float* __restrict__ arrayIn,
 		if (!downWind)
 		{
 			// Make sure to safely check if this index will be outside
-			if (getSafeNeighbourAtOffset(neigh, idx, -2, LEFT) != SKY)
+			if (getSafeNeighbourAtOffset(neigh, idx, -1, LEFT) != SKY)
 			{
 				fillDataBoundCon(bounds.sides, extraLeft, sharedBlock[idxsData], defaultVal[y]);
 			}
@@ -506,8 +506,8 @@ __global__ void advectPPMX(const float* __restrict__ arrayIn,
 		}
 
 
-		valL = downWind ? sharedBlock[idxsData - 1] : extraLeft;
-		valR = downWind ? sharedBlock[idxsData + 1] : sharedBlock[idxsData];
+		valL = downWind ? sharedBlock[idxsData + 1] : extraLeft;
+		valR = downWind ? sharedBlock[idxsData - 1] : sharedBlock[idxsData];
 		valC = downWind ? sharedBlock[idxsData] : sharedBlock[idxsData - 1];
 
 		float fluxLeft = advectPPMFlux(velL, valL, valC, valR, dt);
@@ -555,7 +555,7 @@ __global__ void advectPPMY(const float* __restrict__ arrayIn,
 		if (!downWind) 
 		{
 			// Make sure to safely check if this index will be outside
-			if (getSafeNeighbourAtOffset(neigh, idx, GRIDSIZESKYX * 2, UP) != SKY)
+			if (getSafeNeighbourAtOffset(neigh, idx, GRIDSIZESKYX, UP) != SKY)
 			{
 				fillDataBoundCon(bounds.up, extraUp, sharedBlock[idxsData], defaultVal[y]);
 			}
@@ -566,8 +566,8 @@ __global__ void advectPPMY(const float* __restrict__ arrayIn,
 			}
 		}
 
-		float valD = downWind ? sharedBlock[idxsData - sharedBlockWidth] : sharedBlock[idxsData];
-		float valU = downWind ? sharedBlock[idxsData + sharedBlockWidth] : extraUp;
+		float valD = downWind ? sharedBlock[idxsData - sharedBlockWidth] : extraUp;
+		float valU = downWind ? sharedBlock[idxsData + sharedBlockWidth] : sharedBlock[idxsData];
 		float valC = downWind ? sharedBlock[idxsData] : sharedBlock[idxsData + sharedBlockWidth];
 
 		float fluxUp = advectPPMFlux(velfieldY[idx], valD, valC, valU, dt);
@@ -583,7 +583,7 @@ __global__ void advectPPMY(const float* __restrict__ arrayIn,
 		if (!downWind)
 		{
 			// Make sure to safely check if this index will be outside
-			if (getSafeNeighbourAtOffset(neigh, idx, -GRIDSIZESKYX * 2, DOWN) != SKY)
+			if (getSafeNeighbourAtOffset(neigh, idx, -GRIDSIZESKYX, DOWN) != SKY)
 			{
 				fillDataBoundCon(bounds.ground, extraDown, sharedBlock[idxsData], defaultVal[y]);
 			}
@@ -594,8 +594,8 @@ __global__ void advectPPMY(const float* __restrict__ arrayIn,
 			}
 		}
 
-		valD = downWind ? sharedBlock[idxsData - sharedBlockWidth] : extraDown;
-		valU = downWind ? sharedBlock[idxsData + sharedBlockWidth] : sharedBlock[idxsData];
+		valD = downWind ? sharedBlock[idxsData + sharedBlockWidth] : extraDown;
+		valU = downWind ? sharedBlock[idxsData - sharedBlockWidth] : sharedBlock[idxsData];
 		valC = downWind ? sharedBlock[idxsData] : sharedBlock[idxsData - sharedBlockWidth];
 
 		float fluxDown = advectPPMFlux(velD, valD, valC, valU, dt);
@@ -625,28 +625,28 @@ __global__ void advectPPMZ(const float* __restrict__ arrayIn,
 	float forwardExtra = fillNeighbourData(neigh[idx].forward, bounds, arrayIn, idx, GRIDSIZESKYX * GRIDSIZESKYY, defaultValue);
 	float forward = arrayIn[idx];
 	float current = fillNeighbourData(neigh[idx].backward, bounds, arrayIn, idx, -GRIDSIZESKYX * GRIDSIZESKYY, defaultValue);
-	float backward = fillNeighbourData(getSafeNeighbourAtOffset(neigh, idx, -GRIDSIZESKYX * GRIDSIZESKYY * 2, BACKWARD), bounds, arrayIn, idx, -GRIDSIZESKYX * GRIDSIZESKYY * 2, defaultValue);
+	float backward = fillNeighbourData(getSafeNeighbourAtOffset(neigh, idx, -GRIDSIZESKYX * GRIDSIZESKYY, BACKWARD), bounds, arrayIn, idx, -GRIDSIZESKYX * GRIDSIZESKYY * 2, defaultValue);
 	float backwardExtra = 0.0f;
 
 	for (z = 0; z < GRIDSIZESKYZ; z++)
 	{
 		// We do not return, we just continue 
-		if (isGroundGPU(x, y, z)) continue;
 		idx = getIdx(x, y, z);
 
 		backwardExtra = backward;
 		backward = current;
 		current = forward;
 		forward = forwardExtra;
-		forwardExtra = fillNeighbourData(getSafeNeighbourAtOffset(neigh, idx, GRIDSIZESKYX * GRIDSIZESKYY * 2, FORWARD), bounds, arrayIn, idx, GRIDSIZESKYX * GRIDSIZESKYY * 2, defaultValue);
+		forwardExtra = fillNeighbourData(getSafeNeighbourAtOffset(neigh, idx, GRIDSIZESKYX * GRIDSIZESKYY, FORWARD), bounds, arrayIn, idx, GRIDSIZESKYX * GRIDSIZESKYY * 2, defaultValue);
 
+		if (isGroundGPU(x, y, z)) continue;
 
 		// Downwind is when velocity is coming from the back
 		// And since we are currently looking forward, downwind is moving with use thus positive
 		bool downWind = velfieldZ[idx] >= 0.0f;
 
-		float valB = downWind ? backward : current;
-		float valF = downWind ? forward : forwardExtra;
+		float valB = downWind ? backward : forwardExtra;
+		float valF = downWind ? forward : current;
 		float valC = downWind ? current : forward;
 
 		float fluxForward = advectPPMFlux(velfieldZ[idx], valB, valC, valF, dt);
@@ -657,15 +657,15 @@ __global__ void advectPPMZ(const float* __restrict__ arrayIn,
 		// Now we want to check the flux from the otherside, so we turn it around
 		downWind = velB < 0.0f;
 
-		valB = downWind ? backward : backwardExtra;
-		valF = downWind ? forward : current;
+		valB = downWind ? forward : backwardExtra;
+		valF = downWind ? backward : current;
 		valC = downWind ? current : backward;
 
 		float fluxBackward = advectPPMFlux(velB, valB, valC, valF, dt);
 
 
 		arrayOut[idx] = arrayIn[idx] - (dt / VOXELSIZE) * (fluxForward - fluxBackward);
-		//if (x == 0 && y == 16) printf("x %i y: %i, z %i value: %f, value2 %f, final %f, FE %f, F %f, C %f, B %f, BE %f, valuecurrent: %f\n", x, y, z, fluxForward, fluxBackward, (dt / VOXELSIZE) * (fluxForward - fluxBackward), forwardExtra, forward, current, backward, backwardExtra, test);
+		//if (x == 0 && y == 16 && z > 28) printf("x %i y: %i, z %i value: %f, value2 %f, final %f, FE %f, F %f, C %f, B %f, BE %f\n", x, y, z, fluxForward, fluxBackward, (dt / VOXELSIZE) * (fluxForward - fluxBackward), forwardExtra, forward, current, backward, backwardExtra);
 		//if (x == 0 && y == 16) printf("x %i y: %i, z %i value: %f, value2 %f, final %f, prev: %f, now: %f, vel %f, velB %f\n", x, y, z, fluxForward, fluxBackward, (dt / VOXELSIZE) * (fluxForward - fluxBackward), arrayIn[idx], arrayOut[idx], velfieldZ[idx], velB);
 	}
 }
@@ -1088,27 +1088,27 @@ __global__ void calculateCloudCoverGPU(float* output, const float* Qc, const flo
 {
 	const int x = threadIdx.x;
 	const int z = threadIdx.x;
-	const int idx = x + z * GRIDSIZESKYX;
+	const int idxG = x + z * GRIDSIZESKYX;
 
 	float totalCloudContent = 0.0f;
 	const float qfull = 1.2f; // a threshold value where all incoming radiation is reflected by cloud matter: http://meto.umd.edu/~zli/PDF_papers/Li%20Nature%20Article.pdf
-	for (int y = GHeight[idx] + 1; y < GRIDSIZESKYY; y++) totalCloudContent += (Qc[getIdx(x, y, z)] + Qw[getIdx(x, y, z)]) * VOXELSIZE;
-	output[idx] = fmin(totalCloudContent / qfull, 1.0f);
+	for (int y = GHeight[idxG] + 1; y < GRIDSIZESKYY; y++) totalCloudContent += (Qc[getIdx(x, y, z)] + Qw[getIdx(x, y, z)]) * VOXELSIZE;
+	output[idxG] = fmin(totalCloudContent / qfull, 1.0f);
 }
 
 __global__ void calculateGroundTempGPU(float* groundT, const float dtSpeed, const float irridiance, const float* LC)
 {
 	const int x = threadIdx.x;
-	const int z = threadIdx.x;
-	const int idx = x + z * GRIDSIZESKYX;
+	const int z = blockIdx.x;
+	const int idxG = x + z * GRIDSIZESKYX;
 
-	const float groundTemp = groundT[idx];
+	const float groundTemp = groundT[idxG];
 	const float absorbedRadiationAlbedo = 0.25f;  //How much light is reflected back? 0 = absorbes all, 1 = reflects all
 	const float groundThickness = 1.0f; //Just used 1 meter
 	const float densityGround = 1500.0f;
 	const double T4 = groundTemp * groundTemp * groundTemp * groundTemp;
 
-	groundT[idx] += dtSpeed * ((1 - LC[idx]) * (((1 - absorbedRadiationAlbedo) * irridiance - ConstantsGPU::ge * ConstantsGPU::oo * T4) / (groundThickness * densityGround * ConstantsGPU::Cpds)));
+	groundT[idxG] += dtSpeed * ((1 - LC[idxG]) * (((1 - absorbedRadiationAlbedo) * irridiance - ConstantsGPU::ge * ConstantsGPU::oo * T4) / (groundThickness * densityGround * ConstantsGPU::Cpds)));
 }
 
 __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTemp, const float* Qv, const float* Qr, const float* Qs, const float* Qi,
@@ -1124,15 +1124,10 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 	int idx = getIdx(x, y, z);
 	const int idxsData = threadIdx.x + 1 + (threadIdx.y + 1) * sharedBlockWidth;
 
-	bool up = neigh[idx].up == SKY;
-	bool down = neigh[idx].down == SKY;
-
 	float forwardQv = Qv[idx];
 	float forwardT = potTemp[idx];
-	float currentQv = 0.0f;
-	float currentT = 0.0f;
-	currentQv = fillNeighbourData(neigh[idx].backward, bounds, Qv, idx, -GRIDSIZESKYX * GRIDSIZESKYY, 0.0f);
-	currentT = fillNeighbourData(neigh[idx].backward, bounds, potTemp, idx, -GRIDSIZESKYX * GRIDSIZESKYY, 0.0f);
+	float currentQv = fillNeighbourData(neigh[idx].backward, bounds, Qv, idx, -GRIDSIZESKYX * GRIDSIZESKYY, 0.0f);
+	float currentT = fillNeighbourData(neigh[idx].backward, bounds, potTemp, idx, -GRIDSIZESKYX * GRIDSIZESKYY, 0.0f);
 	float backwardQv = 0;
 	float backwardT = 0;
 
@@ -1143,16 +1138,19 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 		__syncthreads();
 		idx = getIdx(x, y, z);
 
+		bool up = neigh[idx].up == SKY;
+		bool down = neigh[idx].down == SKY;
+
 		backwardQv = currentQv;
 		backwardT = currentT;
 		currentQv = forwardQv;
 		currentT = forwardT;
 		forwardQv = fillNeighbourData(neigh[idx].forward, bounds, Qv, idx, GRIDSIZESKYX * GRIDSIZESKYY, 0.0f);
 		forwardT = fillNeighbourData(neigh[idx].forward, bounds, potTemp, idx, GRIDSIZESKYX * GRIDSIZESKYY, 0.0f);
-		const float groundPs = groundP[x + z + GRIDSIZESKYX];
+		const float groundPs = groundP[x + z * GRIDSIZESKYX];
 		const float	psC = pressures[idx];
-		const float psU = pressures[idx + GRIDSIZESKYX];
-		const float psD = pressures[idx - GRIDSIZESKYX];
+		const float psU = up ? pressures[idx + GRIDSIZESKYX] : psC;
+		const float psD = down ? pressures[idx - GRIDSIZESKYX] : psC;
 
 		fillSharedNeigh(sharedBlockQv, Qv, nullptr, z, bounds);
 		fillSharedNeigh(sharedBlockT, potTemp, nullptr, z, bounds);
@@ -1176,9 +1174,9 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 
 		// ------------ Temp ------------
 
-		const float TDown = sharedBlockQv[idxsData - sharedBlockWidth] * powf(psD / groundPs, ConstantsGPU::Rsd / ConstantsGPU::Cpd);
-		const float T = sharedBlockQv[idxsData] * powf(psC / groundPs, ConstantsGPU::Rsd / ConstantsGPU::Cpd);
-		const float TUp = sharedBlockQv[idxsData + sharedBlockWidth] * powf(psU / groundPs, ConstantsGPU::Rsd / ConstantsGPU::Cpd);
+		const float TDown = sharedBlockT[idxsData - sharedBlockWidth] * powf(psD / groundPs, ConstantsGPU::Rsd / ConstantsGPU::Cpd);
+		const float T = sharedBlockT[idxsData] * powf(psC / groundPs, ConstantsGPU::Rsd / ConstantsGPU::Cpd);
+		const float TUp = sharedBlockT[idxsData + sharedBlockWidth] * powf(psU / groundPs, ConstantsGPU::Rsd / ConstantsGPU::Cpd);
 
 		// Temp for up and down based on adiabatics
 		float Tadiab = sharedBlockT[idxsData], TadiabUp = sharedBlockT[idxsData], TadiabDown = sharedBlockT[idxsData];
