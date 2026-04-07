@@ -61,7 +61,7 @@ public:
 
 	void advectGroundWater(const float dt, const float speed);
 	void setTempsAtGround(const float dt, const float speed);
-	void advectPPMWGPU(float* array, const float* defaultVal, const float dt);
+	void advectPPMWGPU(float* array, const float* defaultVal, boundsEnv boundsVal, const float dt);
 	// fallVelType: rain = 0, snow = 1, hail = 2
 	void advectPrecip(float* array, const int fallVelType, const float dt);
 	//------------------------------------------
@@ -119,6 +119,15 @@ private:
 	float m_sunStrength = 1.0f;
 	bool m_pauseDiurnal = false;
 
+	// Defined boundaries
+	const boundsEnv m_boundsVelX{ CUSTOM, CUSTOM, DIRICHLET };
+	const boundsEnv m_boundsVelY{ DIRICHLET, DIRICHLET, DIRICHLET };
+	const boundsEnv m_boundsVelZ{ CUSTOM, CUSTOM, DIRICHLET };
+
+	const boundsEnv m_boundsMixingRatios{ DIRICHLET, DIRICHLET, DIRICHLET };
+	const boundsEnv m_boundsVapor{ CUSTOM, CUSTOM, CUSTOM };
+	const boundsEnv m_boundsPotTemp{ CUSTOM, CUSTOM, CUSTOM };
+
 	//GPU variables
 	float* m_array;
 	float* m_outputArray;
@@ -163,8 +172,8 @@ private:
 
 	bool m_groundChanged{ true };
 	float* m_precon; //Precon (pressure projection)
-	char4* m_A; //A matrix (pressure projection)
-
+	float4* m_A; //A matrix (pressure projection)
+	
 	//CPU storage
 	float m_velXCPU[GRIDSIZESKY];
 	float m_velYCPU[GRIDSIZESKY];

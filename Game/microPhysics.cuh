@@ -121,7 +121,6 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* Q
 
 
 __device__ float FPVCON(const float temp, const float ps, const float Qv, const float QWS, const float dt, const float speed);
-__device__ float FPVDEP(const float temp, const float ps, const float Qv, const float QWI, const float dt, const float speed);
 
 __device__ float FPIMLT(const float temp, const float Qc); //TODO: limit melting?
 __device__ float FPIDW(const float dt, const float temp, const float Qc, const float Qw, const float Dair, const float ps);

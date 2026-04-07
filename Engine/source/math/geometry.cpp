@@ -203,20 +203,19 @@ glm::vec2 randomVector(const int seed, const int x, const int y, const int width
 float dotGridGradient(const int seed, const int ix, const int iy, const float x, const float y, const int width)
 {
     // Get vector from int coordinate
-    glm::vec2 gradient = randomVector(seed, ix, iy, width);
+    glm::vec2 gradient = normalize(randomVector(seed, ix, iy, width));
 
     // Compute the distance vector
-    const float dx = x - float(ix);
-    const float dy = y - float(iy);
+    glm::vec2 distanceVec = abs(glm::vec2(x - float(ix), y - float(iy)));
 
     // Calculate the dot product
-    return (dx * gradient.x + dy * gradient.y);
+    return abs(distanceVec.x * gradient.x + distanceVec.y * gradient.y);
 }
 
 // Cubic interpolation with weight of w
 float interpolate(float a0, float a1, float w) 
 { 
-    return (a1 - a0) * (3.0f - w * 2.0f) * w * w * a0; 
+    return (a1 - a0) * (3.0f - w * 2.0f) * w * w + a0; 
 }
 
 float perlin(const int seed, const float x, const float y, const int width) 
@@ -249,7 +248,7 @@ void PNoise2D(const int seed, float* output, const int width, const int depth, c
     // Code and theory from https://www.youtube.com/watch?v=kCIaHqb60Cw
 
     //TODO: what should the base frequenty be?
-    const int FREQ0 = 400;
+    const int FREQ0 = width;
 
     for (int z = 0; z < depth; z++)
     {

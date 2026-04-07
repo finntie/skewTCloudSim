@@ -19,3 +19,6 @@ __global__ void debugPrintArray(const float* array, const int depth);
 
 // Debug print int array, use for how many blocks in Y and how many threads in X.
 __global__ void debugPrintArray(const int* array, const int depth);
+
+// Randomizes values in array from min until max
+__global__ void randomArray(float* array, const float min, const float max, const int depth, const unsigned int seed = 0);

@@ -98,12 +98,16 @@ __device__ float FPIMLT(const float temp, const float Qc)
 
 __device__ float FPIDW(const float dt, const float temp, const float Qc, const float Qw, const float Dair, const float ps)
 {
-    if (temp < 0.0f && Qw > 0.0f && Qc > 0.0f)
+    if (temp < 0.0f && Qw > 0.0f)
     {
         //Formula from https://journals.ametsoc.org/view/journals/mwre/128/4/1520-0493_2000_128_1070_asfcot_2.0.co_2.xml and WeatherScapes
         const float a = 0.5f; // capacitance for hexagonal crystals
         const float quu = fmax(1e-12f * NiGPU(temp) / (Dair * 0.001f), Qc);
-        return powf((1 - a) * cvdGPU(temp, ps, Dair * 0.001f) * dt + powf(quu, 1 - a), 1 / (1 - a)) - Qc;
+        const float iceCloud =  powf((1 - a) * cvdGPU(temp, ps, Dair * 0.001f) * dt + powf(quu, 1 - a), 1 / (1 - a)) - Qc;
+
+        // Calculate liquid-Ice fraction as described in the paper
+        return iceCloud;
+
     }
     return 0.0f;
 }
@@ -1056,11 +1060,11 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
 
         //Is ground?
         if (y <= _groundHeight[idxG]) continue;
-        if (x == GRIDSIZESKYX - 1) continue; //TODO: Right side is not fully working due to pressure project 
+        //if (x == GRIDSIZESKYX - 1) continue; //TODO: Right side is not fully working due to pressure project 
 
 
         float PVCON{ 0.0f }; // Condensation/Evaporation rate of cloud water to vapor
-        float PVDEP{ 0.0f }; // Deposition/Sublimation rate of cloud ice to vapor.
+        float PVDEP{ 0.0f }; // Redacted | now Qc forms using PIDW only.~~Deposition/Sublimation rate of cloud ice to vapor.~~
 
         float PIMLT{ 0.0f }; // Melting of cloud ice to form cloud water T > 0
         float PIDW{ 0.0f };  // Depositional growth of cloud ice at expense of cloud water
@@ -1133,6 +1137,7 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
         //Setting variables
         PVCON = FPVCON(tempC, ps, Qv, QWS, dt, speed);
         PVDEP = FPVDEP(tempC, ps, Qv, QWI, dt, speed);
+        PVDEP = fminf(PVDEP, 0.0f); //TODO: TEST limit to only sublimate
 
         PIMLT = FPIMLT(tempC, Qc);
         PIDW = FPIDW(dt, tempC, Qc, Qw, Dair, ps);

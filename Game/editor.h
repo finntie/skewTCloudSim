@@ -122,7 +122,7 @@ private:
 
 	// Viewing Settings
 	bool m_viewSlice{ false };
-	bool m_viewGround{ false };
+	bool m_viewGround{ true };
 	// X = 0, Y = 1, Z = 2
 	int m_viewSliceCoord{ 0 };
 	int m_atSliceViewSlice{ 0 };

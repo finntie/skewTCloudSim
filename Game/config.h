@@ -1,28 +1,37 @@
 #pragma once
 
 #define GRIDSIZESKYX 32
-#define GRIDSIZESKYY 32
+#define GRIDSIZESKYY 64
 #define GRIDSIZESKYZ 32
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY * GRIDSIZESKYZ)
 #define GRIDSIZEGROUND (GRIDSIZESKYX * GRIDSIZESKYZ)
-#define VOXELSIZE 64.0f //Meters
+#define VOXELSIZE 256.0f //Meters
 
 // Data graph
 #define MAXGRAPHLENGTH 100
 
 
 //Storage array for setting boundary conditions easier.
-enum envType
+enum envType : unsigned char
 {
-	SKY, OUTSIDE, GROUND
+	SKY, GROUND
+};
+
+struct singleNeigh
+{
+	singleNeigh() = default;
+	singleNeigh(bool outside, envType type) : outside(outside), type(type) {}
+	inline bool valid() { return (!outside && type == SKY); }
+	bool outside{ false };
+	envType type{ SKY };
 };
 
 //Struct containing neighbouring values, if they are SKY, OUTSIDE or GROUND
 struct Neigh
 {
 	//With forward being +z and backward -z
-	envType left, right, up, down, forward, backward;
+	singleNeigh left, right, up, down, forward, backward;
 };
 
 enum direction

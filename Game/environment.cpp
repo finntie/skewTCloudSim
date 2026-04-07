@@ -480,10 +480,10 @@ void environment::diffuseAndAdvectTemp(const float dt)
 				const int idxGD = j % GRIDSIZESKYX;
 
 				//TODO: could use a function inside this function which switches over the types, is faster.
-				const float l = m_NeighData[j].left == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].left == GROUND && isGroundLevel(idxGL, int(yPos)) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGL]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGL]) + 273.15f : dif[j - 1];
-				const float r = m_NeighData[j].right == OUTSIDE ? getIsentropicTemp(yPos) : m_NeighData[j].right == GROUND && isGroundLevel(idxGR, int(yPos)) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGR]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGR]) + 273.15f : dif[j + 1];
-				const float d = m_NeighData[j].down == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGD]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGD]) + 273.15f : dif[j - GRIDSIZESKYX];
-				const float u = m_NeighData[j].up == OUTSIDE ? getIsentropicTemp(yPos) : dif[j + GRIDSIZESKYX];
+				const float l = m_NeighData[j].left.outside ? getIsentropicTemp(yPos) : m_NeighData[j].left.type == GROUND && isGroundLevel(idxGL, int(yPos)) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGL]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGL]) + 273.15f : dif[j - 1];
+				const float r = m_NeighData[j].right.outside ? getIsentropicTemp(yPos) : m_NeighData[j].right.type == GROUND && isGroundLevel(idxGR, int(yPos)) ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGR]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGR]) + 273.15f : dif[j + 1];
+				const float d = m_NeighData[j].down.type == GROUND ? meteoformulas::potentialTemp(float(m_groundGrid.T[idxGD]) - 273.25f, m_pressures[int(yPos)], m_groundGrid.P[idxGD]) + 273.15f : dif[j - GRIDSIZESKYX];
+				const float u = m_NeighData[j].up.outside ? getIsentropicTemp(yPos) : dif[j + GRIDSIZESKYX];
 
 				dif[j] = (m_envGrid.potTemp[j] + k * (l + r + u + d)) / (1 + 4 * k);
 			}
@@ -615,20 +615,20 @@ void environment::diffuseAndAdvect(const float dt, float* array, std::vector<flo
 					//TODO: could use a function inside this function which switches over the types, is faster.
 					if (vapor) //If vapor, we use default value
 					{
-						if (m_NeighData[j].down == GROUND) { dif[j] = array[j]; continue; }
-						const float left = m_NeighData[j].left == OUTSIDE ? getIsentropicVapor(yPos) : m_NeighData[j].left == GROUND ? dif[j] : dif[j - 1];
-						const float right = m_NeighData[j].right == OUTSIDE ? getIsentropicVapor(yPos) : m_NeighData[j].right == GROUND ? dif[j] : dif[j + 1];
-						const float down = m_NeighData[j].down == GROUND ? dif[j] : dif[j - GRIDSIZESKYX];
-						const float up = m_NeighData[j].up == OUTSIDE ? getIsentropicVapor(yPos) : dif[j + GRIDSIZESKYX]; //Neumann due to being diffusion
+						if (m_NeighData[j].down.type == GROUND) { dif[j] = array[j]; continue; }
+						const float left = m_NeighData[j].left.outside ? getIsentropicVapor(yPos) : m_NeighData[j].left.type == GROUND ? dif[j] : dif[j - 1];
+						const float right = m_NeighData[j].right.outside ? getIsentropicVapor(yPos) : m_NeighData[j].right.type == GROUND ? dif[j] : dif[j + 1];
+						const float down = m_NeighData[j].down.type == GROUND ? dif[j] : dif[j - GRIDSIZESKYX];
+						const float up = m_NeighData[j].up.outside ? getIsentropicVapor(yPos) : dif[j + GRIDSIZESKYX]; //Neumann due to being diffusion
 					
 						dif[j] = (array[j] + k * (left + right + up + down)) / (1 + 4 * k);
 					}
 					else // Else use nuemann
 					{
-						const float left = m_NeighData[j].left == OUTSIDE ? dif[j] : m_NeighData[j].left == GROUND ? dif[j] : dif[j - 1];
-						const float right = m_NeighData[j].right == OUTSIDE ? dif[j] : m_NeighData[j].right == GROUND ? dif[j] : dif[j + 1];
-						const float down = m_NeighData[j].down != SKY ? dif[j] : dif[j - GRIDSIZESKYX];
-						const float up = m_NeighData[j].up == OUTSIDE ? 0.0f : dif[j + GRIDSIZESKYX];
+						const float left = m_NeighData[j].left.outside ? dif[j] : m_NeighData[j].left.type == GROUND ? dif[j] : dif[j - 1];
+						const float right = m_NeighData[j].right.outside ? dif[j] : m_NeighData[j].right.type == GROUND ? dif[j] : dif[j + 1];
+						const float down = m_NeighData[j].down.type != SKY ? dif[j] : dif[j - GRIDSIZESKYX];
+						const float up = m_NeighData[j].up.outside ? 0.0f : dif[j + GRIDSIZESKYX];
 	
 						dif[j] = (array[j] + k * (left + right + up + down)) / (1 + 4 * k);
 					}
@@ -742,7 +742,7 @@ void environment::interPolatePrecip(const float dt, float* array, const int fall
 				const float density = m_pressures[y] * 100 / (Rsd * Tv); //Convert Pha to Pa
 				fallVelocitiesPrecip = calculateFallingVelocity(i, density, fallVelType);
 			}
-			if (m_NeighData[i].up == SKY)
+			if (!m_NeighData[i].up.outside)
 			{
 				const int iUP = i + GRIDSIZESKYX;
 				const int yUP = iUP / GRIDSIZESKYX;
@@ -769,7 +769,7 @@ void environment::interPolatePrecip(const float dt, float* array, const int fall
 				break;
 			}
 
-			if (m_NeighData[i].up == SKY)
+			if (!m_NeighData[i].up.outside)
 			{
 				array[i] += dt * std::min((fallVelUp / VOXELSIZE) * array[i + GRIDSIZESKYX], array[i + GRIDSIZESKYX]); //Grab % of precip above
 			}
@@ -849,7 +849,7 @@ void environment::PPMWAdvect(float* array, float* defaultVal, const int i, const
 	//Parabolic Flux formula substituted from https://mom6.readthedocs.io/en/main/api/generated/pages/PPM.html 
 	//And help from chat-GPT 
 
-	if (m_NeighData[i].right == OUTSIDE)
+	if (m_NeighData[i].right.outside)
 	{
 		return;
 	}
@@ -877,7 +877,7 @@ float environment::PPMWAdvectFlux(float* array, float* defaultVal, const int idx
 	const int idxY = idx / GRIDSIZESKYX;
 
 	float veli = 0.0f;
-	if (!right && ((x && m_NeighData[idx].left != SKY) || (!x && m_NeighData[idx].down != SKY)))
+	if (!right && ((x && !m_NeighData[idx].left.valid()) || (!x && !m_NeighData[idx].down.valid())))
 	{
 		//If there is no left or down, use center
 		veli = (x ? m_envGrid.velField[idx].x : m_envGrid.velField[idx].y);
@@ -907,8 +907,8 @@ float environment::PPMWAdvectFlux(float* array, float* defaultVal, const int idx
 	float qLeft{ 0.0f };
 
 	//Winds from outside the grid, we already returned if left faced. 
-	if (right && downWind && ((x && m_NeighData[idx].right != SKY) || (!x && m_NeighData[idx].up != SKY)) ||
-		!right && downWind && ((x && m_NeighData[idx].left != SKY) || (!x && m_NeighData[idx].down != SKY)))
+	if (right && downWind && ((x && !m_NeighData[idx].right.valid()) || (!x && !m_NeighData[idx].up.valid())) ||
+		!right && downWind && ((x && !m_NeighData[idx].left.valid()) || (!x && !m_NeighData[idx].down.valid())))
 	{
 		if (defaultVal == nullptr)
 		{
@@ -925,14 +925,14 @@ float environment::PPMWAdvectFlux(float* array, float* defaultVal, const int idx
 	else if (x)
 	{
 		qi = array[i];
-		qRight = m_NeighData[i].right != SKY ? array[i] : array[i + 1];
-		qLeft = m_NeighData[i].left != SKY ? array[i] : array[i - 1];
+		qRight = !m_NeighData[i].right.valid() ? array[i] : array[i + 1];
+		qLeft = !m_NeighData[i].left.valid() ? array[i] : array[i - 1];
 	}
 	else
 	{
 		qi = array[iy];
-		qRight = m_NeighData[iy].up != SKY ? array[iy] : array[iy + GRIDSIZESKYX];
-		qLeft = m_NeighData[iy].down != SKY ? array[iy] : array[iy - GRIDSIZESKYX];
+		qRight = !m_NeighData[iy].up.valid() ? array[iy] : array[iy + GRIDSIZESKYX];
+		qLeft = !m_NeighData[iy].down.valid() ? array[iy] : array[iy - GRIDSIZESKYX];
 	}
 
 	const float qMin = std::min(qLeft, std::min(qi, qRight));
@@ -1053,7 +1053,7 @@ void environment::updateVelocityField(const float dt)
 		if (isGround(i)) continue;
 		
 		//TODO: this is not really a good solution.
-		if (m_NeighData[i].left == OUTSIDE || m_NeighData[i].right == OUTSIDE || m_NeighData[i].up == OUTSIDE || m_NeighData[i].down == OUTSIDE)
+		if (m_NeighData[i].left.outside || m_NeighData[i].right.outside || m_NeighData[i].up.outside || m_NeighData[i].down.outside)
 		{
 			continue;
 		}
@@ -1089,10 +1089,10 @@ void environment::updateVelocityField(const float dt)
 				{
 					if ((i + loop + (i / GRIDSIZESKYX)) % 2 == 0 || isGround(i)) continue;
 	
-					const glm::vec2 left  = m_NeighData[i].left  == OUTSIDE ? dif[i] : m_NeighData[i].left == GROUND ? glm::vec2(0.0f) : dif[i - 1];	// Neumann (Or no slip)
-					const glm::vec2 right = m_NeighData[i].right == OUTSIDE ? dif[i] : m_NeighData[i].right == GROUND ? glm::vec2(0.0f) : dif[i + 1];	// Neumann (Or no slip)
-					const glm::vec2 up    = m_NeighData[i].up    != SKY ? glm::vec2(dif[i].x, 0.0f) : dif[i + GRIDSIZESKYX]; // free slip
-					const glm::vec2 down  = m_NeighData[i].down  != SKY ? glm::vec2(0.0f) : dif[i - GRIDSIZESKYX]; // no slip
+					const glm::vec2 left  = m_NeighData[i].left.outside  ? dif[i] : m_NeighData[i].left.type == GROUND ? glm::vec2(0.0f) : dif[i - 1];	// Neumann (Or no slip)
+					const glm::vec2 right = m_NeighData[i].right.outside  ? dif[i] : m_NeighData[i].right.type == GROUND ? glm::vec2(0.0f) : dif[i + 1];	// Neumann (Or no slip)
+					const glm::vec2 up    = !m_NeighData[i].up.valid()  ? glm::vec2(dif[i].x, 0.0f) : dif[i + GRIDSIZESKYX]; // free slip
+					const glm::vec2 down  = !m_NeighData[i].down.valid() ? glm::vec2(0.0f) : dif[i - GRIDSIZESKYX]; // no slip
 	
 					dif[i] = ((m_envGrid.velField[i].x, m_envGrid.velField[i].y) + k * (left + right + up + down)) / (1 + 4 * k);
 				}
@@ -1113,11 +1113,11 @@ void environment::updateVelocityField(const float dt)
 
 		for (int i = 0; i < GRIDSIZESKY; i++)
 		{
-			if (m_NeighData[i].up != SKY)
+			if (!m_NeighData[i].up.valid())
 			{
 				m_envGrid.velField[i].y = 0.0f;
 			}
-			if (m_NeighData[i].right != SKY)
+			if (!m_NeighData[i].right.valid())
 			{
 				m_envGrid.velField[i].x = m_defaultVel[i / GRIDSIZESKYX];
 			}
@@ -1503,10 +1503,10 @@ glm::vec2 environment::vorticityConfinement(const int i)
 	const float density = 1.225f; //Air density
 
 	const float center = curl(i, true);
-	const float left  = m_NeighData[i].left  == OUTSIDE ? center : m_NeighData[i].left == GROUND ? center : curl(i - 1);	// Neumann
-	const float right = m_NeighData[i].right == OUTSIDE ? center : m_NeighData[i].right == GROUND ? center : curl(i + 1);	// Neumann
-	const float up    = m_NeighData[i].up    != SKY ? center : curl(i + GRIDSIZESKYX); // Neumann
-	const float down  = m_NeighData[i].down  != SKY ? center : curl(i - GRIDSIZESKYX); // Neumann
+	const float left  = m_NeighData[i].left.outside ? center : m_NeighData[i].left.type == GROUND ? center : curl(i - 1);	// Neumann
+	const float right = m_NeighData[i].right.outside ? center : m_NeighData[i].right.type == GROUND ? center : curl(i + 1);	// Neumann
+	const float up    = !m_NeighData[i].up.valid() ? center : curl(i + GRIDSIZESKYX); // Neumann
+	const float down  = !m_NeighData[i].down.valid() ? center : curl(i - GRIDSIZESKYX); // Neumann
 
 	// stress tensor (incompressible) http://www.astro.yale.edu/vdbosch/astro320_summary6.pdf
 	const glm::vec2 stressTensor = dynVisc * lap(i);
@@ -1580,10 +1580,10 @@ bool environment::getInterpolVel(glm::vec2 Ppos, bool U, float& output)
 
 	//TODO: when at top, use free-slip, not no-slip.
 
-	const glm::vec2 v00 = outside(x, y)			|| isGround(int(x), int(y))			|| m_NeighData[index00].right == OUTSIDE ? glm::vec2(m_defaultVel[int(y)], 0.0f) : m_envGrid.velField[index00];
-	const glm::vec2 v10 = outside(x + 1, y)		|| isGround(int(x) + 1, int(y))		|| m_NeighData[index10].right == OUTSIDE ? glm::vec2(m_defaultVel[int(y)], 0.0f) : m_envGrid.velField[index10];
-	const glm::vec2 v01 = outside(x, y + 1)		|| isGround(int(x), int(y) + 1)		|| m_NeighData[index01].right == OUTSIDE ? glm::vec2(m_defaultVel[int(y)], 0.0f) : m_envGrid.velField[index01];
-	const glm::vec2 v11 = outside(x + 1, y + 1) || isGround(int(x) + 1, int(y) + 1) || m_NeighData[index11].right == OUTSIDE ? glm::vec2(m_defaultVel[int(y)], 0.0f) : m_envGrid.velField[index11];
+	const glm::vec2 v00 = outside(x, y)			|| isGround(int(x), int(y))			|| m_NeighData[index00].right.outside ? glm::vec2(m_defaultVel[int(y)], 0.0f) : m_envGrid.velField[index00];
+	const glm::vec2 v10 = outside(x + 1, y)		|| isGround(int(x) + 1, int(y))		|| m_NeighData[index10].right.outside ? glm::vec2(m_defaultVel[int(y)], 0.0f) : m_envGrid.velField[index10];
+	const glm::vec2 v01 = outside(x, y + 1)		|| isGround(int(x), int(y) + 1)		|| m_NeighData[index01].right.outside ? glm::vec2(m_defaultVel[int(y)], 0.0f) : m_envGrid.velField[index01];
+	const glm::vec2 v11 = outside(x + 1, y + 1) || isGround(int(x) + 1, int(y) + 1) || m_NeighData[index11].right.outside ? glm::vec2(m_defaultVel[int(y)], 0.0f) : m_envGrid.velField[index11];
 
 
 	//Interpolate using bilinear interpolation, could be compressed
@@ -1617,11 +1617,11 @@ void environment::pressureProjectVelField()
 {
 	for (int i = 0; i < GRIDSIZESKY; i++)
 	{
-		if (m_NeighData[i].up != SKY)
+		if (!m_NeighData[i].up.valid())
 		{
 			m_envGrid.velField[i].y = 0.0f;
 		}
-		if (m_NeighData[i].right != SKY)
+		if (!m_NeighData[i].right.valid())
 		{
 			m_envGrid.velField[i].x = m_defaultVel[i / GRIDSIZESKYX];
 		}
@@ -1641,8 +1641,8 @@ void environment::pressureProjectVelField()
 		if (isGround(i)) continue;
 
 		//If at the right or upper cell, we don't add any value
-		const float NxPresProj = (m_NeighData[i].right != SKY) ? presProjections[i] : presProjections[i + 1];
-		const float NyPresProj = m_NeighData[i].up != SKY ? presProjections[i] : presProjections[i + GRIDSIZESKYX];
+		const float NxPresProj = !m_NeighData[i].right.valid() ? presProjections[i] : presProjections[i + 1];
+		const float NyPresProj = !m_NeighData[i].up.valid() ? presProjections[i] : presProjections[i + GRIDSIZESKYX];
 
 		const float scale = 1.0f;
 
@@ -1707,14 +1707,14 @@ void environment::calculatePresProj(std::vector<float>& p)
 			//Ceiling, and any ground will not be counted
 
 			if (isGround(x, y)) continue; 
-			A[idx].x = m_NeighData[idx].right != GROUND ? -1 : 0;
-			A[idx].y = m_NeighData[idx].up == SKY ? -1 : 0;
+			A[idx].x = m_NeighData[idx].right.type != GROUND ? -1 : 0;
+			A[idx].y = !m_NeighData[idx].up.outside ? -1 : 0;
 			A[idx].z = 0; 
 
 			if (A[idx].x) A[idx].z++;
 			if (A[idx].y) A[idx].z++;
-			if (m_NeighData[idx].left != GROUND) A[idx].z++;
-			if (m_NeighData[idx].down == SKY)  A[idx].z++;
+			if (m_NeighData[idx].left.type != GROUND) A[idx].z++;
+			if (!m_NeighData[idx].down.outside)  A[idx].z++;
 		}
 	}
 
@@ -1824,10 +1824,10 @@ void environment::calculateDivergence(std::vector<float>& output)
 
 		if (isGround(i)) continue;
 		float Uneg = 1.0f;
-		const float Ucurr = ((m_NeighData[i].right == OUTSIDE) && i != 0) ? m_defaultVel[i / GRIDSIZESKYX] : (m_NeighData[i].right == GROUND ? 0.0f : m_envGrid.velField[i].x);
-		const float Umin1 = (m_NeighData[i].left == OUTSIDE || i == 0) ? m_defaultVel[i / GRIDSIZESKYX] : (m_NeighData[i].left == GROUND ? 0.0f : m_envGrid.velField[i - 1].x);
+		const float Ucurr = ((m_NeighData[i].right.outside) && i != 0) ? m_defaultVel[i / GRIDSIZESKYX] : (m_NeighData[i].right.type == GROUND ? 0.0f : m_envGrid.velField[i].x);
+		const float Umin1 = (m_NeighData[i].left.outside || i == 0) ? m_defaultVel[i / GRIDSIZESKYX] : (m_NeighData[i].left.type == GROUND ? 0.0f : m_envGrid.velField[i - 1].x);
 		const float Vcurr = m_envGrid.velField[i].y;
-		const float Vmin1 = (m_NeighData[i].down == SKY && i - GRIDSIZESKYX >= 0) ? m_envGrid.velField[i - GRIDSIZESKYX].y : 0.0f;
+		const float Vmin1 = (m_NeighData[i].down.valid() && i - GRIDSIZESKYX >= 0) ? m_envGrid.velField[i - GRIDSIZESKYX].y : 0.0f;
 
 		output[i] = ((Ucurr - Umin1) * Uneg + (Vcurr - Vmin1));
 	}
@@ -2001,7 +2001,7 @@ glm::vec3 environment::calculateFallingVelocity(const int i, const float densAir
 
 void environment::updateMicroPhysics(const float dt, const int i, const float T, const float density)
 {
-	if (m_NeighData[i].right == OUTSIDE) return;
+	if (m_NeighData[i].right.outside) return;
 	const int idxX = i % GRIDSIZESKYX;
 	const int idxY = i / GRIDSIZESKYX;
 
@@ -2113,10 +2113,10 @@ float environment::curl(const int i, bool raw)
 {
 	//TODO: in 3D this part is different, could look at the fluid paper. (appendix A1.3)
 
-	const float left  = m_NeighData[i].left  != SKY ? getUV(i).x : getUV(i - 1).x;	// Neumann
-	const float right = m_NeighData[i].right != SKY ? getUV(i).x : getUV(i + 1).x;	// Neumann
-	const float up    = m_NeighData[i].up    != SKY ? getUV(i).y : getUV(i + GRIDSIZESKYX).y; // Neumann
-	const float down  = m_NeighData[i].down  != SKY ? getUV(i).y : getUV(i - GRIDSIZESKYX).y; // Neumann
+	const float left  = !m_NeighData[i].left .valid() ? getUV(i).x : getUV(i - 1).x;	// Neumann
+	const float right = !m_NeighData[i].right.valid() ? getUV(i).x : getUV(i + 1).x;	// Neumann
+	const float up    = !m_NeighData[i].up   .valid() ? getUV(i).y : getUV(i + GRIDSIZESKYX).y; // Neumann
+	const float down  = !m_NeighData[i].down .valid() ? getUV(i).y : getUV(i - GRIDSIZESKYX).y; // Neumann
 
 	const float deltaU = (right - left) / (2.0f * VOXELSIZE);
 	const float deltaV = (up - down) / (2.0f * VOXELSIZE);
@@ -2129,10 +2129,10 @@ float environment::curl(const int i, bool raw)
 float environment::div(const int i)
 {
 	//TODO: in 3D this part is different, could look at the fluid paper.
-	const float left  = m_NeighData[i].left  != SKY ? getUV(i).x : getUV(i - 1).x;	// Neumann
-	const float right = m_NeighData[i].right != SKY ? getUV(i).x : getUV(i + 1).x;	// Neumann
-	const float up    = m_NeighData[i].up    != SKY ? getUV(i).y : getUV(i + GRIDSIZESKYX).y; // Neumann
-	const float down  = m_NeighData[i].down  != SKY ? getUV(i).y : getUV(i - GRIDSIZESKYX).y; // Neumann
+	const float left  = !m_NeighData[i].left .valid() ? getUV(i).x : getUV(i - 1).x;	// Neumann
+	const float right = !m_NeighData[i].right.valid() ? getUV(i).x : getUV(i + 1).x;	// Neumann
+	const float up    = !m_NeighData[i].up   .valid() ? getUV(i).y : getUV(i + GRIDSIZESKYX).y; // Neumann
+	const float down  = !m_NeighData[i].down .valid() ? getUV(i).y : getUV(i - GRIDSIZESKYX).y; // Neumann
 
 	const float deltaU = (right - left) / (2.0f * VOXELSIZE);
 	const float deltaV = (up - down) / (2.0f * VOXELSIZE);
@@ -2145,10 +2145,10 @@ glm::vec2 environment::lap(const int i)
 {
 	//TODO: in 3D this part is different, could look at the fluid paper.
 	const glm::vec2 center = getUV(i);
-	const  glm::vec2 left  = m_NeighData[i].left !=  SKY ? center : getUV(i - 1);	// Neumann 
-	const  glm::vec2 right = m_NeighData[i].right != SKY ? center : getUV(i + 1);	// Neumann 
-	const  glm::vec2 up    = m_NeighData[i].up !=    SKY ? getUV(i) : getUV(i + GRIDSIZESKYX); // Neumann 
-	const  glm::vec2 down  = m_NeighData[i].down !=  SKY ? getUV(i) : getUV(i - GRIDSIZESKYX); // Neumann 
+	const  glm::vec2 left  = !m_NeighData[i].left.valid()  ? center : getUV(i - 1);	// Neumann 
+	const  glm::vec2 right = !m_NeighData[i].right.valid() ? center : getUV(i + 1);	// Neumann 
+	const  glm::vec2 up    = !m_NeighData[i].up.valid()    ? getUV(i) : getUV(i + GRIDSIZESKYX); // Neumann 
+	const  glm::vec2 down  = !m_NeighData[i].down.valid()  ? getUV(i) : getUV(i - GRIDSIZESKYX); // Neumann 
 
 	return { (right.x - 2 * center.x + left.x) / (VOXELSIZE * VOXELSIZE) +
 			 (up.x - 2 * center.x + down.x) / (VOXELSIZE * VOXELSIZE),
@@ -2197,11 +2197,23 @@ void environment::computeNeighArray()
 	{
 		for (int x = 0; x < GRIDSIZESKYX; x++)
 		{
-			const int i = x + y * GRIDSIZESKYX;
-			m_NeighData[i].left = (x == 0) ? OUTSIDE : (isGround(x - 1, y) ? GROUND : SKY);
-			m_NeighData[i].right = (x == GRIDSIZESKYX - 1) ? OUTSIDE : (isGround(x + 1, y) ? GROUND : SKY);
-			m_NeighData[i].down = (y == 0) ? GROUND : (isGround(x, y - 1) ? GROUND : SKY); // Down is always ground (at y == 0)
-			m_NeighData[i].up = (y == GRIDSIZESKYY - 1) ? OUTSIDE : (isGround(x, y + 1) ? GROUND : SKY);
+			int idx = x + y * GRIDSIZESKYX;
+			const bool currentG = isGround(x, y);
+
+			// Set all outside bools
+			// And set types to be GROUND if they are ground OR with all but up, when current is ground
+
+			m_NeighData[idx].left.outside = x == 0;
+			m_NeighData[idx].left.type = currentG || (!m_NeighData[idx].left.outside && isGround(x - 1, y)) ? GROUND : SKY;
+
+			m_NeighData[idx].right.outside = x == GRIDSIZESKYX - 1;
+			m_NeighData[idx].right.type = currentG || (!m_NeighData[idx].right.outside && isGround(x + 1, y)) ? GROUND : SKY;
+
+			m_NeighData[idx].down.outside = y == 0;
+			m_NeighData[idx].down.type = currentG || (!m_NeighData[idx].down.outside && isGround(x, y - 1)) ? GROUND : SKY;
+
+			m_NeighData[idx].up.outside = y == GRIDSIZESKYY - 1;
+			m_NeighData[idx].up.type = !m_NeighData[idx].up.outside && isGround(x, y + 1) ? GROUND : SKY;
 		}
 	}
 

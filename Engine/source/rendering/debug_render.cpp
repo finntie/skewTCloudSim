@@ -177,7 +177,6 @@ void bee::DebugRenderer::AddVoxel(DebugCategory::Enum category, const glm::vec3&
             color);
 
 
-
     //// Now all the y values
     //// Up
     //normal = glm::normalize(center - glm::vec3(center.x, center.y + halfSize, center.z));

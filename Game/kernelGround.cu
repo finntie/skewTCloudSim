@@ -12,10 +12,10 @@
 
 __global__ void initGroundHeightGPU(int* _GHeight, const float* noise, const float maxHeight)
 {
-	const int tX = threadIdx.x;
-	const int tZ = blockIdx.x;
-	const int idx = tX + tZ * GRIDSIZESKYX;
-	_GHeight[idx] = static_cast<int>(roundf(noise[idx] * maxHeight));
+	const int x = threadIdx.x;
+	const int z = blockIdx.x;
+	const int idxG = x + z * GRIDSIZESKYX;
+	_GHeight[idxG] = static_cast<int>(roundf(noise[idxG] * maxHeight));
 }
 
 __global__ void resetValueInGround(float* array, const int* _GHeight)

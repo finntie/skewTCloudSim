@@ -49,11 +49,10 @@ __global__ void advectPrecipGPU(float* Qj, const Neigh* neigh, const float* potT
 //-------------------Pressure Projection------------------
 
 __global__ void dotProductGPU(float* result, const float* a, const float* b);
-__global__ void applyAGPU(float* ouput, const float* input, const Neigh* neigh, const char4* A, boundsEnv bounds);
-__global__ void applyPreconditionerGPU(float* output, const float* precon, const float* div, char4* A);
-__global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, const float* velX, const float* velY, const float* velZ, const float* dens, const float* oldDens, boundsEnv boundsDens, boundsEnv boundsVel, const float dt);
-__global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, float* velX, float* velY, float* velZ, const float* density, const float* pressureEnv, 
-	boundsEnv boundsX, boundsEnv boundsY, boundsEnv boundsZ, boundsEnv boundsDens, const float dt);
+__global__ void applyAGPU(float* ouput, const float* input, const Neigh* neigh, const float4* A, boundsEnv bounds);
+__global__ void applyPreconditionerGPU(float* output, const float* precon, const float* div, float4* A);
+__global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, const float* velX, const float* velY, const float* velZ, const float* dens, const float* oldDens, const float* defaultDens, boundsEnv boundsDens, boundsEnv boundsVel, const float dt);
+__global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, float* velX, float* velY, float* velZ, const float* density, const float* pressureEnv, boundsEnv boundsDens, const float dt);
 __global__ void getMaxDivergence(float* output, const float* div);
 __global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* divergence, const float* s, const float* z);
 __global__ void endIteration(float* S1, float* S2, float* s, const float* z);
@@ -66,11 +65,11 @@ __global__ void updatePressure(float* envPressure, const float* presProj);
 __global__ void calculateCloudCoverGPU(float* output, const float* Qc, const float* Qw, const int* GHeight);
 __global__ void calculateGroundTempGPU(float* groundT, const float dtSpeed, const float irridiance, const float* LC);
 __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTemp, const float* Qv, const float* Qr, const float* Qs, const float* Qi,
-	const float* pressures, const float* groundP, float* buoyancyStor, const float maxDistance, boundsEnv bounds, const float dt);
+	const float* defTemp, const float* defQv, const float* pressures, const float* groundP, float* buoyancyStor, const float maxDistance, boundsEnv bounds, boundsEnv boundsVelY, const float dt);
 __global__ void addHeatGPU(const float* _Qv, float* potTemp, float* condens, float* depos, float* freeze);
 __global__ void computeNeighbourGPU(Neigh* neigh);
-__global__ void initAMatrix(char4* A, const Neigh* neigh, const float* density, boundsEnv bounds);
-__global__ void initPrecon(float* precon, const char4* A);
+__global__ void initAMatrix(float4* A, const Neigh* neigh, const float* density, const float* defDens, boundsEnv bounds);
+__global__ void initPrecon(float* precon, const float4* A);
 
 __global__ void initDensity(float* densityAir, const float* potTemp, const float* pressures, const float* Qv, const float* groundP);
 __global__ void calculateNewPressure(float* pressureEnv, const float* densityAir, const float* potTemp, const float* Qv, const float* GPressure);
@@ -98,14 +97,18 @@ __device__ bool isGroundGPU(const int x, const int y, const int z);
 
 __global__ void setToDefault(float* array, const float* defaultValue);
 
+// Get avarage velocity at index due to use of MAC grid, direction telling if we want X, Y or Z velocity
+__device__ __forceinline__ float getVelAtIdx(const Neigh* neigh, boundsEnv boundaryCondition, direction XYZ, const float* velocityField, const float customData, const int idx);
 
-__device__ void fillSharedNeigh(float* sharedData, const float* data, const float* customData, const int z, boundsEnv boundaryConditions);
+__device__ void fillSharedNeigh(const Neigh* neigh, float* sharedData, const float* data, const float* customData, const int z, boundsEnv boundaryConditions);
 
-__device__ __forceinline__ float fillNeighbourData(envType neighbourType, boundsEnv condition, const float* data, const int idx, const int offset, const float customData, bool up = false);
+__device__ __forceinline__ float fillNeighbourData(singleNeigh neighbourType, boundsEnv boundaryConditions, const float* data, const int idx, const int offset, const float customData, bool up = false);
 
 __device__ __forceinline__ void fillDataBoundCon(boundCon condition, float& output, const float data, const float customData);
 
-__device__ __forceinline__ envType getSafeNeighbourAtOffset(const Neigh* neigh, const int idx, const int offset, direction dir);
+__device__ __forceinline__ float getValueExtraDirShared(const Neigh* neigh, const float* data, const float* sharedData, const int idx, const int idxShared, const int offset, const int offsetShared, direction dir);
 
+
+__device__ __forceinline__ float getValueExtraForward(const Neigh* neigh, boundsEnv boundaryConditions, const float* data, const float customData, const int x, const int y, const int z);
 
 //------------------------------------------

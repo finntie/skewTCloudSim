@@ -431,7 +431,7 @@ void editor::setVariables()
 	if (MousePos3D.x < GRIDSIZESKYX && MousePos3D.x >= 0 && MousePos3D.z < GRIDSIZESKYZ && MousePos3D.z >= 0)
 	{
 		glm::ivec3 mousePos = { 0,0,0 };
-		if (!m_viewSlice)mousePos = glm::ivec3(int(MousePos3D.x), int(MousePos3D.z), int(m_atSliceViewSlice));
+		if (!m_viewSlice)mousePos = glm::ivec3(int(MousePos3D.x), int(MousePos3D.y), int(MousePos3D.y));
 		else if (m_viewSliceCoord == 0)mousePos = glm::ivec3{ int(m_atSliceViewSlice), int(MousePos3D.x), int(MousePos3D.z) };
 		else if (m_viewSliceCoord == 1)mousePos = glm::ivec3{ int(MousePos3D.x),  int(m_atSliceViewSlice), int(MousePos3D.z) };
 		else if (m_viewSliceCoord == 2)mousePos = glm::ivec3{ int(MousePos3D.x), int(MousePos3D.z), int(m_atSliceViewSlice) };
@@ -1049,6 +1049,7 @@ void editor::viewSky()
 						m_envData->m_envView.Qr[idx] + m_envData->m_envView.Qs[idx] + m_envData->m_envView.Qi[idx];
 
 					colorScheme.getColor("realistic", allValues, color);
+					if (allValues < 0.0001) continue;
 					break;
 				}
 				case DEBUG2:
@@ -1099,7 +1100,7 @@ void editor::viewGround()
 				break;
 			}
 
-			bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x] + 0.5f, z + 0.5f), 1.0f, { color, 1.0f });
+			bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x + z * GRIDSIZESKYX] + 0.5f, z + 0.5f), 1.0f, { color, 1.0f });
 		}
 	}
 }
