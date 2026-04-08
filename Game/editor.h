@@ -3,6 +3,7 @@
 #include "game.h"
 #include "config.h"
 #include <glm/glm.hpp>
+#include "tracing.h"
 
 class environment;
 class environmentGPU;
@@ -102,6 +103,9 @@ private:
 
 	//Variables
 	envDebugData* m_envData;
+
+	// Ray tracer
+	tracing tracerObj = tracing();
 
 	float m_deltatime = 1.0f / 60.0f;
 

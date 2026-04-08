@@ -736,21 +736,20 @@ __global__ void applyAGPU(float* output, const float* input, const Neigh* neigh,
 
 	for (z = 0; z < GRIDSIZESKYZ; z++)
 	{
-		// Early birds can wait
-		__syncthreads();
 		idx = getIdx(x, y, z);
+
+		const Neigh currentNeigh = neigh[idx];
 
 		fillSharedNeigh(neigh, sharedBlock, input, nullptr, z, bounds);
 
 		backward = current;
 		current = forward;
-		forward = fillNeighbourData(neigh[idx].forward, bounds, input, idx, GRIDSIZESKYX * GRIDSIZESKYY, 0.0f);
+		forward = fillNeighbourData(currentNeigh.forward, bounds, input, idx, GRIDSIZESKYX * GRIDSIZESKYY, 0.0f);
 
 		__syncthreads();
 
-		output[idx] = 0.0f;
 		// We do not return, since we still need to fill data
-		if (isGroundGPU(x, y, z)) continue;
+		bool isGround = isGroundGPU(x, y, z);
 
 		float l = sharedBlock[idxsData - 1];
 		float r = sharedBlock[idxsData + 1];
@@ -760,13 +759,13 @@ __global__ void applyAGPU(float* output, const float* input, const Neigh* neigh,
 		float b = backward;
 
 		// TODO: left and backwards 0 when not sky?
-		char ALeft = (!neigh[idx].left.outside || neigh[idx].left.type == SKY) ? A[idx - 1].x : 0;
-		char ADown = (!neigh[idx].down.outside || neigh[idx].down.type == SKY) ? A[idx - GRIDSIZESKYX].y : 0;
-		char ABack = (!neigh[idx].backward.outside || neigh[idx].backward.type == SKY) ? A[idx - GRIDSIZESKYX * GRIDSIZESKYY].z : 0;
+		char ALeft = (!currentNeigh.left.outside || currentNeigh.left.type == SKY) ? A[idx - 1].x : 0;
+		char ADown = (!currentNeigh.down.outside || currentNeigh.down.type == SKY) ? A[idx - GRIDSIZESKYX].y : 0;
+		char ABack = (!currentNeigh.backward.outside || currentNeigh.backward.type == SKY) ? A[idx - GRIDSIZESKYX * GRIDSIZESKYY].z : 0;
 		float4 ACur = A[idx];
 
 
-		output[idx] = ACur.w * current +
+		output[idx] = isGround ? 0.0f : ACur.w * current +
 			((ALeft * l +
 				ADown * d +
 				ABack * b +

@@ -212,6 +212,7 @@
     <ClCompile Include="microPhys.cpp" />
     <ClCompile Include="readTable.cpp" />
     <ClCompile Include="skewTer.cpp" />
+    <ClCompile Include="tracing.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="config.h" />
@@ -234,6 +235,7 @@
     <ClInclude Include="microPhysics.cuh" />
     <ClInclude Include="readTable.h" />
     <ClInclude Include="skewTer.h" />
+    <ClInclude Include="tracing.h" />
     <ClInclude Include="utils.cuh" />
     <ClInclude Include="zip_file.hpp" />
   </ItemGroup>

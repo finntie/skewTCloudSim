@@ -267,9 +267,9 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 
 		for (int i = 0; i < GRIDSIZESKY; i++)
 		{
-			velX[i] = 0.0f;//velField[i].x;
-			velY[i] = 0.0f;//velField[i].y;
-			velZ[i] = 0.0f;//velField[i].z;
+			velX[i] = velField[i].x;
+			velY[i] = velField[i].y;
+			velZ[i] = velField[i].z;
 		}
 		cudaMemcpy(m_envGrid.velfieldX, velX, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice);
 		cudaMemcpy(m_envGrid.velfieldY, velY, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice);
@@ -331,7 +331,7 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 		__debugbreak();
 	}
 	cudaMemcpy(noiseGPU, noise, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDefault);
-	const float maxHeight = 1.5f;
+	const float maxHeight = 10.5f;
 	initGroundHeightGPU << <GRIDSIZESKYZ, GRIDSIZESKYX >> > (m_GHeight, noiseGPU, maxHeight);
 	cudaDeviceSynchronize();
 

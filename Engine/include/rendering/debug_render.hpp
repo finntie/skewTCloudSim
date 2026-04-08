@@ -123,6 +123,11 @@ public:
                   const glm::vec4& color);
 
     /// <summary>
+    /// Add a filled voxel to be rendered
+    /// </summary>
+    void AddFilledVoxel(DebugCategory::Enum category, const glm::vec3& center, float size, const glm::vec4& color);
+
+    /// <summary>
     /// Turn on/off the debug renderer per category.
     /// </summary>
     void SetCategoryFlags(unsigned int flags) { m_categoryFlags = flags; }

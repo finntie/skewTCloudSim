@@ -427,17 +427,10 @@ void editor::setVariables()
 	//Mouse pos 3D
 	MousePos3D = bee::screenToGround(bee::Engine.Input().GetMousePosition());
 
-	//Mouse pos
-	if (MousePos3D.x < GRIDSIZESKYX && MousePos3D.x >= 0 && MousePos3D.z < GRIDSIZESKYZ && MousePos3D.z >= 0)
-	{
-		glm::ivec3 mousePos = { 0,0,0 };
-		if (!m_viewSlice)mousePos = glm::ivec3(int(MousePos3D.x), int(MousePos3D.y), int(MousePos3D.y));
-		else if (m_viewSliceCoord == 0)mousePos = glm::ivec3{ int(m_atSliceViewSlice), int(MousePos3D.x), int(MousePos3D.z) };
-		else if (m_viewSliceCoord == 1)mousePos = glm::ivec3{ int(MousePos3D.x),  int(m_atSliceViewSlice), int(MousePos3D.z) };
-		else if (m_viewSliceCoord == 2)mousePos = glm::ivec3{ int(MousePos3D.x), int(MousePos3D.z), int(m_atSliceViewSlice) };
+	//Mouse pos index
+	const int pointingAtIdx = tracerObj.getVoxelAtMouse();
+	m_mousePointingIndex = pointingAtIdx == -1 ? m_mousePointingIndex : pointingAtIdx; // Do not change if invalid index
 
-		m_mousePointingIndex = getIdx(mousePos.x, mousePos.y, mousePos.z);
-	}
 	if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::Space))
 	{
 		m_skewTidx = m_mousePointingIndex;
@@ -988,6 +981,8 @@ void editor::viewSky()
 {
 	auto& colorScheme = bee::Engine.DebugRenderer().GetColorScheme();
 
+	tracerObj.resetGrid(false);
+
 	// Usage of min and max view to possibly use slices
 	for (int z = m_minViewZ; z < m_maxViewZ; z++)
 	{
@@ -997,9 +992,12 @@ void editor::viewSky()
 			{
 				const int idx = getIdx(x, y, z);
 				const int idxG = x + z * GRIDSIZESKYX;
-				if (y <= m_envData->m_groundHeight[idxG])
+				if (y <= m_envData->m_groundHeight[idxG]) 
 				{
-					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.015f, z + 0.5f), 1.0f, bee::Colors::Brown);
+					if (y == m_envData->m_groundHeight[idxG]) continue; // Leaving 1 voxel space for ground itself
+					bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 0.999f, bee::Colors::Brown);
+					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, bee::Colors::Black);
+					tracerObj.setVoxelValue(idx, true); // Add voxel to tracer so we can select it
 					continue;
 				}
 
@@ -1063,7 +1061,11 @@ void editor::viewSky()
 				}
 
 				//bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.0f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
-				bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, { color, 1.0f });
+				
+				tracerObj.setVoxelValue(idx, true); // Add voxel to tracer so we can select it
+
+				bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 0.999f, { color, 1.0f });
+				bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, { 0.0f, 0.0f,0.0f, 1.0f });
 			}
 		}
 	}
@@ -1100,7 +1102,9 @@ void editor::viewGround()
 				break;
 			}
 
-			bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x + z * GRIDSIZESKYX] + 0.5f, z + 0.5f), 1.0f, { color, 1.0f });
+			bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x + z * GRIDSIZESKYX] + 0.5f, z + 0.5f), 0.999f, { color, 1.0f });
+			bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x + z * GRIDSIZESKYX] + 0.5f, z + 0.5f), 0.99f, { 0.0f, 0.0f, 0.0f, 1.0f });
+
 		}
 	}
 }

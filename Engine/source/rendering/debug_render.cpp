@@ -203,3 +203,46 @@ void bee::DebugRenderer::AddVoxel(DebugCategory::Enum category, const glm::vec3&
     //toPos.z -= size;
     //AddRectangle(category, fromPos, toPos, normal, color);
 }
+
+void bee::DebugRenderer::AddFilledVoxel(DebugCategory::Enum category,
+                                        const glm::vec3& center,
+                                        float size,
+                                        const glm::vec4& color)
+{
+    // Add Square on all 6 sides
+
+    // First add left and right plane (x values)
+
+    float halfSize = size * 0.5f;
+
+    // Right
+    glm::vec3 targetPos = glm::vec3(center.x + halfSize, center.y, center.z);
+    glm::vec3 normal = glm::normalize(center - targetPos);
+    AddFilledSquare(category, targetPos, size, normal, color);
+
+    // Left
+    targetPos.x -= size;
+    normal = glm::normalize(center - targetPos);
+    AddFilledSquare(category, targetPos, size, normal, color);
+
+    // Up
+    targetPos = glm::vec3(center.x, center.y + halfSize, center.z);
+    normal = glm::normalize(center - targetPos);
+    AddFilledSquare(category, targetPos, size, normal, color);
+
+    // Down
+    targetPos.y -= size;
+    normal = glm::normalize(center - targetPos);
+    AddFilledSquare(category, targetPos, size, normal, color);
+
+    // Forward
+    targetPos = glm::vec3(center.x, center.y, center.z + halfSize);
+    normal = glm::normalize(center - targetPos);
+    AddFilledSquare(category, targetPos, size, normal, color);
+
+    // Backward
+    targetPos.z -= size;
+    normal = glm::normalize(center - targetPos);
+    AddFilledSquare(category, targetPos, size, normal, color);
+
+}

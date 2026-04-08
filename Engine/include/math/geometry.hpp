@@ -6,6 +6,7 @@
 namespace bee
 {
 std::pair<glm::vec3, glm::vec3> ComputeAABB(const std::vector<glm::vec3>& pts);
+glm::vec3 mouseRayDirection(glm::vec2 screenPos, const glm::quat& cameraRot, const glm::mat4& cameraProjection);
 glm::vec3 screenToGround(glm::vec2 screenPos);
 glm::vec2 PosToScreen(glm::vec3 pos3D);
 glm::vec2 rotateAroundPoint2D(glm::vec2 point, glm::vec2 centerpoint, float rotation);

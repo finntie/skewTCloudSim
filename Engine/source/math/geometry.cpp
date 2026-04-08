@@ -26,41 +26,44 @@ std::pair<glm::vec3, glm::vec3> bee::ComputeAABB(const std::vector<glm::vec3>& p
     return {min, max};
 }
 
+glm::vec3 bee::mouseRayDirection(glm::vec2 screenPos, const glm::quat& cameraRot, const glm::mat4& cameraProjection)
+{ 
+    glm::vec4 deviceCoords;
+    deviceCoords.x = (2 * (screenPos.x) / Engine.Device().GetWidth()) - 1;
+    deviceCoords.y = 1 - (2 * (screenPos.y) / Engine.Device().GetHeight());
+    deviceCoords.z = -1;
+    deviceCoords.w = 1;
+
+    glm::mat invCam = inverse(cameraProjection);
+    // Multiply by inverse matrix
+    glm::vec4 transformed = (invCam * deviceCoords);
+
+    // Perform perspective divide (divide by w)
+    glm::vec3 pos3D = glm::vec3(transformed) / transformed.w;
+
+    // Now calculate the direction of the ray and apply camera rotation to get world rotation
+    return cameraRot * glm::normalize(pos3D - glm::vec3(0));
+}
+
 glm::vec3 bee::screenToGround(glm::vec2 screenPos)
 {
-    glm::vec3 pos3D;
-    glm::vec4 deviceCoords;
     glm::quat camRot;
     glm::vec3 camPos = glm::vec3(0);
     // Convert screenpos from -1 to 1;
     // If ImGui windows show up
 
-    
-    deviceCoords.x = (2 * (screenPos.x) / Engine.Device().GetWidth()) - 1;
-    deviceCoords.y = 1 - (2 * (screenPos.y) / Engine.Device().GetHeight());
-    
-    deviceCoords.z = -1;
-    deviceCoords.w = 1;
+    glm::vec3 worldDir{};
 
     // Calculate the 3D point.
     for (const auto& [CameraEntity, camera, transform] : Engine.ECS().Registry.view<Camera, Transform>().each())
     {
-        glm::mat invCam = inverse(camera.Projection);
-        // Multiply by inverse matrix
-        glm::vec4 transformed = (invCam * deviceCoords);
-
-        // Perform perspective divide (divide by w)
-        pos3D = glm::vec3(transformed) / transformed.w;
         camPos = transform.GetTranslation();
         camRot = (transform.GetRotation());
+
+        worldDir = mouseRayDirection(screenPos, camRot, camera.Projection);
     }
 
-    // Now calculate the direction of the ray
-    glm::vec3 dir = glm::normalize(pos3D - glm::vec3(0));
-    // Add rotation to it
-    glm::vec3 worldDir = (camRot * dir);
     float t = 0.0f;
-    // printf("dir x%f y%f z%f  \n", worldDir.x, worldDir.y, worldDir.z);
 
     // Ray formula:
     // P = O + D * t
