@@ -1228,7 +1228,7 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 		float change = buoyancyFinal * dt;
 		if ((up && currentVelY > 0.0f && -change > currentVelY) || (down && currentVelY < 0.0f && -change < currentVelY))
 		{
-			change = -currentVelY; //TODO: remove velY or currentVelY?
+			change = -velY[idx]; //TODO: remove velY or currentVelY? Probably velY to make cap stronger
 		}
 
 		//if (z < 15 && x == 16 && y == 16) printf("x %i, y %i, z %i, up %i, down %i, velY %f, change %f\n", x, y, z, up, down, velY[idx], change);
@@ -1465,65 +1465,73 @@ __global__ void calculateNewPressure(float* pressureEnv, const float* densityAir
 
 }
 
-__global__ void applyBrushGPU(float* array, float* array2, int* groundGridStor, bool* changedGround, parameter paramType, const float brushSize, const float2 mousePos, 
-	const float2 extras, const float brushSmoothness, const float brushIntensity, const float applyValue, const float2 valueDir, const bool groundErase, const Neigh* neigh, const float dt)
+__global__ void applyBrushGPU(float* array, float* array2, float* array3, int* groundGridStor, bool* changedGround, parameter paramType, const float brushSize, const int3 position, 
+	const float brushSmoothness, const float brushIntensity, const float applyValue, const float3 valueDir, const bool groundErase, const float dt)
 {
 	//Thread
-	const int tX = threadIdx.x;
-	const int tY = blockIdx.x;
+	const int x = threadIdx.x;
+	const int y = blockIdx.x;
 
-	const int brushOffset = int(ceilf(brushSize));
-	//Local X and Y (is offset half to the bottom left)
-	const int lX = tX - brushOffset;
-	const int lY = tY - brushOffset;
 
-	//Including mouse and correct brush offset
-	const int mX = tX + int(roundf(mousePos.x)) - brushOffset;
-	const int mY = tY + int(roundf(mousePos.y)) - brushOffset;
-	const int mIdx = mX + mY * GRIDSIZESKYX;
-
-	if (mX >= GRIDSIZESKYX || mY >= GRIDSIZESKYY || mX < 0 || mY < 0) return;
-
-	//Can't brush the ground
-	if (paramType != PGROUND && mY <= GHeight[mX]) return;
-
-	//Distance check
-	const float eX = lX + extras.x;
-	const float eY = lY + extras.y;
-	const float distance = eX * eX + eY * eY; //This works since we determine from 0.
-	const float radius = brushSize * brushSize;
-	if (distance <= radius) //Within range
+	for (int z = 0; z < GRIDSIZESKYZ; z++)
 	{
-		//Based on distance, smoothness and intensity, add value.
-		//Distance
-		float value1 = -(distance / radius - 1);
 
-		//Smoothness (For now just a simple squared)
-		value1 = glm::pow(value1, brushSmoothness);
+		const int brushOffset = int(ceilf(brushSize));
+		//Local X and Y (is offset half to the bottom left)
+		const int lX = x - brushOffset;
+		const int lY = y - brushOffset;
+		const int lZ = z - brushOffset;
 
-		//Intensity
-		value1 *= dt * brushIntensity * applyValue;
+		//Including mouse and correct brush offset
+		const int mX = x + position.x - brushOffset;
+		const int mY = y + position.y - brushOffset;
+		const int mZ = z + position.z - brushOffset;
+		const int mIdx = getIdx(mX, mY, mZ);
 
-		//For directional value
-		float value2 = 0.0f;
-		if (paramType == 7)
+		if (mX >= GRIDSIZESKYX || mY >= GRIDSIZESKYY || mZ > GRIDSIZESKYZ || mX < 0 || mY < 0 || mZ < 0) return;
+
+		//Can't brush the ground
+		if (paramType != PGROUND && mY <= GHeight[mX + mZ * GRIDSIZESKYX]) return;
+
+		//Distance check
+		const float eX = lX;
+		const float eY = lY;
+		const float eZ = lZ;
+		const float distance = eX * eX + eY * eY + eZ * eZ; //This works since we determine from 0.
+		const float radius = brushSize * brushSize;
+		if (distance <= radius) //Within range
 		{
-			value2 = value1 * valueDir.y;
-			value1 *= valueDir.x;
-		}
+			//Based on distance, smoothness and intensity, add value.
+			//Distance
+			float value1 = -(distance / radius - 1);
 
-		//Apply
-		if (mX >= 0 && mX < GRIDSIZESKYX && mY >= 0 && mY < GRIDSIZESKYY)
-		{
+			//Smoothness (For now just a simple squared)
+			value1 = glm::pow(value1, brushSmoothness);
+
+			//Intensity
+			value1 *= dt * brushIntensity * applyValue;
+
+			//For directional value
+			float value2 = 0.0f;
+			float value3 = 0.0f;
+			if (paramType == 7)
+			{
+				value3 = value1 * valueDir.z;
+				value2 = value1 * valueDir.y;
+				value1 *= valueDir.x;
+			}
+
+			//Apply
 			if (paramType == PGROUND) //For ground
 			{
-				const bool groundChanged = setGround(groundGridStor, mX, mY, groundErase);
+				const bool groundChanged = setGround(groundGridStor, mX, mY, mZ, groundErase);
 				if (groundChanged) *changedGround = groundChanged; //We don;t want to set back to false, if ever set, it is that.
 			}
 			else if (paramType == WIND) //For wind
 			{
 				array[mIdx] += value1;
 				array2[mIdx] += value2;
+				array3[mIdx] += value3;
 			}
 			else
 			{
@@ -1533,42 +1541,96 @@ __global__ void applyBrushGPU(float* array, float* array2, int* groundGridStor, 
 	}
 }
 
-__device__ bool setGround(int* groundHeight, const int x, const int y, const bool eraseGround)
+__global__ void applySelectionGPU(float* array, float* array2, float* array3, int* groundGridStor, bool* changedGround, parameter paramType, const int3 minPos, const int3 maxPos, const float applyValue, const float3 valueDir, const bool groundErase)
+{
+	const int x = threadIdx.x;
+	const int y = blockIdx.x;
+
+	for (int z = minPos.z; z <= maxPos.z; z++)
+	{
+		//Add offset to the thread
+		const int mX = x + minPos.x;
+		const int mY = y + minPos.y;
+		const int mZ = z;
+		const int mIdx = getIdx(mX, mY, mZ);
+
+		if (mX >= GRIDSIZESKYX || mY >= GRIDSIZESKYY || mZ > GRIDSIZESKYZ || mX < 0 || mY < 0 || mZ < 0) return;
+		//Can't brush the ground
+		if (paramType != PGROUND && mY <= GHeight[mX + mZ * GRIDSIZESKYX]) return;
+
+		//For directional value
+		float value1 = applyValue;
+		float value2 = 0.0f;
+		float value3 = 0.0f;
+		if (paramType == 7)
+		{
+			value3 = value1 * valueDir.z;
+			value2 = value1 * valueDir.y;
+			value1 *= valueDir.x;
+		}
+
+		//Apply
+		if (paramType == PGROUND) //For ground
+		{
+			const bool groundChanged = setGround(groundGridStor, mX, mY, mZ, groundErase);
+			if (groundChanged) *changedGround = groundChanged; //We don;t want to set back to false, if ever set, it is that.
+		}
+		else if (paramType == WIND) //For wind
+		{
+			array[mIdx] = value1;
+			array2[mIdx] = value2;
+			array3[mIdx] = value3;
+		}
+		else
+		{
+			array[mIdx] = value1;
+		}
+	}
+}
+
+__device__ bool setGround(int* groundHeight, const int x, const int y, const int z, const bool eraseGround)
 {
 
-	if (eraseGround && y <= GHeight[x])
+	if (eraseGround && y <= GHeight[x + z * GRIDSIZESKYX])
 	{
-		int oldVal = atomicMin(&groundHeight[x], y);
+		int oldVal = atomicMin(&groundHeight[x + z * GRIDSIZESKYX], y);
 		return true;
 	}
-	else if (!eraseGround && y > GHeight[x])
+	else if (!eraseGround && y > GHeight[x + z * GRIDSIZESKYX])
 	{
-		int oldVal = atomicMax(&groundHeight[x], y);
+		int oldVal = atomicMax(&groundHeight[x + z * GRIDSIZESKYX], y);
 		return true;
 	}
 	return false;
 }
 
 __global__ void compareAndResetValuesOutGround(const int* oldGroundHeight, const int* newGroundHeight, const float* isentropicTemp, const float* isentropicVap, 
-	float* Qv, float* Qw, float* Qc, float* Qr, float* Qs, float* Qi, float* potTemp, float* velX, float* velY, float* pres, float* defaultPres)
+	float* Qv, float* Qw, float* Qc, float* Qr, float* Qs, float* Qi, float* potTemp, float* velX, float* velY, float* velZ, float* pres, float* defaultPres)
 {
-	const int tX = threadIdx.x;
-	const int tY = blockIdx.x;
-	const int idx = tX + tY * GRIDSIZESKYX;
+	const int x = threadIdx.x;
+	const int y = blockIdx.x;
 
-	//return if Y is not at in between the old and new ground height
+	for (int z = 0; z < GRIDSIZESKYZ; z++)
+	{
+		const int idx = getIdx(x, y, z);
+		const int idxG = x + z * GRIDSIZESKYX;
 
-	if (tY > oldGroundHeight[tX] || tY <= newGroundHeight[tX]) return;
-	Qv[idx] = isentropicVap[tY];
-	Qw[idx] = 0.0f;
-	Qc[idx] = 0.0f;
-	Qr[idx] = 0.0f;
-	Qs[idx] = 0.0f;
-	Qi[idx] = 0.0f;
-	potTemp[idx] = isentropicTemp[tY];
-	velX[idx] = 0.0f;
-	velY[idx] = 0.0f;
-	pres[idx] = defaultPres[tY];
+		//return if Y is not at in between the old and new ground height
+
+		if (oldGroundHeight[idxG] != newGroundHeight[idxG]) printf("x %i, y %i, z %i, old %i, new %i\n", x, y, z, oldGroundHeight[idxG], newGroundHeight[idxG]);
+		if (y > oldGroundHeight[idxG] || y <= newGroundHeight[idxG]) return;
+		Qv[idx] = isentropicVap[y];
+		Qw[idx] = 0.0f;
+		Qc[idx] = 0.0f;
+		Qr[idx] = 0.0f;
+		Qs[idx] = 0.0f;
+		Qi[idx] = 0.0f;
+		potTemp[idx] = isentropicTemp[y];
+		velX[idx] = 0.0f;
+		velY[idx] = 0.0f;
+		velZ[idx] = 0.0f;
+		pres[idx] = defaultPres[y];
+	}
 }
 
 

@@ -74,7 +74,7 @@ public:
 	dataClass();
 	~dataClass();
 
-	void confirmMicroPhysCheckRegion(const int2 minCorner, const int2 maxCorner);
+	void confirmMicroPhysCheckRegion(const int3 minCorner, const int3 maxCorner);
 	void cancelMicroPhysCheckRegion();
 	void setMicroPhysicsData(const microPhysicsParams* params);
 
@@ -84,8 +84,8 @@ public:
 
 	bool microPhysCheckActive{ false};
 	char3 dummy;
-	int2 microPhysMinPos{ -1, -1 };
-	int2 microPhysMaxPos{ -1, -1 };
+	int3 microPhysMinPos{ -1, -1, -1 };
+	int3 microPhysMaxPos{ -1, -1, -1 };
 };
 
 

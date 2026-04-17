@@ -23,7 +23,11 @@
 
 #include "imgui/IconsFontAwesome.h"
 #include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"
 #include "utils.cuh"
+
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #if USE_GPU
 #include "environment.cuh"
@@ -179,6 +183,8 @@ void editor::viewData()
 	viewSky();
 	viewGround();
 	viewSkewT();
+
+	resetValues();
 }
 
 void editor::setDebugValueNum(const float* array, const int num)
@@ -292,7 +298,6 @@ void editor::cameraControl()
 		SaveMousePos = MousePos3D;
 		Save2DPos = bee::Engine.Input().GetMousePosition();
 		glm::vec2 mousePos2D = bee::Engine.Input().GetMousePosition();
-		MouseWheel = bee::Engine.Input().GetMouseWheel();
 		MousePos3D = bee::screenToGround(bee::Engine.Input().GetMousePosition());
 		return;
 	}
@@ -304,121 +309,136 @@ void editor::cameraControl()
 
 	//Keybinds = Left-Shift + mouse
 	bool LeftShift = bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::LeftShift);
+	bool LeftCrtl = bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::LeftControl);
 
 	//If in view mode, just always be able to move.
-	if (!m_brushing && !m_selecting)
+	if ((!m_brushing && !m_selecting) || LeftShift)
 	{
-		LeftShift = true;
+
+
+		//For each camera (we have 1)
+		for (const auto& [entity, camera, transform] : bee::Engine.ECS().Registry.view<bee::Camera, bee::Transform>().each())
+		{
+			//------------------------------------------------------------------------------
+			//--------------------------Moving around---------------------------------------
+			//------------------------------------------------------------------------------
+
+			float cameraSpeed = 25.0f;
+			if (LeftShift)
+			{
+				cameraSpeed *= 10.0f;
+			}
+
+
+			glm::vec3 forward = transform.GetRotation() * glm::vec3(0, 0, -1) * cameraSpeed;
+			glm::vec3 right = transform.GetRotation() * glm::vec3(1, 0, 0) * cameraSpeed;
+
+			//Using keys
+			if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::W))
+			{
+				transform.SetTranslation(transform.GetTranslation() + forward * m_deltatime);
+			}
+			if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::A))
+			{
+				transform.SetTranslation(transform.GetTranslation() - right * m_deltatime);
+			}
+			if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::S))
+			{
+				transform.SetTranslation(transform.GetTranslation() - forward * m_deltatime);
+			}
+			if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::D))
+			{
+				transform.SetTranslation(transform.GetTranslation() + right * m_deltatime);
+			}
+
+			//Using mouse
+			if (bee::Engine.Input().GetMouseButtonOnce(bee::Input::MouseButton::Left))
+			{
+				SaveMousePos = MousePos3D;
+			}
+			else if (bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left))
+			{
+				glm::vec3 offset = (SaveMousePos - MousePos3D);
+				const float limit = 50; // Set limit to not move infinite amount
+				if (offset.x + offset.y + offset.z > limit) offset = glm::normalize(offset) * limit;
+
+				transform.SetTranslation(transform.GetTranslation() + offset);
+			}
+
+			//------------------------------------------------------------------------------
+			//--------------------------Looking around--------------------------------------
+			//------------------------------------------------------------------------------
+			if (bee::Engine.Input().GetMouseButtonOnce(bee::Input::MouseButton::Right))
+			{
+				Save2DPos = bee::Engine.Input().GetMousePosition();
+				//Save previous roll and pitch outside of loop
+				roll = SaveRoll;
+				pitch = SavePitch;
+
+			}
+			else if (bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Right))
+			{
+				//With help from chatGPT
+
+				//---------------------------Set Roll and Pitch for Camera Rotation------------------------
+				glm::vec2 mousePos2D = bee::Engine.Input().GetMousePosition();
+				SaveRoll = mousePos2D.x - Save2DPos.x;
+				SavePitch = mousePos2D.y - Save2DPos.y;
+
+				//Apply sensitivity 
+				SaveRoll *= 0.075f;
+				SavePitch *= 0.075f;
+
+				//Apply previous roll and pitch
+				SaveRoll = SaveRoll + roll;
+				SavePitch = SavePitch + pitch;
+
+				if (SavePitch > 89.9f) SavePitch = 89.9f;
+				if (SavePitch < -89.9f) SavePitch = -89.9f;
+
+				//Quats for roll and pitch
+				glm::quat qRoll = glm::angleAxis(glm::radians(SaveRoll), glm::vec3(0, 1, 0));
+				glm::quat qPitch = glm::angleAxis(glm::radians(SavePitch), glm::vec3(1, 0, 0));
+				//Combine them
+				glm::quat InputRotation = qRoll * qPitch;
+
+				//Set camera rotation
+				transform.SetRotation(InputRotation);
+
+			}
+
+			//------------------------------------------------------------------------------
+			//--------------------------Zooming in------------------------------------------
+			//------------------------------------------------------------------------------
+
+			// if shift is not pressed
+			if (!LeftCrtl && MouseWheel != bee::Engine.Input().GetMouseWheel()) //Mouse has been scrolled
+			{
+				float difference = bee::Engine.Input().GetMouseWheel() - MouseWheel;
+				glm::vec3 dir = MousePos3D - transform.GetTranslation();
+				dir *= 0.2f; //We do not want to zoom on top of the position, just towards it.
+				//Casual P = O + D*T
+				transform.SetTranslation(transform.GetTranslation() + dir * difference);
+			}
+		}
 	}
 
-	//For each camera (we have 1)
-	for (const auto& [entity, camera, transform] : bee::Engine.ECS().Registry.view<bee::Camera, bee::Transform>().each())
+	//------------------------------------------------------------------------------
+	//-------------------------Scroll through slices--------------------------------
+	//------------------------------------------------------------------------------
+
+	if (m_viewSlice && LeftCrtl && MouseWheel != bee::Engine.Input().GetMouseWheel())
 	{
-		//------------------------------------------------------------------------------
-		//--------------------------Moving around---------------------------------------
-		//------------------------------------------------------------------------------
+		const int scroll = int(bee::Engine.Input().GetMouseWheel() - MouseWheel);
+		int sliceMaxCoord = GRIDSIZESKYX - 1;
+		if (m_viewSliceCoord == 0) sliceMaxCoord = GRIDSIZESKYX - 1;
+		else if (m_viewSliceCoord == 1) sliceMaxCoord = GRIDSIZESKYY - 1;
+		else if (m_viewSliceCoord == 2) sliceMaxCoord = GRIDSIZESKYZ - 1;
 
-		float cameraSpeed = 25.0f;
-		if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::LeftShift))
-		{
-			cameraSpeed *= 10.0f;
-		}
+		m_atSliceViewSlice = std::clamp(m_atSliceViewSlice + scroll, 0, sliceMaxCoord);
+		setSliceMinMax(!m_viewSlice);
 
-		
-		glm::vec3 forward = transform.GetRotation() * glm::vec3(0,0,-1) * cameraSpeed;
-		glm::vec3 right = transform.GetRotation() * glm::vec3(1, 0, 0) * cameraSpeed;
-
-		//Using keys
-		if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::W))
-		{
-			transform.SetTranslation(transform.GetTranslation() + forward * m_deltatime);
-		}
-		if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::A))
-		{
-			transform.SetTranslation(transform.GetTranslation() - right * m_deltatime);
-		}
-		if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::S))
-		{
-			transform.SetTranslation(transform.GetTranslation() - forward * m_deltatime);
-		}
-		if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::D))
-		{
-			transform.SetTranslation(transform.GetTranslation() + right * m_deltatime);
-		}
-
-		//Using mouse
-		if (LeftShift && bee::Engine.Input().GetMouseButtonOnce(bee::Input::MouseButton::Left))
-		{
-			SaveMousePos = MousePos3D;
-		}
-		else if (LeftShift && bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left))
-		{
-			glm::vec3 offset = (SaveMousePos - MousePos3D);
-			transform.SetTranslation(transform.GetTranslation() + offset);
-		}
-
-		//------------------------------------------------------------------------------
-		//--------------------------Looking around--------------------------------------
-		//------------------------------------------------------------------------------
-		if (LeftShift && bee::Engine.Input().GetMouseButtonOnce(bee::Input::MouseButton::Right))
-		{
-			Save2DPos = bee::Engine.Input().GetMousePosition();
-			//Save previous roll and pitch outside of loop
-			roll = SaveRoll;
-			pitch = SavePitch;
-
-		}
-		else if (LeftShift && bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Right))
-		{
-			//With help from chatGPT
-
-			//---------------------------Set Roll and Pitch for Camera Rotation------------------------
-			glm::vec2 mousePos2D = bee::Engine.Input().GetMousePosition();
-			SaveRoll = mousePos2D.x - Save2DPos.x;
-			SavePitch = mousePos2D.y - Save2DPos.y;
-
-			//Apply sensitivity 
-			SaveRoll *= 0.075f;
-			SavePitch *= 0.075f;
-
-			//Apply previous roll and pitch
-			SaveRoll = SaveRoll + roll;
-			SavePitch = SavePitch + pitch;
-
-			if (SavePitch > 89.9f) SavePitch = 89.9f;
-			if (SavePitch < -89.9f) SavePitch = -89.9f;
-
-			//Quats for roll and pitch
-			glm::quat qRoll = glm::angleAxis(glm::radians(SaveRoll), glm::vec3(0, 1, 0));
-			glm::quat qPitch = glm::angleAxis(glm::radians(SavePitch), glm::vec3(1, 0, 0));
-			//Combine them
-			glm::quat InputRotation = qRoll * qPitch;
-
-			//Set camera rotation
-			transform.SetRotation(InputRotation);
-
-		}
-
-		//------------------------------------------------------------------------------
-		//--------------------------Zooming in------------------------------------------
-		//------------------------------------------------------------------------------
-		if (!LeftShift)
-		{
-			//Update scroll if shift is not pressed so it does not register
-			MouseWheel = bee::Engine.Input().GetMouseWheel();
-		}
-
-		if (MouseWheel != bee::Engine.Input().GetMouseWheel()) //Mouse has been scrolled
-		{
-			float difference = bee::Engine.Input().GetMouseWheel() - MouseWheel;
-			glm::vec3 dir = MousePos3D - transform.GetTranslation();
-			dir *= 0.2f; //We do not want to zoom on top of the position, just towards it.
-			//Casual P = O + D*T
-			transform.SetTranslation(transform.GetTranslation() + dir * difference);
-			MouseWheel = bee::Engine.Input().GetMouseWheel();
-		}
 	}
-
 
 }
 
@@ -429,14 +449,21 @@ void editor::setVariables()
 
 	//Mouse pos index
 	const int pointingAtIdx = tracerObj.getVoxelAtMouse();
-	m_mousePointingIndex = pointingAtIdx == -1 ? m_mousePointingIndex : pointingAtIdx; // Do not change if invalid index
+	if (pointingAtIdx == -1)
+	{
+		m_selectionInGrid = false;
+	}
+	else
+	{
+		m_selectionInGrid = true;
+		m_mousePointingIndex = pointingAtIdx; // Do not change if invalid index
+	}
+	getCoord(m_mousePointingIndex, m_mousePointingPos.x, m_mousePointingPos.y, m_mousePointingPos.z);
 
 	if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::Space))
 	{
 		m_skewTidx = m_mousePointingIndex;
-		int x, y, z;
-		getCoord(m_skewTidx, x, y, z);		
-		m_skewTidx = getIdx(x, y, z);
+		getCoord(m_skewTidx, m_skewTPos.x, m_skewTPos.y, m_skewTPos.z);
 	}
 }
 
@@ -486,8 +513,9 @@ void editor::mainButtons()
 
 void editor::viewParamInformation()
 {
-	int x, y, z;
-	getCoord(m_mousePointingIndex, x, y, z);
+	int x = m_mousePointingPos.x;
+	int y = m_mousePointingPos.y;
+	int z = m_mousePointingPos.z;
 	const int Gidx = x + z * GRIDSIZESKYX;
 
 	ImGui::Indent();
@@ -643,7 +671,7 @@ void editor::setSlice()
 void editor::editModeParams()
 {
 	if (m_editMode)
-	{
+	{		
 		ImGui::Begin("Edit Variables");
 
 		ImGui::SliderFloat("Simulation Speed", &m_simulationSpeed, 0.1f, 100.0f);
@@ -695,7 +723,7 @@ void editor::editModeParams()
 				ImGui::SliderFloat("AppliedValue", &m_applyValue, minMax.x, minMax.y, format, sliderFlag);
 				ImGui::SliderFloat("Intensity", &m_brushIntensity, -1.0f, 1.0f, "%.7f", ImGuiSliderFlags_Logarithmic);
 
-				//Vec2
+				//Vec3
 				if (m_editParamSky == 7)
 				{
 					vectorArrow();
@@ -850,37 +878,70 @@ int editor::chooseDateDay()
 
 void editor::vectorArrow()
 {
-	//TODO; for 3D this could be using ImGuizmo.
-	float angle = std::atan2(-m_valueDir.y, m_valueDir.x);;
-	ImGui::SliderAngle("Rotation", &angle, 0.0f);
+	// Using help from Claude AI
+	static float hor = 0.0f;   // horizontal angle degrees
+	static float ver = 0.0f; // vertical angle degrees
 
-	//Get all angles
-	const float dirX = cosf(angle);
-	const float dirY = sinf(angle);
+	// Set vertical and horizontal values
+	ImGui::SliderFloat("sides", &hor, -180.0f, 180.0f, "%.1f deg");
+	ImGui::SameLine();
+	if (ImGui::Button("X##hor")) hor = 0.0f;
+	ImGui::SliderFloat("up", &ver, -90.0f, 90.0f, "%.1f deg");
+	ImGui::SameLine();
+	if (ImGui::Button("X##ver")) ver = 0.0f;
 
-	const float pointAngle = 2.6f;
-	const float dirXArrow1 = cosf(angle + pointAngle);
-	const float dirYArrow1 = sinf(angle + pointAngle);
-	const float dirXArrow2 = cosf(angle - pointAngle);
-	const float dirYArrow2 = sinf(angle - pointAngle);
+	// Convert to 3D direction
+	float h = glm::radians(hor);
+	float v = glm::radians(ver);
+	glm::vec3 direction = glm::vec3(
+		cosf(v) * sinf(h),
+		sinf(v),
+		cosf(v) * cosf(h)
+	);
+	// Make matrix out of it using lookat function
+	glm::mat4 viewMat = glm::lookAt(-direction, glm::vec3(0), glm::vec3(0, 1, 0));
+	float view[16];
+	memcpy(view, glm::value_ptr(viewMat), 16 * sizeof(float));
 
-	//Set positions
-	ImVec2 center = ImGui::GetCursorScreenPos();
-	center.x += 30;
-	center.y += 30;
-	const ImVec2 tip = { center.x + dirX * 25, center.y + dirY * 25 };
-	const ImVec2 point1 = { tip.x + dirXArrow1 * 10, tip.y + dirYArrow1 * 10 };
-	const ImVec2 point2 = { tip.x + dirXArrow2 * 10, tip.y + dirYArrow2 * 10 };
+	ImVec2 gizmoPos = ImGui::GetCursorScreenPos();
+	ImVec2 gizmoSize = ImVec2(150, 150);
 
-	//Draw the arrow
-	auto* draw = ImGui::GetWindowDrawList();
-	draw->AddRectFilled({center.x - 30, center.y - 30}, { center.x + 30, center.y + 30 }, IM_COL32(103, 103, 103, 150), 2.0f);
-	draw->AddLine(center, tip, IM_COL32(255, 255, 255, 200), 3.0f);
-	draw->AddLine(tip, point1, IM_COL32(255, 255, 255, 200), 3.0f);
-	draw->AddLine(tip, point2, IM_COL32(255, 255, 255, 200), 3.0f);
+	// Get right, up and forward from matrix
+	glm::mat4 invView = glm::inverse(viewMat);
+	glm::vec3 rightDir = glm::vec3(invView[0]);  // X axis — red
+	glm::vec3 upDir = glm::vec3(invView[1]);  // Y axis — green
+	glm::vec3 forwardDir = glm::vec3(invView[2]);  // Z axis — blue
+	ImVec2 center = ImVec2(gizmoPos.x + gizmoSize.x * 0.5f,
+		gizmoPos.y + gizmoSize.y * 0.5f);
+	float axisLen = 40.0f;
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+
+	// Project direction into positions using axisLen as offset
+	ImVec2 tipX = ImVec2(center.x + rightDir.x * axisLen, center.y - rightDir.y * axisLen);
+	ImVec2 tipY = ImVec2(center.x + upDir.x * axisLen, center.y - upDir.y * axisLen);
+	ImVec2 tipZ = ImVec2(center.x + forwardDir.x * axisLen, center.y - forwardDir.y * axisLen);
+	ImVec2 tipArrow = ImVec2(center.x + direction.x * axisLen, center.y - direction.y * axisLen);
+
+	// Ready to draw
+	ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+	ImGuizmo::SetRect(gizmoPos.x, gizmoPos.y, gizmoSize.x, gizmoSize.y);
+	ImGui::Dummy(gizmoSize);
+
+	// Arrow line, indicating direction
+	dl->AddLine(center, tipArrow, IM_COL32(255, 255, 255, 255), 2.0f); // X white
+	// Circle on tip
+	dl->AddCircleFilled(tipArrow, 4.0f, IM_COL32(255, 255, 255, 255));
+
+	// Helping visualisers
+	dl->AddLine(center, tipX, IM_COL32(255, 60, 60, 255), 1.0f); // X red
+	dl->AddLine(center, tipY, IM_COL32(60, 255, 60, 255), 1.0f); // Y green
+	dl->AddLine(center, tipZ, IM_COL32(60, 60, 255, 255), 1.0f); // Z blue
+
+
+	ImGui::Text("Direction: %.2f %.2f %.2f", direction.x, direction.y, direction.z);
 
 	//Set data
-	m_valueDir = { dirX, -dirY };
+	m_valueDir = direction;
 }
 
 void editor::viewImguiData()
@@ -994,10 +1055,10 @@ void editor::viewSky()
 				const int idxG = x + z * GRIDSIZESKYX;
 				if (y <= m_envData->m_groundHeight[idxG]) 
 				{
+					tracerObj.setVoxelValue(idx, true); // Add voxel to tracer so we can select it
 					if (y == m_envData->m_groundHeight[idxG]) continue; // Leaving 1 voxel space for ground itself
 					bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 0.999f, bee::Colors::Brown);
 					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, bee::Colors::Black);
-					tracerObj.setVoxelValue(idx, true); // Add voxel to tracer so we can select it
 					continue;
 				}
 
@@ -1113,53 +1174,96 @@ void editor::viewBrush()
 {
 	if (m_brushing)
 	{
-		MousePos3D.z += 0.15f;
-		bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, MousePos3D, m_brushSize, glm::vec3(0, 0, 1), bee::Colors::White);
+		int x = m_mousePointingPos.x;
+		int y = m_mousePointingPos.y;
+		int z = m_mousePointingPos.z;
+
+		const int brushSizeI = int(ceil(m_brushSize));
+		const float maxBrushSize = m_brushSize * m_brushSize;
+		for (int zb = std::max(0, z - brushSizeI); zb < std::min(GRIDSIZESKYZ, z + brushSizeI); zb++)
+		{
+			for (int yb = std::max(0, y - brushSizeI); yb < std::min(GRIDSIZESKYY, y + brushSizeI); yb++)
+			{
+				for (int xb = std::max(0, x - brushSizeI); xb < std::min(GRIDSIZESKYX, x + brushSizeI); xb++)
+				{
+					const int dx = xb - x;
+					const int dy = yb - y;
+					const int dz = zb - z;
+
+					const int distance = (dx * dx) + (dy * dy) + (dz * dz);
+
+					if (distance > maxBrushSize) continue;
+
+					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(xb, yb, zb) + 0.5f, 1.0f, bee::Colors::White);
+				}
+			}
+		}
 	}
 }
 
 void editor::viewSelection()
 {
+	int x = m_mousePointingPos.x;
+	int y = m_mousePointingPos.y;
+	int z = m_mousePointingPos.z;
+
 	//Set correct selection posses
 	if ((m_selecting) && !bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::LeftShift) && !bee::Engine.Inspector().IsSelected())
 	{
 		if (bee::Engine.Input().GetMouseButtonOnce(bee::Input::MouseButton::Left))
 		{
-			m_saveSelectPos = { (MousePos3D.x), (MousePos3D.y) };
+			m_saveSelectPos = { x, y, z };
 			m_selectReset = true;
 		}
 		else if (bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left))
 		{
-			if (m_saveSelectPos == glm::vec2(0) && m_selectReset)
+			if (m_saveSelectPos == glm::ivec3(0) && m_selectReset)
 			{
 				//Impossible (too precise), meaning went from tab to playfield
-				m_saveSelectPos = { (MousePos3D.x), (MousePos3D.y) };
+				m_saveSelectPos = { x, y, z };
 			}
 
-			m_corners[0].x = MousePos3D.x < m_saveSelectPos.x ? ceil(m_saveSelectPos.x) : floor(m_saveSelectPos.x);
-			m_corners[0].y = MousePos3D.y < m_saveSelectPos.y ? ceil(m_saveSelectPos.y) : floor(m_saveSelectPos.y);
+			m_corners[0].x = m_saveSelectPos.x;
+			m_corners[0].y = m_saveSelectPos.y;
+			m_corners[0].z = m_saveSelectPos.z;
 
-			m_corners[1].x = MousePos3D.x < m_saveSelectPos.x ? floor(MousePos3D.x) : ceil(MousePos3D.x);
-			m_corners[1].y = MousePos3D.y < m_saveSelectPos.y ? floor(MousePos3D.y) : ceil(MousePos3D.y);
+			m_corners[1].x = x;
+			m_corners[1].y = y;
+			m_corners[1].z = z;
 
 			m_selectReset = false;
 		}
 		else if (m_selectReset)
 		{
-			m_saveSelectPos = { 0,0 };
+			m_saveSelectPos = glm::ivec3(0);
 		}
 	}
 	else if (bee::Engine.Inspector().IsSelected())
 	{
-		m_saveSelectPos = { 0,0 };
+		m_saveSelectPos = glm::ivec3(0);
 		m_selectReset = true;
 	}
 	//Render selection
-	if (m_selecting && glm::vec2(MousePos3D.x, MousePos3D.y) != m_saveSelectPos)
+	if (m_selecting && glm::ivec3(x, y, z) != m_saveSelectPos)
 	{
-		bee::Engine.DebugRenderer().AddRectangle(bee::DebugCategory::All, glm::vec3(m_corners[0], 0.015f), glm::vec3(m_corners[1], 0.015f), glm::vec3(0, 0, 1), bee::Colors::White);
-	}
+		int sx1 = std::max(0, std::min(m_corners[0].x, m_corners[1].x));
+		int sy1 = std::max(0, std::min(m_corners[0].y, m_corners[1].y));
+		int sz1 = std::max(0, std::min(m_corners[0].z, m_corners[1].z));
+		int sx2 = std::min(GRIDSIZESKYX - 1, std::max(m_corners[1].x, m_corners[0].x));
+		int sy2 = std::min(GRIDSIZESKYY - 1, std::max(m_corners[1].y, m_corners[0].y));
+		int sz2 = std::min(GRIDSIZESKYZ - 1, std::max(m_corners[1].z, m_corners[0].z));
 
+		for (int sz = sz1; sz <= sz2; sz++)
+		{
+			for (int sy = sy1; sy <= sy2; sy++)
+			{
+				for (int sx = sx1; sx <= sx2; sx++)
+				{
+					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(sx, sy, sz) + 0.5f, 1.0f, bee::Colors::White);
+				}
+			}
+		}
+	}
 }
 
 void editor::viewToolTipData()
@@ -1194,8 +1298,8 @@ void editor::viewPickerData()
 
 	if (m_viewParamSky == WIND)
 	{
-		pickerString = pickerString + ", " + std::string(format);
-		ImGui::SetTooltip(pickerString.c_str(), m_applyValue * m_valueDir.x, m_applyValue * m_valueDir.y);
+		pickerString = pickerString + ", " + std::string(format) + ", " + std::string(format);
+		ImGui::SetTooltip(pickerString.c_str(), m_applyValue * m_valueDir.x, m_applyValue * m_valueDir.y, m_applyValue * m_valueDir.z);
 	}
 	else
 	{
@@ -1229,14 +1333,16 @@ void editor::viewSkewT()
 	Game.SkewT().setAllArrays(temps, dewPoints, pressures);
 
 	//Small check just in case
-	int x = 0, y = 0, z = 0;
-	getCoord(m_skewTidx, x, y, z);
+	int x = m_skewTPos.x;
+	int y = m_skewTPos.y;  
+	int z = m_skewTPos.z;
 	int idxG = x + z * GRIDSIZESKYX;
 	if (y <= m_envData->m_groundHeight[idxG])
 	{
-		m_skewTidx = getIdx(x, (m_envData->m_groundHeight[idxG] + 1), z);
-		getCoord(m_skewTidx, x, y, z); // Regain coordinates
-		idxG = x + z * GRIDSIZESKYX;
+		// Set new coords based on valid height
+		y = m_envData->m_groundHeight[idxG] + 1;
+		m_skewTidx = getIdx(x, y, z);
+		m_skewTPos.y = y;
 	}
 	Game.SkewT().setStartIdx(y);
 	Game.SkewT().drawSkewT();
@@ -1249,14 +1355,19 @@ void editor::viewSkewT()
 
 void editor::applyBrush()
 {
+
+	//printf("brushing: %i, MouseWheel: %f, getMousewheel: %f, !selectedInspector: %i\n", m_brushing, MouseWheel, bee::Engine.Input().GetMouseWheel(), !bee::Engine.Inspector().IsSelected());
+	if (m_brushing && MouseWheel != bee::Engine.Input().GetMouseWheel() && !bee::Engine.Inspector().IsSelected())
+	{
+		const float diff = bee::Engine.Input().GetMouseWheel() - MouseWheel;
+		m_brushSize = m_brushSize + diff <= 0.0f ? m_brushSize : m_brushSize + diff;
+	}
+
 	if (m_brushing && bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left) && !bee::Engine.Inspector().IsSelected())
 	{
-		const float extraX = MousePos3D.x - std::floor(MousePos3D.x);
-		const float extraY = MousePos3D.y - std::floor(MousePos3D.y);
-
 #if USE_GPU
-		Game.EnvGPU().prepareBrushGPU(m_editParamSky, m_brushSize, { MousePos3D.x, MousePos3D.y }, { extraX, extraY },
-			m_brushSmoothness, m_deltatime, m_brushIntensity, m_applyValue, { m_valueDir.x, m_valueDir.y }, m_groundErase);
+		Game.EnvGPU().prepareBrushGPU(m_editParamSky, m_brushSize, { m_mousePointingPos.x,m_mousePointingPos.y,m_mousePointingPos.z },
+			m_brushSmoothness, m_deltatime, m_brushIntensity, m_applyValue, { m_valueDir.x, m_valueDir.y, m_valueDir.z }, m_groundErase);
 
 #else
 		for (int y = int(std::floor(-m_brushSize)); y < int(std::ceil(m_brushSize)); y++)
@@ -1315,20 +1426,25 @@ void editor::applyBrush()
 
 void editor::applySelect()
 {
-	if ((m_selecting) && m_saveSelectPos != glm::vec2(0) && !bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left))
+	if ((m_selecting) && m_saveSelectPos != glm::ivec3(0) && !bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left))
 	{
 		int minX = int(std::min(m_corners[0].x, m_corners[1].x));
 		int minY = int(std::min(m_corners[0].y, m_corners[1].y));
+		int minZ = int(std::min(m_corners[0].z, m_corners[1].z));
 		int maxX = int(std::max(m_corners[0].x, m_corners[1].x));
 		int maxY = int(std::max(m_corners[0].y, m_corners[1].y));
+		int maxZ = int(std::max(m_corners[0].z, m_corners[1].z));
 
 		if (m_microPhysSelect)
 		{
-			Game.DataClass().confirmMicroPhysCheckRegion({ minX, minY }, { maxX, maxY });
+			Game.DataClass().confirmMicroPhysCheckRegion({ minX, minY, minZ }, { maxX, maxY, maxZ });
 			m_selecting = false;
 			m_microPhysSelect = false;
 		}
-#if !USE_GPU
+#if USE_GPU
+		Game.EnvGPU().prepareSelectionGPU(m_editParamSky, { minX, minY, minZ }, { maxX, maxY, maxZ }, m_applyValue, { m_valueDir.x, m_valueDir.y, m_valueDir.z }, m_groundErase);
+
+#else
 		else
 		{
 			for (int y = minY; y < maxY; y++)
@@ -1365,9 +1481,9 @@ void editor::usePicker()
 {
 	if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::LeftAlt))
 	{
-		if (MousePos3D.x < GRIDSIZESKYX && MousePos3D.x >= 0 && MousePos3D.y < GRIDSIZESKYY && MousePos3D.y >= 0)
+		if (!isOutside(m_mousePointingPos.x, m_mousePointingPos.y, m_mousePointingPos.z))
 		{
-			glm::vec2 value = getValueParam(m_mousePointingIndex, m_viewParamSky);
+			glm::vec3 value = getValueParam(m_mousePointingIndex, m_viewParamSky);
 			if (m_viewParamSky == WIND)
 			{
 				//Using normalize and dividing will result in exact value if trying to set value
@@ -1383,7 +1499,12 @@ void editor::usePicker()
 
 }
 
-void editor::setValueOfParam(const int i, const parameter p, const bool add, const float value, const float value2)
+void editor::resetValues()
+{
+	MouseWheel = bee::Engine.Input().GetMouseWheel(); //Update scroll 
+}
+
+void editor::setValueOfParam(const int i, const parameter p, const bool add, const float value, const float value2, const float value3)
 {
 	switch (p)
 	{
@@ -1409,7 +1530,7 @@ void editor::setValueOfParam(const int i, const parameter p, const bool add, con
 		m_envData->m_envView.Qi[i] = add ? m_envData->m_envView.Qi[i] + value : value;
 		break;
 	case WIND:
-		m_envData->m_envView.velField[i] = add ? m_envData->m_envView.velField[i] + glm::vec3{ value, value2, 0.0f } : glm::vec3{ value, value2, 0.0f };
+		m_envData->m_envView.velField[i] = add ? m_envData->m_envView.velField[i] + glm::vec3{ value, value2, value3 } : glm::vec3{ value, value2, value3 };
 		break;
 	default:
 		break;
@@ -1457,11 +1578,9 @@ void editor::addDataErasedGround(const int x, const int y)
 
 void editor::dataToSkewTData(float* temp, float* dew, float* pres)
 {
-	// Get coordinates from index
-	const int xy = m_skewTidx % (GRIDSIZESKYX * GRIDSIZESKYY);
-	const int x = xy % GRIDSIZESKYX;
-	const int y = (xy - x) / GRIDSIZESKYX;
-	const int z = (m_skewTidx - xy) / (GRIDSIZESKYX * GRIDSIZESKYY);
+	const int x = m_skewTPos.x;
+	const int y = m_skewTPos.y;
+	const int z = m_skewTPos.z;
 
 	// Use i for our y lookup, gathering all data up into the sky
 	for (int i = 0; i < GRIDSIZESKYY; i++)
@@ -1553,50 +1672,50 @@ const char* editor::getFormatParam(parameter param, int& flagOutput)
 	return "%.1f";
 }
 
-glm::vec2 editor::getValueParam(const int i, parameter param)
+glm::vec3 editor::getValueParam(const int i, parameter param)
 {
 	switch (param)
 	{
 	case POTTEMP:
-		return { m_envData->m_envView.potTemp[i], 0.0f };
+		return { m_envData->m_envView.potTemp[i], 0.0f, 0.0f };
 		break;
 	case QV:
-		return { m_envData->m_envView.Qv[i], 0.0f };
+		return { m_envData->m_envView.Qv[i], 0.0f, 0.0f };
 		break;
 	case QW:
-		return { m_envData->m_envView.Qw[i], 0.0f };
+		return { m_envData->m_envView.Qw[i], 0.0f, 0.0f };
 		break;
 	case QC:
-		return { m_envData->m_envView.Qc[i], 0.0f };
+		return { m_envData->m_envView.Qc[i], 0.0f, 0.0f };
 		break;
 	case QR:
-		return { m_envData->m_envView.Qr[i], 0.0f };
+		return { m_envData->m_envView.Qr[i], 0.0f, 0.0f };
 		break;
 	case QS:
-		return { m_envData->m_envView.Qs[i], 0.0f };
+		return { m_envData->m_envView.Qs[i], 0.0f, 0.0f };
 		break;
 	case QI:
-		return { m_envData->m_envView.Qi[i], 0.0f };
+		return { m_envData->m_envView.Qi[i], 0.0f, 0.0f };
 		break;
 	case WIND:
-		return { m_envData->m_envView.velField[i].x, m_envData->m_envView.velField[i].y };
+		return { m_envData->m_envView.velField[i].x, m_envData->m_envView.velField[i].y, m_envData->m_envView.velField[i].z };
 		break;
 	case PGROUND:
-		return { 0,0 };
+		return { 0,0,0 };
 		break;
 	case DEBUG1:
-		return { m_envData->m_debugArray0[i], 0.0f };
+		return { m_envData->m_debugArray0[i], 0.0f, 0.0f };
 		break;
 	case DEBUG2:
-		return { m_envData->m_debugArray1[i], 0.0f };
+		return { m_envData->m_debugArray1[i], 0.0f, 0.0f };
 		break;
 	case DEBUG3:
-		return { m_envData->m_debugArray2[i], 0.0f };
+		return { m_envData->m_debugArray2[i], 0.0f, 0.0f };
 		break;
 	default:
 		break;
 	}
-	return { 0,0 };
+	return { 0,0,0 };
 }
 
 int editor::getDaysInMonth(int month)

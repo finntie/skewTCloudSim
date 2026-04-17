@@ -81,14 +81,15 @@ public:
 	void updateGroundTemps(const float dt, const float speed, const float irridiance);
 	void calculateBuoyancy(const float dt);
 	bool isGround(int x, int y);
-	float* getParamArray(parameter type, const bool windX = true);
+	float* getParamArray(parameter type, direction windDir = RIGHT);
 	//------------------------------------------
 
 
 	//-------------------Outside------------------
 
-	void prepareBrushGPU(parameter paramType, const float brushSize, const float2 mousePos, const float2 extras,
-		const float brushSmoothnes, const float dt, const float brushIntensity, const float applyValue, const float2 valueDir, const bool groundErase);
+	void prepareBrushGPU(parameter paramType, const float brushSize, const int3 mousePos,
+		const float brushSmoothnes, const float dt, const float brushIntensity, const float applyValue, const float3 valueDir, const bool groundErase);
+	void prepareSelectionGPU(parameter paramType, const int3 minPos, const int3 maxPos, const float applyValue, const float3 valueDir, const bool groundErase);
 	void resetParameterGPU(parameter paramType);
 	//------------------------------------------
 

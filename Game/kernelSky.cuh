@@ -79,11 +79,13 @@ __global__ void calculateNewPressure(float* pressureEnv, const float* densityAir
 
 //-------------------Editor------------------
 
-__global__ void applyBrushGPU(float* array, float* array2, int* groundGridStor, bool* changedGround, parameter paramType, const float brushSize, const float2 mousePos, const float2 extras, 
-	const float brushSmoothnes, const float brushIntensity, const float applyValue, const float2 valueDir, const bool groundErase, const Neigh* neigh, const float dt);
-__device__ bool setGround(int* groundHeight, const int x, const int y, const bool ground);
+__global__ void applyBrushGPU(float* array, float* array2, float* array3, int* groundGridStor, bool* changedGround, parameter paramType, const float brushSize, const int3 mousePos,
+	const float brushSmoothnes, const float brushIntensity, const float applyValue, const float3 valueDir, const bool groundErase, const float dt);
+__global__ void applySelectionGPU(float* array, float* array2, float* array3, int* groundGridStor, bool* changedGround, parameter paramType, const int3 minPos, const int3 maxPos,
+	const float applyValue, const float3 valueDir, const bool groundErase);
+__device__ bool setGround(int* groundHeight, const int x, const int y, const int z, const bool ground);
 __global__ void compareAndResetValuesOutGround(const int* oldGroundHeight, const int* newGroundHeight, const float* isentropicTemp, const float* isentropicVap,
-	float* Qv, float* Qw, float* Qc, float* Qr, float* Qs, float* Qi, float* potTemp, float* velX, float* velY, float* pressure, float* defaultPressure);
+	float* Qv, float* Qw, float* Qc, float* Qr, float* Qs, float* Qi, float* potTemp, float* velX, float* velY, float* velZ, float* pressure, float* defaultPressure);
 
 //------------------------------------------
 

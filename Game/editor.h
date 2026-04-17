@@ -88,7 +88,9 @@ private:
 	void applySelect();
 	void usePicker();
 
-	void setValueOfParam(const int index, const parameter param, const bool add, const float value, const float secondValue = 0.0f);
+	void resetValues();
+
+	void setValueOfParam(const int index, const parameter param, const bool add, const float value, const float secondValue = 0.0f, const float thirdValue = 0.0f);
 	void setGround(const int index, bool ground);
 	void addDataErasedGround(const int x, const int y);
 
@@ -96,7 +98,7 @@ private:
 	void dataToSkewTData(float* temp, float* dew, float* pres);
 	glm::vec2 getMinMaxVaueParam(parameter param);
 	const char* getFormatParam(parameter param, int& flagOutput);
-	glm::vec2 getValueParam(const int index, parameter param);
+	glm::vec3 getValueParam(const int index, parameter param);
 	int getDaysInMonth(int month);
 	void dayToMonthDay(int dayOfYear, int& month, int& dayOfMonth);
 	void setSliceMinMax(bool fullView);
@@ -118,11 +120,14 @@ private:
 	parameter m_editParamSky{ POTTEMP };
 
 	int m_mousePointingIndex{ 0 };
+	bool m_selectionInGrid{ false };
+	glm::ivec3 m_mousePointingPos{ 0 };
 	bool m_simulationActive{ false };
 	int m_simulationStep{ 0 };
 	float m_simulationSpeed{ 1.0f };
 	bool m_changedGround = false;
 	int m_skewTidx = GRIDSIZESKYX / 2;
+	glm::ivec3 m_skewTPos{ 0 };
 
 	// Viewing Settings
 	bool m_viewSlice{ false };
@@ -139,7 +144,7 @@ private:
 
 	//General apply variables
 	float m_applyValue{ 1.0f };
-	glm::vec2 m_valueDir{ 0,1 };
+	glm::vec3 m_valueDir{ 0,0,1 };
 
 	//Brush variables
 	bool m_brushing = false;
@@ -149,18 +154,18 @@ private:
 	bool m_groundErase = false;
 
 	//Select variables
-	glm::vec2 m_saveSelectPos{ 0,0 };
+	glm::ivec3 m_saveSelectPos{0};
 	bool m_selectReset{ false };
 	bool m_selecting{ false };
-	glm::vec2 m_corners[2]{};
+	glm::ivec3 m_corners[2]{};
 	bool m_microPhysSelect{ false };
 	bool m_justViewSelection{ false };
 
 
 	//Camera variables
 	glm::vec3 MousePos3D{};
-	glm::vec3 SaveMousePos = glm::vec3(0);
-	glm::vec2 Save2DPos = glm::vec2(0);
+	glm::vec3 SaveMousePos{ 0.0f };
+	glm::vec2 Save2DPos{ 0.0f };
 	float roll = 0.0f, pitch = 0.0f;
 	float SaveRoll = 0.0f, SavePitch = 0.0f;
 	float MouseWheel = 0;

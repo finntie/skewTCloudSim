@@ -1035,7 +1035,7 @@ __device__ float FPGRFR(const float tempAirK, const float tempGroundC, const flo
 __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, float* _Qr, float* _Qs, float* _Qi, 
     const float dt, const float speed, const float* _temp, const float* _densAir, const float* _pressure, const int* _groundHeight, const float* _groundpressure,
     float* condens, float* depos, float* freeze, 
-    const bool graphActive, const int2 minSelectPos, const int2 maxSelectPos, microPhysicsParams& microPhysicsResult)
+    const bool graphActive, const int3 minSelectPos, const int3 maxSelectPos, microPhysicsParams& microPhysicsResult)
 {
     //----------------------------------------------------------------------------------------------------------------------------------//
     //--------- Formulas and variables from https://research.csiro.au/ccam/wp-content/uploads/sites/520/2024/01/1377337420.pdf ---------//
@@ -1358,7 +1358,8 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
         if (graphActive)
         {
             bool insideRegion = (x >= minSelectPos.x && x <= maxSelectPos.x &&
-                y >= minSelectPos.y && y <= maxSelectPos.y);
+                y >= minSelectPos.y && y <= maxSelectPos.y &&
+                z >= minSelectPos.z && z <= maxSelectPos.z);
 
             int LIdx = x;
 
@@ -1389,6 +1390,7 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
                     PRACW, PREVP, PRACS, PSACW, PSACR, PSACI, PSAUT, PSFW,
                     PSFI, PSDEP, PSSUB, PSMLT, PGAUT, PGFR, PGACW, PGACI,
                     PGACR, PGDRY, PGACS, PGSUB, PGMLT, PGWET, PGACR1, PVVAP, PVSUB);
+
             }
             __syncthreads();
 

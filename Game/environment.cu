@@ -331,7 +331,7 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 		__debugbreak();
 	}
 	cudaMemcpy(noiseGPU, noise, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDefault);
-	const float maxHeight = 10.5f;
+	const float maxHeight = 0.2f;
 	initGroundHeightGPU << <GRIDSIZESKYZ, GRIDSIZESKYX >> > (m_GHeight, noiseGPU, maxHeight);
 	cudaDeviceSynchronize();
 
@@ -1073,7 +1073,7 @@ bool environmentGPU::isGround(int x, int y)
 	return y <= m_GHeight[x];
 }
 
-float* environmentGPU::getParamArray(parameter type, const bool windX)
+float* environmentGPU::getParamArray(parameter type, direction windDir)
 {
 	switch (type)
 	{
@@ -1099,7 +1099,20 @@ float* environmentGPU::getParamArray(parameter type, const bool windX)
 		return m_envGrid.Qi;
 		break;
 	case WIND:
-		return windX ? m_envGrid.velfieldX : m_envGrid.velfieldY;
+		switch (windDir)
+		{
+		case LEFT:
+		case RIGHT:
+			return m_envGrid.velfieldX;
+		case UP:
+		case DOWN:
+			return m_envGrid.velfieldY;
+		case FORWARD:
+		case BACKWARD:
+			return m_envGrid.velfieldZ;
+		default:
+			break;
+		}
 		break;
 	case PGROUND:
 		printf("Error, getParamArray() can not return PGROUND, must return float, change return value to template or void to fix\n");
@@ -1111,7 +1124,7 @@ float* environmentGPU::getParamArray(parameter type, const bool windX)
 	return nullptr;
 }
 
-void environmentGPU::prepareBrushGPU(parameter paramType, const float brushSize, const float2 mousePos, const float2 extras, const float brushSmoothnes, const float dt, const float brushIntensity, const float applyValue, const float2 valueDir, const bool groundErase)
+void environmentGPU::prepareBrushGPU(parameter paramType, const float brushSize, const int3 mousePos, const float brushSmoothnes, const float dt, const float brushIntensity, const float applyValue, const float3 valueDir, const bool groundErase)
 {
 	cudaMemcpy(m_dummyGHeight, m_GHeight, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToDevice);
 	bool changedGround = false;
@@ -1123,18 +1136,19 @@ void environmentGPU::prepareBrushGPU(parameter paramType, const float brushSize,
 	//Get correct array to possibly change
 	float* array = nullptr;
 	float* array2 = nullptr;
+	float* array3 = nullptr;
 	if (paramType == WIND)
 	{
-		array = getParamArray(paramType);
-		array2 = getParamArray(paramType, false);
+		array = getParamArray(paramType, RIGHT);
+		array2 = getParamArray(paramType, UP);
+		array3 = getParamArray(paramType, FORWARD);
 	}
 	else if (paramType != PGROUND)
 	{
 		array = getParamArray(paramType);
 	}
-	array = m_envGrid.pressure;
 	//Actually calculate where to put brush and apply brush values
-	applyBrushGPU << <blocks, threads >> > (array, array2, m_dummyGHeight, m_storBool, paramType, brushSize, mousePos, extras, brushSmoothnes, brushIntensity, applyValue, valueDir, groundErase, m_neighbourData, dt);
+	applyBrushGPU << <blocks, threads >> > (array, array2, array3, m_dummyGHeight, m_storBool, paramType, brushSize, mousePos, brushSmoothnes, brushIntensity, applyValue, valueDir, groundErase, dt);
 	cudaDeviceSynchronize();
 
 	cudaError_t err = cudaGetLastError();
@@ -1155,7 +1169,83 @@ void environmentGPU::prepareBrushGPU(parameter paramType, const float brushSize,
 		{
 			compareAndResetValuesOutGround << <blocks, threads >> > (m_GHeight, m_dummyGHeight, m_isentropicTemp, m_isentropicVapor,
 				m_envGrid.Qv, m_envGrid.Qw, m_envGrid.Qc, m_envGrid.Qr, m_envGrid.Qs, m_envGrid.Qi, 
-				m_envGrid.potTemp, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.pressure, m_defaultPressure);
+				m_envGrid.potTemp, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ, m_envGrid.pressure, m_defaultPressure);
+			cudaDeviceSynchronize();
+		}
+		//Then set the groundheight correct
+		cudaMemcpy(m_GHeight, m_dummyGHeight, GRIDSIZEGROUND * sizeof(int), cudaMemcpyDeviceToDevice);
+		cudaDeviceSynchronize();
+
+		initKernelSky(m_GHeight, m_defaultVelX, m_defaultVelZ);
+		cudaDeviceSynchronize();
+		m_groundChanged = true;
+	}
+
+	//Update GPU values
+	editorDataGPU();
+	cudaDeviceSynchronize();
+
+	Game.Editor().GPUSetEnv(&m_envGrid, &m_groundGrid, m_GHeight, m_envGrid.pressure);
+	cudaDeviceSynchronize();
+	err = cudaGetLastError();
+	if (err != cudaSuccess) {
+		std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
+		__debugbreak();
+	}
+}
+
+void environmentGPU::prepareSelectionGPU(parameter paramType, const int3 minPos, const int3 maxPos, const float applyValue, const float3 valueDir, const bool groundErase)
+{
+	cudaMemcpy(m_dummyGHeight, m_GHeight, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToDevice);
+	bool changedGround = false;
+	cudaMemset(m_storBool, 0, sizeof(bool));
+
+	int blocks = maxPos.y - minPos.y + 1;
+	int threads = maxPos.x - minPos.x + 1;
+
+	if (blocks <= 0 || threads <= 0)
+	{
+		printf("Warning: block (%i) or thread (%i) amount are invalid, setting value to 1 \n", blocks, threads);
+		blocks = blocks <= 0 ? 1 : blocks;
+		threads = threads <= 0 ? 1 : threads;
+	}
+
+	//Get correct array to possibly change
+	float* array = nullptr;
+	float* array2 = nullptr;
+	float* array3 = nullptr;
+	if (paramType == WIND)
+	{
+		array = getParamArray(paramType, RIGHT);
+		array2 = getParamArray(paramType, UP);
+		array3 = getParamArray(paramType, FORWARD);
+	}
+	else if (paramType != PGROUND)
+	{
+		array = getParamArray(paramType);
+	}
+	// Now actually apply the selection to the grid
+	applySelectionGPU << <blocks, threads >> > (array, array2, array3, m_dummyGHeight, m_storBool, paramType, minPos, maxPos, applyValue, valueDir, groundErase);
+
+	cudaError_t err = cudaGetLastError();
+	if (err != cudaSuccess) {
+		std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
+		__debugbreak();
+	}
+
+	//Check for ground changed
+	cudaMemcpy(&changedGround, m_storBool, sizeof(bool), cudaMemcpyDeviceToHost);
+	if (changedGround)
+	{
+		threads = GRIDSIZESKYX;
+		blocks = GRIDSIZESKYY;
+
+		//First set all data back that was in the ground before
+		if (groundErase)
+		{
+			compareAndResetValuesOutGround << <blocks, threads >> > (m_GHeight, m_dummyGHeight, m_isentropicTemp, m_isentropicVapor,
+				m_envGrid.Qv, m_envGrid.Qw, m_envGrid.Qc, m_envGrid.Qr, m_envGrid.Qs, m_envGrid.Qi,
+				m_envGrid.potTemp, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ, m_envGrid.pressure, m_defaultPressure);
 			cudaDeviceSynchronize();
 		}
 		//Then set the groundheight correct
