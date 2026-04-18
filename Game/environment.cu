@@ -1164,6 +1164,7 @@ void environmentGPU::prepareBrushGPU(parameter paramType, const float brushSize,
 		threads = GRIDSIZESKYX;
 		blocks = GRIDSIZESKYY;
 
+		//debugPrintArray << <1, threads >> > (m_GHeight, GRIDSIZESKYZ);
 		//First set all data back that was in the ground before
 		if (groundErase)
 		{

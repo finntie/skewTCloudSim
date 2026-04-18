@@ -210,7 +210,7 @@ void readTable::readDWDFile(const char* _file)
 	//srand(static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1)));
 	//int dateNum = rand() % 734;
 
-	//targetDate = AllDates[243] + "12"; // AllDates[243] = 2024 05 01 - 1700 Cape?
+	//targetDate = AllDates[dateNum] + "12"; // AllDates[243] = 2024 05 01 - 1700 Cape?
 
 	printf("Reading file %s\n", targetDate.c_str());
 

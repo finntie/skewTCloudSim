@@ -1123,7 +1123,15 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 		const bool f = !(bounds.sides == DIRICHLET && neigh[idx].forward.outside) && neigh[idx].forward.type == SKY;
 		const int validEnv = int(l) + int(r) + int(b) + int(f);
 
-		//if (z > 29 && y == 1) printf("x %i, y %i, z %i, forwardT %f, currentT %f, backwardT %f, forwardQv %f, currentQv %f, backwardQv %f\n", x, y, z, forwardT, currentT, backwardT, forwardQv, currentQv,backwardQv);
+		// If nothing around is valid, final result will just be 0
+		if (validEnv == 0)
+		{
+			buoyancyStor[idx] = 0.0f;
+			continue;
+		}
+
+		//if (z == 15 && x == 0) printf("x %i, y %i, z %i, forwardT %f, currentT %f, backwardT %f, forwardQv %f, currentQv %f, backwardQv %f\n", x, y, z, forwardT, currentT, backwardT, forwardQv, currentQv,backwardQv);
+		//if (z == 15 && x == 0) printf("x %i, y %i, z %i, l %i, r %i, b %i, f% i, validEnv %i\n", x, y, z, l, r, b, f, validEnv);
 
 
 		// ------------ QV ------------
@@ -1488,10 +1496,10 @@ __global__ void applyBrushGPU(float* array, float* array2, float* array3, int* g
 		const int mZ = z + position.z - brushOffset;
 		const int mIdx = getIdx(mX, mY, mZ);
 
-		if (mX >= GRIDSIZESKYX || mY >= GRIDSIZESKYY || mZ > GRIDSIZESKYZ || mX < 0 || mY < 0 || mZ < 0) return;
+		if (mX >= GRIDSIZESKYX || mY >= GRIDSIZESKYY || mZ > GRIDSIZESKYZ || mX < 0 || mY < 0 || mZ < 0) continue;
 
 		//Can't brush the ground
-		if (paramType != PGROUND && mY <= GHeight[mX + mZ * GRIDSIZESKYX]) return;
+		if (paramType != PGROUND && mY <= GHeight[mX + mZ * GRIDSIZESKYX]) continue;
 
 		//Distance check
 		const float eX = lX;
@@ -1554,9 +1562,9 @@ __global__ void applySelectionGPU(float* array, float* array2, float* array3, in
 		const int mZ = z;
 		const int mIdx = getIdx(mX, mY, mZ);
 
-		if (mX >= GRIDSIZESKYX || mY >= GRIDSIZESKYY || mZ > GRIDSIZESKYZ || mX < 0 || mY < 0 || mZ < 0) return;
+		if (mX >= GRIDSIZESKYX || mY >= GRIDSIZESKYY || mZ > GRIDSIZESKYZ || mX < 0 || mY < 0 || mZ < 0) continue;
 		//Can't brush the ground
-		if (paramType != PGROUND && mY <= GHeight[mX + mZ * GRIDSIZESKYX]) return;
+		if (paramType != PGROUND && mY <= GHeight[mX + mZ * GRIDSIZESKYX]) continue;
 
 		//For directional value
 		float value1 = applyValue;
@@ -1617,8 +1625,8 @@ __global__ void compareAndResetValuesOutGround(const int* oldGroundHeight, const
 
 		//return if Y is not at in between the old and new ground height
 
-		if (oldGroundHeight[idxG] != newGroundHeight[idxG]) printf("x %i, y %i, z %i, old %i, new %i\n", x, y, z, oldGroundHeight[idxG], newGroundHeight[idxG]);
-		if (y > oldGroundHeight[idxG] || y <= newGroundHeight[idxG]) return;
+		//if (oldGroundHeight[idxG] != newGroundHeight[idxG]) printf("x %i, y %i, z %i, old %i, new %i\n", x, y, z, oldGroundHeight[idxG], newGroundHeight[idxG]);
+		if (y > oldGroundHeight[idxG] || y <= newGroundHeight[idxG]) continue;
 		Qv[idx] = isentropicVap[y];
 		Qw[idx] = 0.0f;
 		Qc[idx] = 0.0f;
