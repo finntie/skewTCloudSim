@@ -1,0 +1,258 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <Import Project="properties\bee.props" />
+  <Import Project="properties\bee_library.props" />
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{a5d06fec-7fcb-4af8-b043-6d92d6b99695}</ProjectGuid>
+    <RootNamespace>bee</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Platform)'=='x64'">
+    <PlatformToolset Condition="$(BeeLint)">ClangCl</PlatformToolset>
+    <PlatformToolset Condition="!$(BeeLint)">v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.9.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="properties\bee_debug.props" />
+    <Import Project="properties\bee_pc.props" />
+    <Import Project="properties\bee_pc_debug.props" />
+    <Import Project="properties\bee_pc_gl.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="properties\bee_release.props" />
+    <Import Project="properties\bee_pc.props" />
+    <Import Project="properties\bee_pc_release.props" />
+    <Import Project="properties\bee_pc_gl.props" />
+  </ImportGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <CudaCompile>
+      <GenerateRelocatableDeviceCode>false</GenerateRelocatableDeviceCode>
+      <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120
+</CodeGeneration>
+    </CudaCompile>
+    <CudaLink>
+      <AdditionalLibraryDirectories>$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
+    </CudaLink>
+    <CudaLink>
+      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
+      <UseHostLibraryDirectories>false</UseHostLibraryDirectories>
+      <UseHostLibraryDependencies>false</UseHostLibraryDependencies>
+    </CudaLink>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <CudaCompile>
+      <GenerateRelocatableDeviceCode>false</GenerateRelocatableDeviceCode>
+      <CudaRuntime>Shared</CudaRuntime>
+      <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120
+</CodeGeneration>
+    </CudaCompile>
+    <CudaLink>
+      <AdditionalLibraryDirectories>$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
+    </CudaLink>
+    <CudaLink>
+      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
+      <UseHostLibraryDirectories>false</UseHostLibraryDirectories>
+      <UseHostLibraryDependencies>false</UseHostLibraryDependencies>
+    </CudaLink>
+  </ItemDefinitionGroup>
+  <!-- Shared -->
+  <ItemGroup>
+    <ClInclude Include="external\clipper\include\clipper2\clipper.core.h" />
+    <ClInclude Include="external\clipper\include\clipper2\clipper.engine.h" />
+    <ClInclude Include="external\clipper\include\clipper2\clipper.export.h" />
+    <ClInclude Include="external\clipper\include\clipper2\clipper.h" />
+    <ClInclude Include="external\clipper\include\clipper2\clipper.minkowski.h" />
+    <ClInclude Include="external\clipper\include\clipper2\clipper.offset.h" />
+    <ClInclude Include="external\clipper\include\clipper2\clipper.rectclip.h" />
+    <ClCompile Include="external\clipper\src\clipper.engine.cpp" />
+    <ClCompile Include="external\clipper\src\clipper.offset.cpp" />
+    <ClCompile Include="external\clipper\src\clipper.rectclip.cpp" />
+    <ClInclude Include="external\fmod\fmod.h" />
+    <ClInclude Include="external\fmod\fmod.hpp" />
+    <ClInclude Include="external\fmod\fmod_codec.h" />
+    <ClInclude Include="external\fmod\fmod_common.h" />
+    <ClInclude Include="external\fmod\fmod_dsp.h" />
+    <ClInclude Include="external\fmod\fmod_dsp_effects.h" />
+    <ClInclude Include="external\fmod\fmod_errors.h" />
+    <ClInclude Include="external\fmod\fmod_output.h" />
+    <ClInclude Include="external\fmod\fmod_studio.h" />
+    <ClInclude Include="external\fmod\fmod_studio.hpp" />
+    <ClInclude Include="external\fmod\fmod_studio_common.h" />
+    <ClInclude Include="external\fmod\fmod_switch.h" />
+    <ClCompile Include="external\imgui\imgui.cpp" />
+    <ClCompile Include="external\imgui\ImGuizmo.cpp" />
+    <ClCompile Include="external\imgui\imgui_demo.cpp" />
+    <ClCompile Include="external\imgui\imgui_draw.cpp" />
+    <ClCompile Include="external\imgui\imgui_impl.cpp" />
+    <ClCompile Include="external\imgui\imgui_tables.cpp" />
+    <ClCompile Include="external\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="external\imgui\implot.cpp" />
+    <ClCompile Include="external\imgui\implot_demo.cpp" />
+    <ClCompile Include="external\imgui\implot_items.cpp" />
+    <ClInclude Include="external\magic_enum\magic_enum.hpp" />
+    <ClInclude Include="external\NVIDIA\include\cuda.h" />
+    <ClInclude Include="external\NVIDIA\include\cuda_runtime.h" />
+    <ClInclude Include="external\NVIDIA\include\cuda_runtime_api.h" />
+    <ClInclude Include="external\predicates\constants.h" />
+    <ClInclude Include="external\predicates\predicates.h" />
+    <ClCompile Include="external\predicates\predicates.cpp" />
+    <ClCompile Include="external\tinygltf\tiny_gltf.cc" />
+    <ClInclude Include="external\visit_struct\visit_struct.hpp" />
+    <ClInclude Include="include\ai\navigation_system.hpp" />
+    <ClInclude Include="include\ai\navmesh.hpp" />
+    <ClInclude Include="include\ai\navmesh_agent.hpp" />
+    <ClInclude Include="include\core\audio.hpp" />
+    <ClInclude Include="include\core\device.hpp" />
+    <ClInclude Include="include\core\ecs.h" />
+    <ClInclude Include="include\core\ecs.hpp" />
+    <ClInclude Include="include\core\engine.h" />
+    <ClInclude Include="include\core\engine.hpp" />
+    <ClInclude Include="include\core\fileio.hpp" />
+    <ClInclude Include="include\core\geometry2d.hpp" />
+    <ClInclude Include="include\core\input.hpp" />
+    <ClInclude Include="include\core\resource.hpp" />
+    <ClInclude Include="include\core\resources.hpp" />
+    <ClInclude Include="include\core\transform.hpp" />
+    <ClInclude Include="include\graph\euclidean_graph.hpp" />
+    <ClInclude Include="include\graph\graph.hpp" />
+    <ClInclude Include="include\graph\graph_search.hpp" />
+    <ClInclude Include="include\math\constants.hpp" />
+    <ClInclude Include="include\math\geometry.hpp" />
+    <ClInclude Include="include\math\math.hpp" />
+    <ClInclude Include="include\math\meteoformulas.h" />
+    <ClInclude Include="include\physics\jolt_physics_system.hpp" />
+    <ClInclude Include="include\physics\physics_components.hpp" />
+    <ClInclude Include="include\physics\world.hpp" />
+    <ClInclude Include="include\platform\opengl\draw_image.hpp" />
+    <ClInclude Include="include\rendering\colors.hpp" />
+    <ClInclude Include="include\rendering\debug_render.hpp" />
+    <ClInclude Include="include\rendering\image.hpp" />
+    <ClInclude Include="include\rendering\mesh.hpp" />
+    <ClInclude Include="include\rendering\model.hpp" />
+    <ClInclude Include="include\rendering\render.hpp" />
+    <ClInclude Include="include\rendering\render_components.hpp" />
+    <ClInclude Include="include\tools\inspectable.hpp" />
+    <ClInclude Include="include\tools\inspector.hpp" />
+    <ClInclude Include="include\tools\input_mapping.hpp" />
+    <ClInclude Include="include\tools\log.hpp" />
+    <ClInclude Include="include\tools\profiler.hpp" />
+    <ClInclude Include="include\tools\serialization.hpp" />
+    <ClInclude Include="include\tools\thread_pool.hpp" />
+    <ClInclude Include="include\tools\warnings.hpp" />
+    <ClInclude Include="include\tools\shader_preprocessor.hpp" />
+    <ClInclude Include="include\tools\tools.hpp" />
+    <ClCompile Include="source\ai\navigation_system.cpp" />
+    <ClCompile Include="source\ai\navmesh.cpp" />
+    <ClCompile Include="source\ai\navmesh_agent.cpp" />
+    <ClCompile Include="source\core\audio.cpp" />
+    <ClCompile Include="source\core\ecs.cpp" />
+    <ClCompile Include="source\core\engine.cpp" />
+    <ClCompile Include="source\core\fileio.cpp" />
+    <ClCompile Include="source\core\geometry2d.cpp" />
+    <ClCompile Include="source\core\input.cpp" />
+    <ClCompile Include="source\core\resources.cpp" />
+    <ClCompile Include="source\core\transform.cpp" />
+    <ClCompile Include="source\graph\euclidean_graph.cpp" />
+    <ClCompile Include="source\graph\graph_search.cpp" />
+    <ClCompile Include="source\math\geometry.cpp" />
+    <ClCompile Include="source\math\meteoformulas.cpp" />
+    <ClCompile Include="source\physics\jolt_physics_system.cpp" />
+    <ClCompile Include="source\physics\physics_components.cpp" />
+    <ClCompile Include="source\physics\world.cpp" />
+    <ClCompile Include="source\platform\opengl\draw_image.cpp" />
+    <ClCompile Include="source\rendering\colors.cpp" />
+    <ClCompile Include="source\rendering\debug_render.cpp" />
+    <ClCompile Include="source\rendering\model.cpp" />
+    <ClCompile Include="source\rendering\render_components.cpp" />
+    <ClCompile Include="source\tools\inspectable.cpp" />
+    <ClCompile Include="source\tools\inspector.cpp" />
+    <ClCompile Include="source\tools\log.cpp" />
+    <ClCompile Include="source\tools\profiler.cpp" />
+    <ClCompile Include="source\tools\thread_pool.cpp" />
+    <ClCompile Include="source\tools\tools.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="external\entt\natvis\entt\config.natvis" />
+    <Natvis Include="external\entt\natvis\entt\container.natvis" />
+    <Natvis Include="external\entt\natvis\entt\core.natvis" />
+    <Natvis Include="external\entt\natvis\entt\entity.natvis" />
+    <Natvis Include="external\entt\natvis\entt\graph.natvis" />
+    <Natvis Include="external\entt\natvis\entt\locator.natvis" />
+    <Natvis Include="external\entt\natvis\entt\meta.natvis" />
+    <Natvis Include="external\entt\natvis\entt\platform.natvis" />
+    <Natvis Include="external\entt\natvis\entt\poly.natvis" />
+    <Natvis Include="external\entt\natvis\entt\process.natvis" />
+    <Natvis Include="external\entt\natvis\entt\resource.natvis" />
+    <Natvis Include="external\entt\natvis\entt\signal.natvis" />
+    <Natvis Include="external\glm\glm.natvis" />
+  </ItemGroup>
+  <!-- PC -->
+  <ItemGroup Condition="'$(Platform)'=='x64'">
+    <ClCompile Include="source\platform\pc\core\fileio_pc.cpp" />
+    <ClCompile Include="source\platform\pc\core\input_pc.cpp" />
+  </ItemGroup>
+  <!-- GL -->
+  <ItemGroup Condition="'$(Platform)|$(GraphicsBackend)'=='x64|OpenGL'">
+    <ClCompile Include="external\glad\src\glad.c" />
+    <ClCompile Include="external\imgui\imgui_impl_glfw.cpp" />
+    <ClCompile Include="external\imgui\imgui_impl_opengl3.cpp" />
+    <ClInclude Include="include\platform\opengl\image_gl.hpp" />
+    <ClInclude Include="include\platform\opengl\mesh_gl.hpp" />
+    <ClInclude Include="include\platform\opengl\open_gl.hpp" />
+    <ClInclude Include="include\platform\opengl\render_components_gl.hpp" />
+    <ClInclude Include="include\platform\opengl\render_gl.hpp" />
+    <ClInclude Include="include\platform\opengl\shader_gl.hpp" />
+    <ClInclude Include="include\platform\opengl\uniforms_gl.hpp" />
+    <ClCompile Include="source\platform\opengl\debug_render_gl.cpp" />
+    <ClCompile Include="source\platform\opengl\device_gl.cpp" />
+    <ClCompile Include="source\platform\opengl\image_gl.cpp" />
+    <ClCompile Include="source\platform\opengl\mesh_gl.cpp" />
+    <ClCompile Include="source\platform\opengl\open_gl.cpp" />
+    <ClCompile Include="source\platform\opengl\render_gl.cpp" />
+    <ClCompile Include="source\platform\opengl\shader_gl.cpp" />
+    <ClCompile Include="source\tools\shader_preprocessor.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="properties\bee.props" />
+    <None Include="properties\bee_debug.props" />
+    <None Include="properties\bee_library.props" />
+    <None Include="properties\bee_pc.props" />
+    <None Include="properties\bee_pc_debug.props" />
+    <None Include="properties\bee_pc_gl.props" />
+    <None Include="properties\bee_pc_release.props" />
+    <None Include="properties\bee_release.props" />
+    <None Include="properties\game.props" />
+    <None Include="properties\game_pc.props" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.9.targets" />
+  </ImportGroup>
+</Project>

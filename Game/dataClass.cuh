@@ -1,11 +1,7 @@
 #pragma once
 
-#include <cuda.h>
 #include <cuda_runtime.h> 
-#include <CUDA/cmath>
-#include <stdio.h>
-
-#define MAXGRAPHLENGTH 100
+#include "config.h"
 
 struct microPhysicsParams;
 
@@ -78,7 +74,7 @@ public:
 	dataClass();
 	~dataClass();
 
-	void confirmMicroPhysCheckRegion(const int2 minCorner, const int2 maxCorner);
+	void confirmMicroPhysCheckRegion(const int3 minCorner, const int3 maxCorner);
 	void cancelMicroPhysCheckRegion();
 	void setMicroPhysicsData(const microPhysicsParams* params);
 
@@ -88,8 +84,8 @@ public:
 
 	bool microPhysCheckActive{ false};
 	char3 dummy;
-	int2 microPhysMinPos{ -1, -1 };
-	int2 microPhysMaxPos{ -1, -1 };
+	int3 microPhysMinPos{ -1, -1, -1 };
+	int3 microPhysMaxPos{ -1, -1, -1 };
 };
 
 

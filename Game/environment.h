@@ -2,24 +2,7 @@
 #include <vector>
 #include "half/half.hpp"
 #include <glm/glm.hpp>
-
-#define GRIDSIZESKYX 64
-#define GRIDSIZESKYY 64
-
-#define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY)
-#define GRIDSIZEGROUND (GRIDSIZESKYX)
-#define VOXELSIZE 64.0f //Meters
-
-
-//Storage array for setting boundary conditions easier.
-enum envType
-{
-	SKY, OUTSIDE, GROUND
-};
-struct Neigh
-{
-	envType left, right, up, down;
-};
+#include "config.h"
 
 struct envDebugData;
 class environmentGPU;
@@ -38,7 +21,7 @@ public:
 		/*half_float::half*/float Qs[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Snow
 		/*half_float::half*/float Qi[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Ice (precip)
 		float potTemp[GRIDSIZESKY]{ 1.0f };			 // Potential temperature
-		glm::vec2 velField[GRIDSIZESKY]{};				 // Velocity field (fluid sim) needs to be changed to vec3 later
+		glm::vec3 velField[GRIDSIZESKY]{};				 // Velocity field (fluid sim)
 		float pressure[GRIDSIZESKY]{};
 
 		//float dummy{ 0.0f }; //Room for 4 bytes?		
@@ -106,7 +89,7 @@ public:
 
 	/// <summary> Get UV from the velocity field which is in MAC grid</summary>
 	glm::vec2 getUV(const int index);
-	glm::vec2 getUV(const glm::vec2* velField, const int index);
+	glm::vec3 getUV(const glm::vec3* velField, const int x, const int y, const int z);
 
 	/// <summary>Get ambient temp at height. Using avaraged lapse rate between 5 and 2 km. </summary>
 	float getIsentropicTemp(const float y);

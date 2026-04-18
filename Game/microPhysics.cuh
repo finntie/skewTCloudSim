@@ -108,7 +108,7 @@ struct microPhysicsParams
 __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, float* _Qr, float* _Qs, float* _Qi,
 	const float _dt, const float _speed, const float* _temp, const float* _densAir, const float* _pressure, const int* _groundHeight, const float* _groundpressure,
 	float* condens, float* depos, float* freeze, 
-	const bool graphActive, const int2 minSelectPos, const int2 maxSelectPos, microPhysicsParams& microPhysicsResult);
+	const bool graphActive, const int3 minSelectPos, const int3 maxSelectPos, microPhysicsParams& microPhysicsResult);
 
 __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv,	float* _Qgr, float* _Qgs, float* _Qgi,
 	const float _dt, const float _speed, float* _tempGround, const float* _tempAir, const float* _densAir, const float* _pressure, const float* _groundPressure,
@@ -121,7 +121,6 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* Q
 
 
 __device__ float FPVCON(const float temp, const float ps, const float Qv, const float QWS, const float dt, const float speed);
-__device__ float FPVDEP(const float temp, const float ps, const float Qv, const float QWI, const float dt, const float speed);
 
 __device__ float FPIMLT(const float temp, const float Qc); //TODO: limit melting?
 __device__ float FPIDW(const float dt, const float temp, const float Qc, const float Qw, const float Dair, const float ps);

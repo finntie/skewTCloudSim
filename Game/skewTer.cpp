@@ -3,7 +3,6 @@
 #include "math/meteoformulas.h"
 #include "math/constants.hpp"
 
-#include "environment.h"
 #include "core/engine.hpp"
 #include "rendering/colors.hpp"
 #include "rendering/debug_render.hpp"

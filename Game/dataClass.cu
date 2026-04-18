@@ -23,7 +23,7 @@ dataClass::~dataClass()
 
 
 
-void dataClass::confirmMicroPhysCheckRegion(const int2 minCorner, const int2 maxCorner)
+void dataClass::confirmMicroPhysCheckRegion(const int3 minCorner, const int3 maxCorner)
 {
 	microPhysEnvDataResult.reset();
 	microPhysMinPos = minCorner;
@@ -34,8 +34,8 @@ void dataClass::confirmMicroPhysCheckRegion(const int2 minCorner, const int2 max
 void dataClass::cancelMicroPhysCheckRegion()
 {
 	microPhysCheckActive = false;
-	microPhysMinPos = { -1,-1 };
-	microPhysMaxPos = { -1,-1 };
+	microPhysMinPos = { -1,-1,-1 };
+	microPhysMaxPos = { -1,-1,-1 };
 	microPhysEnvDataResult.reset();
 }
 

@@ -1,8 +1,8 @@
 #pragma once
 
+#include <glm/glm.hpp> //TODO: we do not want this
+#include "config.h"
 #include <cuda_runtime.h> 
-struct Neigh;
-enum parameter : uint16_t;
 struct microPhysicsParams;
 struct envDebugData;
 
@@ -10,7 +10,7 @@ class environmentGPU
 {
 public:
 
-	struct gridDataSkyGPU // 36 bytes
+	struct gridDataSkyGPU // 88 bytes
 	{
 		float* Qv; //  Mixing Ratio of Water Vapor
 		float* Qw; //	Mixing Ratio of	Liquid Water
@@ -21,10 +21,11 @@ public:
 		float* potTemp;			 // Potential temperature
 		float* velfieldX;
 		float* velfieldY;
+		float* velfieldZ;
 		float* pressure;
 	};
 
-	struct gridDataGroundGPU // 28 bytes
+	struct gridDataGroundGPU // 56 bytes
 	{
 		float* Qrs; // Subsurface water content
 		float* Qgr; // Rain content
@@ -38,7 +39,7 @@ public:
 	environmentGPU();
 	~environmentGPU();
 
-	void init(float* potTemps, glm::vec2* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures, float* smallPressure);
+	void init(float* potTemps, glm::vec3* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures, float* smallPressure);
 
 	void updateGPU(float dt, const float speed);
 
@@ -51,17 +52,16 @@ public:
 
 	//-----------------Diffusing----------------
 
-	// type: temp = 0, vapor = 1, velX = 2, velY = 3, default = 4
+	// type: temp = 0, vapor = 1, velX = 2, velY = 3, velZ = 4, default = 4
 	void diffuseGPU(float* diffuseArray, int type, const float dt);
 	//------------------------------------------
 
 
 	//-----------------Advecting----------------
 
-	void advectGroundWaterGPU(const float dt, const float speed);
+	void advectGroundWater(const float dt, const float speed);
 	void setTempsAtGround(const float dt, const float speed);
-	void advectWithoutDensity(float* array, const float* defaultVal, const float dt);
-	void advectPPMWGPU(float* array, const float* defaultVal, const float dt);
+	void advectPPMWGPU(float* array, const float* defaultVal, boundsEnv boundsVal, const float dt);
 	// fallVelType: rain = 0, snow = 1, hail = 2
 	void advectPrecip(float* array, const int fallVelType, const float dt);
 	//------------------------------------------
@@ -77,18 +77,19 @@ public:
 
 	void editorDataGPU();
 	float irridianceGPU();
-	void groundCoverageFactorGPU();
-	void updateGroundTempsGPU(const float dt, const float speed, const float irridiance);
+	void groundCoverageFactor();
+	void updateGroundTemps(const float dt, const float speed, const float irridiance);
 	void calculateBuoyancy(const float dt);
 	bool isGround(int x, int y);
-	float* getParamArray(parameter type, const bool windX = true);
+	float* getParamArray(parameter type, direction windDir = RIGHT);
 	//------------------------------------------
 
 
 	//-------------------Outside------------------
 
-	void prepareBrushGPU(parameter paramType, const float brushSize, const float2 mousePos, const float2 extras,
-		const float brushSmoothnes, const float dt, const float brushIntensity, const float applyValue, const float2 valueDir, const bool groundErase);
+	void prepareBrushGPU(parameter paramType, const float brushSize, const int3 mousePos,
+		const float brushSmoothnes, const float dt, const float brushIntensity, const float applyValue, const float3 valueDir, const bool groundErase);
+	void prepareSelectionGPU(parameter paramType, const int3 minPos, const int3 maxPos, const float applyValue, const float3 valueDir, const bool groundErase);
 	void resetParameterGPU(parameter paramType);
 	//------------------------------------------
 
@@ -112,12 +113,21 @@ private:
 	gridDataGroundGPU m_groundGrid;
 
 	float m_time = 43200.0f; //0 to 86.400 time in seconds
-	const float m_dayLightDuration = 14.0f;
-	const float m_hourOfSunrise = 6.0f;
+	static constexpr float m_dayLightDuration = 14.0f;
+	static constexpr float m_hourOfSunrise = 6.0f;
 	float m_longitude = 52.37f; //Longitude on earth, 52.37 is Amsterdam
 	int m_day = 130; //Day of the year
 	float m_sunStrength = 1.0f;
 	bool m_pauseDiurnal = false;
+
+	// Defined boundaries
+	const boundsEnv m_boundsVelX{ CUSTOM, CUSTOM, DIRICHLET };
+	const boundsEnv m_boundsVelY{ DIRICHLET, DIRICHLET, DIRICHLET };
+	const boundsEnv m_boundsVelZ{ CUSTOM, CUSTOM, DIRICHLET };
+
+	const boundsEnv m_boundsMixingRatios{ DIRICHLET, DIRICHLET, DIRICHLET };
+	const boundsEnv m_boundsVapor{ CUSTOM, CUSTOM, CUSTOM };
+	const boundsEnv m_boundsPotTemp{ CUSTOM, CUSTOM, CUSTOM };
 
 	//GPU variables
 	float* m_array;
@@ -135,7 +145,8 @@ private:
 	int* m_dummyGHeight;
 
 	float* m_defaultPressure;
-	float* m_defaultVel;
+	float* m_defaultVelX;
+	float* m_defaultVelZ;
 	float* m_isentropicTemp;
 	float* m_isentropicVapor;
 	float* m_dummyArray;
@@ -162,10 +173,11 @@ private:
 
 	bool m_groundChanged{ true };
 	float* m_precon; //Precon (pressure projection)
-	char3* m_A; //A matrix (pressure projection)
-
+	float4* m_A; //A matrix (pressure projection)
+	
 	//CPU storage
 	float m_velXCPU[GRIDSIZESKY];
 	float m_velYCPU[GRIDSIZESKY];
+	float m_velZCPU[GRIDSIZESKY];
 
 };

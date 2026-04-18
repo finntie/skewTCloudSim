@@ -18,8 +18,7 @@
 #include <chrono>
 #include <ctime>
 
-#include <CUDA/include/cuda_runtime.h>
-#include <CUDA/include/cuda.h>
+#include "utils.cuh"
 #include "environment.cuh"
 
 using namespace Constants;
@@ -211,7 +210,7 @@ void readTable::readDWDFile(const char* _file)
 	//srand(static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1)));
 	//int dateNum = rand() % 734;
 
-	//targetDate = AllDates[243] + "12"; // AllDates[243] = 2024 05 01 - 1700 Cape?
+	//targetDate = AllDates[dateNum] + "12"; // AllDates[243] = 2024 05 01 - 1700 Cape?
 
 	printf("Reading file %s\n", targetDate.c_str());
 
@@ -368,7 +367,7 @@ void readTable::initEnvironment()
 	std::vector<int> indices;
 	std::vector<float> potTempSmall;
 	std::vector<float> potTemp;
-	std::vector<glm::vec2> velField;
+	std::vector<glm::vec3> velField;
 	std::vector<float> Qv;
 
 	indices.resize(GRIDSIZESKYY);
@@ -394,10 +393,6 @@ void readTable::initEnvironment()
 		int i = getIndexAtHeight(y + H0);
 		int Pi = i == 0 ? 0 : i - 1;
 		pressuresSmall[j] = lerpEnvValue(skewTData.data.altitude[Pi] - H0, skewTData.data.altitude[i] - H0, y, skewTData.data.pressure[Pi], skewTData.data.pressure[i]);
-		for (int x = 0; x < GRIDSIZESKYX; x++)
-		{
-			pressures[x + j * GRIDSIZESKYX] = pressuresSmall[j];
-		}
 		potTempSmall[j] = lerpEnvValue(skewTData.data.altitude[Pi] - H0, skewTData.data.altitude[i] - H0, y, skewTData.data.temperature[Pi], skewTData.data.temperature[i]);
 		//potTempSmall[j] = skewTData.data.temperature[i];
 		indices[j] = i;
@@ -405,12 +400,16 @@ void readTable::initEnvironment()
 	}
 
 	meteoformulas::getPotentialTempArray(potTempSmall.data(), skewTData.data.pressure[0], pressuresSmall.data(), potTempSmall.data(), GRIDSIZESKYY);
-	//Duplicate across x direction
-	for (int i = 0; i < GRIDSIZESKYY; i++)
+	//Duplicate across x and z direction
+	for (int z = 0; z < GRIDSIZESKYZ; z++)
 	{
-		for (int x = 0; x < GRIDSIZESKYX; x++)
+		for (int i = 0; i < GRIDSIZESKYY; i++) 
 		{
-			potTemp[x + i * int(GRIDSIZESKYX)] = static_cast<float>(potTempSmall[i] + 273.15f);
+			for (int x = 0; x < GRIDSIZESKYX; x++)
+			{
+				const int idx = getIdx(x, i, z);
+				potTemp[idx] = static_cast<float>(potTempSmall[i] + 273.15f);
+			}
 		}
 	}
 
@@ -420,35 +419,51 @@ void readTable::initEnvironment()
 		const float H0 = skewTData.data.altitude[0];
 		const int idx = indices[i];
 		int Pidx = idx == 0 ? 0 : idx - 1;
+		int Pi = i == 0 ? 0 : i - 1;
+		//Sin for X and cos for Y
+		const float velFieldValueX = std::sinf((skewTData.data.windDir[idx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[idx];
+		const float velFieldValueZ = std::cosf((skewTData.data.windDir[idx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[idx];
 
-		float velFieldValue = std::sinf((skewTData.data.windDir[idx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[idx];
-		float QvValue = meteoformulas::ws(lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, skewTData.data.dewPoint[Pidx], skewTData.data.dewPoint[idx]), 
-			pressuresSmall[i]);
-
-		for (int x = 0; x < GRIDSIZESKYX; x++)
+		const float psValue = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, pressuresSmall[Pi], pressuresSmall[i]);
+		const float QvValue = meteoformulas::ws(lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, 
+			skewTData.data.dewPoint[Pidx], skewTData.data.dewPoint[idx]), psValue);
+		for (int z = 0; z < GRIDSIZESKYZ; z++)
 		{
-			velField[i * GRIDSIZESKYX + x] = { velFieldValue, 0 };
-			Qv[i * GRIDSIZESKYX + x] = QvValue;
+			for (int x = 0; x < GRIDSIZESKYX; x++)
+			{
+				const int idxFull = getIdx(x, i, z);
+				velField[idxFull] = { velFieldValueX, 0, velFieldValueZ };
+				Qv[idxFull] = QvValue;
+				pressures[idxFull] = psValue;
+			}
 		}
 	}
 
 	//Convert velfield into MAC-grid - TODO: could be done in loop above if loop was counting down.
-	for (int y = 0; y < GRIDSIZESKYY; y++)
+	for (int z = 0; z < GRIDSIZESKYZ; z++)
 	{
-		for (int x = 0; x < GRIDSIZESKYX; x++)
+		for (int y = 0; y < GRIDSIZESKYY; y++)
 		{
-			const int Nx = x + 1 >= GRIDSIZESKYX ? x : x + 1;
-			const int Ny = y + 1 >= GRIDSIZESKYY ? y : y + 1;
+			for (int x = 0; x < GRIDSIZESKYX; x++)
+			{
+				const int Nx = x + 1 >= GRIDSIZESKYX ? x : x + 1;
+				const int Ny = y + 1 >= GRIDSIZESKYY ? y : y + 1;
+				const int Nz = z + 1 >= GRIDSIZESKYZ ? z : z + 1;
+				const int idx = getIdx(x, y, z);
 
-			velField[x + y * GRIDSIZESKYX] = { velField[x + y * GRIDSIZESKYX].x + velField[Nx + y * GRIDSIZESKYX].x / 2, (velField[x + y * GRIDSIZESKYX].y + velField[x + Ny * GRIDSIZESKYX].y) / 2 };
+
+				velField[idx] = { (velField[idx].x + velField[getIdx(Nx, y, z)].x) / 2.0f,
+					(velField[idx].y + velField[getIdx(x, Ny, z)].y) / 2.0f,
+					(velField[idx].z + velField[getIdx(x, y, Nz)].z) / 2.0f };
+			}
 		}
 	}
 
 
-	for (int x = 0; x < GRIDSIZEGROUND; x++)
+	for (int i = 0; i < GRIDSIZEGROUND; i++)
 	{
-		groundTemp[x] = skewTData.data.temperature[0] + 273.15f;
-		groundPressure[x] = skewTData.data.pressure[0];
+		groundTemp[i] = skewTData.data.temperature[0] + 273.15f;
+		groundPressure[i] = skewTData.data.pressure[0];
 	}
 
 #if USE_GPU

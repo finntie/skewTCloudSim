@@ -45,6 +45,9 @@
     <ClCompile Include="microPhys.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="tracing.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="gameSystem.h">
@@ -100,6 +103,15 @@
     </ClInclude>
     <ClInclude Include="dataClass.cuh">
       <Filter>Cuda Header</Filter>
+    </ClInclude>
+    <ClInclude Include="config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils.cuh">
+      <Filter>Cuda Header</Filter>
+    </ClInclude>
+    <ClInclude Include="tracing.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

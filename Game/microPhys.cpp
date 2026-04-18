@@ -2,8 +2,7 @@
 
 #include "math/constants.hpp"
 #include "math/meteoformulas.h"
-#include "environment.h" //For the defined variables
-
+#include <algorithm> //For std::clamp
 
 microPhys::microPhys()
 {

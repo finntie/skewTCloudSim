@@ -9,7 +9,7 @@ lib/
 tidy/
 **/__pycache__/
 executable/*
-
+x64/
 
 imgui.ini
 inspector.json

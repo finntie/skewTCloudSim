@@ -1,11 +1,10 @@
 #include "microPhysics.cuh"
 
 //Game includes
-#include "environment.h"
+#include "utils.cuh"
 
 #include "meteoconstants.cuh"
 #include "meteoformulas.cuh"
-#include "game.h"
 #include "dataClass.cuh"
 
 #include <CUDA/include/cuda_runtime.h>
@@ -99,12 +98,16 @@ __device__ float FPIMLT(const float temp, const float Qc)
 
 __device__ float FPIDW(const float dt, const float temp, const float Qc, const float Qw, const float Dair, const float ps)
 {
-    if (temp < 0.0f && Qw > 0.0f && Qc > 0.0f)
+    if (temp < 0.0f && Qw > 0.0f)
     {
         //Formula from https://journals.ametsoc.org/view/journals/mwre/128/4/1520-0493_2000_128_1070_asfcot_2.0.co_2.xml and WeatherScapes
         const float a = 0.5f; // capacitance for hexagonal crystals
         const float quu = fmax(1e-12f * NiGPU(temp) / (Dair * 0.001f), Qc);
-        return powf((1 - a) * cvdGPU(temp, ps, Dair * 0.001f) * dt + powf(quu, 1 - a), 1 / (1 - a)) - Qc;
+        const float iceCloud =  powf((1 - a) * cvdGPU(temp, ps, Dair * 0.001f) * dt + powf(quu, 1 - a), 1 / (1 - a)) - Qc;
+
+        // Calculate liquid-Ice fraction as described in the paper
+        return iceCloud;
+
     }
     return 0.0f;
 }
@@ -177,8 +180,8 @@ __device__ float FPRAUT(const float Qw, const float QwMin, const float temp)
         const float L = Qw * 1.225f * 1e-3f; //From kg/kg to g/cm3
 
         // Aggregation rate of liquid to rain rate coefficient: // Liu–Daum–McGraw–Wood (LD) scheme: https://journals.ametsoc.org/view/journals/atsc/63/3/jas3675.1.xml
-        return 1e3f * kBAW * dispersion * (L * L * L) * std::powf(Nc, -1) *
-            static_cast<float>(1 - std::exp(-std::powf(1.03e16f * std::powf(Nc, -2.0f / 3.0f) * (L * L), shapeParam))); //First 1e3 is conversion to kg/m3
+        return 1e3f * kBAW * dispersion * (L * L * L) * powf(Nc, -1) *
+            static_cast<float>(1 - expf(-powf(1.03e16f * powf(Nc, -2.0f / 3.0f) * (L * L), shapeParam))); //First 1e3 is conversion to kg/m3
     }
     return 0.0f;
 }
@@ -1032,373 +1035,384 @@ __device__ float FPGRFR(const float tempAirK, const float tempGroundC, const flo
 __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, float* _Qr, float* _Qs, float* _Qi, 
     const float dt, const float speed, const float* _temp, const float* _densAir, const float* _pressure, const int* _groundHeight, const float* _groundpressure,
     float* condens, float* depos, float* freeze, 
-    const bool graphActive, const int2 minSelectPos, const int2 maxSelectPos, microPhysicsParams& microPhysicsResult)
+    const bool graphActive, const int3 minSelectPos, const int3 maxSelectPos, microPhysicsParams& microPhysicsResult)
 {
     //----------------------------------------------------------------------------------------------------------------------------------//
     //--------- Formulas and variables from https://research.csiro.au/ccam/wp-content/uploads/sites/520/2024/01/1377337420.pdf ---------//
     //----------------------------------------------------------------------------------------------------------------------------------//
 
-    const int tX = threadIdx.x;
-    const int tY = blockIdx.x;
-    const int idx = tX + tY * GRIDSIZESKYX;
-
     __shared__ microPhysicsParams microPhysValuesShared[GRIDSIZESKYX];
-    if (graphActive)
-    {  
-        microPhysValuesShared[tX].reset();
-    }
+    const int x = threadIdx.x;
+    const int y = blockIdx.x;
+    int z = 0;
+    int idx = getIdx(x, y, z);
 
-    //Is ground?
-    if (tY <= _groundHeight[tX]) return;
-    if (tX == GRIDSIZESKYX - 1) return; //Right side is not fully working due to pressure project 
-
-
-    float PVCON{ 0.0f }; // Condensation/Evaporation rate of cloud water to vapor
-    float PVDEP{ 0.0f }; // Deposition/Sublimation rate of cloud ice to vapor.
-
-    float PIMLT{ 0.0f }; // Melting of cloud ice to form cloud water T > 0
-    float PIDW{ 0.0f };  // Depositional growth of cloud ice at expense of cloud water
-    float PIHOM{ 0.0f }; // Homogeneous freezing of cloud water to form cloud ice
-    float PIACR{ 0.0f }; // Accretion of rain by cloud ice; produces snow or graupel depending on the amount of rain
-    float PRACI{ 0.0f }; // Accretion of cloud ice by rain; produces snow or graupel depending on the amount of rain.
-    float PRAUT{ 0.0f }; // Autoconversion of cloud water to form rain.
-    float PRACW{ 0.0f }; // Accretion of cloud water by rain.
-    float PREVP{ 0.0f }; // Evaporation of rain.
-    float PRACS{ 0.0f }; // Accretion of snow by rain; produces graupel if rain or snow exceeds threshold and T < 0
-    float PSACW{ 0.0f }; // Accretion of cloud water by snow; produces snow if T < 0 or rain if T >= 0. Also enhances snow melting for T >= 0
-    float PSACR{ 0.0f }; // Accretion of rain by snow. For T < 0, produces graupel if rain or snow exceeds threshold; if now, produces snow. For T >= 0, the accreted water enchances snow melting
-    float PSACI{ 0.0f }; // Accretion of cloud ice by snow.
-    float PSAUT{ 0.0f }; // Autoconversion (aggregation) of cloud ice to form snow
-    float PSFW{ 0.0f };  // Bergeron process (deposition and riming) transfer of cloud water to form snow.
-    float PSFI{ 0.0f };  // Transfer rate of cloud ice to snow through growth of Bergeron process embryos.
-    float PSDEP{ 0.0f }; // Depositional growth of snow
-    float PSSUB{ 0.0f }; // Sublimation of snow
-    float PSMLT{ 0.0f }; // Melting of snow to form rain, T > 0
-    float PGAUT{ 0.0f }; // Autoconversion (aggregation) of snow to form graupel.
-    float PGFR{ 0.0f };  // Probalistic freezing of rain to form graupel.
-    float PGACW{ 0.0f }; // Accretion of cloud water by graupel
-    float PGACI{ 0.0f }; // Accretion of cloud ice by graupel
-    float PGACR{ 0.0f }; // Accretion of rain by graupel
-    float PGACS{ 0.0f }; // Accretion of snow by graupel
-    float PGDRY{ 0.0f }; // Dry growth of graupel
-    float PGSUB{ 0.0f }; // Sublimation of graupel
-    float PGMLT{ 0.0f }; // Melting of graupel to form rain, T > 0. (In this regime, PGACW is assumed to be shed off as rain)
-    float PGWET{ 0.0f }; // Wet growth of graupel; may involve PGACS and PGACI and must include: PGACW or PGACR, or both. The amount of PGACW which is not able to freeze is shed off as rain.
-    float PGACR1{ 0.0f }; // Fallout or growth of hail by wetness
-
-    //Setting data
-    const float Qv = _Qv[idx] > 1e-18f ? _Qv[idx] : 0.0f;
-    const float Qw = _Qw[idx] > 1e-18f ? _Qw[idx] : 0.0f;
-    const float Qc = _Qc[idx] > 1e-18f ? _Qc[idx] : 0.0f;
-    const float Qr = _Qr[idx] > 1e-18f ? _Qr[idx] : 0.0f;
-    const float Qs = _Qs[idx] > 1e-18f ? _Qs[idx] : 0.0f;
-    const float Qi = _Qi[idx] > 1e-18f ? _Qi[idx] : 0.0f;
-
-    const float QwMin = 0.001f; // the minimum cloud water content required before rainmaking begins
-    const float QcMin = 0.001f; // the minimum cloud ice content required before snowmaking begins
-    const float QiMin = 0.0006f; // the minimum ice content required before snow turns into ice
-
-    float tempK = 0.0f;
-    float tempC = 0.0f;
-
-    const float ps = _pressure[idx];
-    float3 fallVel = { 0.0f, 0.0f, 0.0f };
-    float Dair = _densAir[idx];
-
-    //Setting temperature and falling velocity 
-    tempK = float(_temp[idx]) * powf(ps / _groundpressure[tX], Rsd / Cpd);
-    tempC = tempK - 273.15f;
-    if (Qr > 0.0f || Qs > 0.0f || Qi > 0.0f) fallVel = calculateFallingVelocityGPU(Qr, Qs, Qi, Dair, 3, m_gammaQr, m_gammaQs, m_gammaQi);
-    
-
-    const float QWS = wsGPU(tempC, ps); //Maximum water vapor air can hold
-    const float QWI = wiGPU(tempC, ps); //Maximum water vapor cold air can hold
-
-    //Production terms, used to sometimes create snow or ice or other stuff (formula 20): https://research.csiro.au/ccam/wp-content/uploads/sites/520/2024/01/1377337420.pdf 
-    const float PTerm1 = tempC < 0.0f && Qw + Qc > 0 + 1e-6f ? 1.0f : 0.0f; //TODO: when is there no cloud? (value 1e-6f)
-    const float PTerm2 = tempC < 0.0f && Qr < 1e-4f && Qs < 1e-4f ? 1.0f : 0.0f;
-    const float PTerm3 = tempC < 0.0f && Qr < 1e-4f ? 1.0f : 0.0f;
-
-    const float slopeR = slopePrecipGPU(Dair, Qr, 0);
-    const float slopeS = slopePrecipGPU(Dair, Qs, 1);
-    const float slopeI = slopePrecipGPU(Dair, Qi, 2);
-
-
-    //Setting variables
-    PVCON = FPVCON(tempC, ps, Qv, QWS, dt, speed);
-    PVDEP = FPVDEP(tempC, ps, Qv, QWI, dt, speed);
-
-    PIMLT = FPIMLT(tempC, Qc);
-    PIDW = FPIDW(dt, tempC, Qc, Qw, Dair, ps);
-    PIHOM = FPIHOM(tempC, Qw);
-    PIACR = FPIACR(Qr, Qc, Dair, slopeR);
-    PRACI = FPRACI(Qr, Qc, Dair, slopeR);
-    PRAUT = FPRAUT(Qw, QwMin, tempC);
-    PRACW = FPRACW(Qr, Qw, Dair, slopeR);
-    PREVP = FPREVP(tempC, Qr, Qv, QWS, Dair, ps, slopeR, PTerm1);
-    PRACS = FPRACS(Qr, Qs, PTerm2, fallVel, Dair, slopeS, slopeR);
-    PSACW = FPSACW(Qs, Qw, Dair, slopeS);
-    PSACR = FPSACR(Qr, Qs, fallVel, Dair, slopeR, slopeS);
-    PSACI = FPSACI(tempC, Qs, Qc, Dair, slopeS);
-    PSAUT = FPSAUT(tempC, Qc, QcMin);
-    PSFW = FPSFW(dt, tempC, ps, Qs, Qw, Qc, Qv, QWI, Dair);
-    PSFI = FPSFI(dt, tempC, ps, Qs, Qw, Qc, Qv, QWI, Dair);
-    PSDEP = FPSDEP(tempC, ps, Qv, QWI, Dair, slopeS);
-    PSSUB = FPSSUB(PSDEP);
-    PSDEP = fmax(0.0f, PSDEP); //Can't be negative
-    PSMLT = FPSMLT(tempC, ps, Qw, Qr, Qs, Qv, Dair, slopeS, PSACW, PSACR, dt * speed);
-    PGAUT = FPGAUT(tempC, Qs, QiMin);
-    PGFR = FPGFR(tempC, Qr, Dair, slopeR);
-    PGACW = FPGACW(Qi, Qw, slopeI, Dair);
-    PGACI = FPGACI(Qi, Qc, slopeI, Dair);
-    PGACR = FPGACR(Qi, Qr, Dair, fallVel, slopeR, slopeI);
-    PGACS = FPGACS(tempC, Qs, Qi, Dair, fallVel, slopeS, slopeI, false);
-    PGSUB = FPGSUB(tempC, ps, Qv, QWI, Qi, Dair, slopeI);
-    PGMLT = FPGMLT(tempC, ps, Qw, Qr, Qi, Qv, Dair, slopeI, PGACW, PGACR, dt * speed);
-    PGDRY = FPGDRY(Qw, Qc, Qr, Qs, PGACW, PGACI, PGACR, PGACS, dt * speed);
-    PGWET = FPGWET(tempC, ps, Qc, Qs, Qi, Qv, fallVel, Dair, slopeS, slopeI, PGACI, PGACS, dt * speed);
-    PGACR1 = FPGACR1(tempC, Qw, Qc, Qs, Qi, Dair, fallVel, slopeS, slopeI, PGWET, PGACW, PGACI, PGACS, dt * speed);
-
-    //Depending on which value is smaller, we choose or PGDRY or PGWET.
-    //In case of PGWET, we use PGACR1 to decide how much rain or ice we gain, else we use PGACR
-    //If PGACR1 >= 0, we remove from rain, because some will be frozen
-    //IF PGACR1 < 0, we add to rain, since water will be sheded from hail
-    float WTerm = 0.0f;
-    if (PGDRY > PGWET) WTerm = 1.0f;
-
-    //Limit by speed and add to heat latency.
-    if (tempC < 0)
+    for (z = 0; z < GRIDSIZESKYZ; z++)
     {
-        if (PVCON >= 0) condens[idx] += PVCON = dt * fmin(Qv, speed * PVCON);
-        else if (PVCON < 0) condens[idx] += PVCON = dt * fmax(-Qw, speed * PVCON); //Use negative numbers
-        if (PVDEP >= 0) depos[idx] += PVDEP = dt * fmin(Qv, speed * PVDEP);
-        else if (PVDEP < 0) depos[idx] += PVDEP = dt * fmax(-Qc, speed * PVDEP); //Use negative numbers
+        idx = getIdx(x, y, z);
+        const int idxG = x + z * GRIDSIZESKYX;
 
-        //PIMLT;
-        depos[idx] += PIDW = dt * fmin(Qw, speed * PIDW);
-        freeze[idx] += PIHOM = dt * fmin(Qw, speed * PIHOM);
-        freeze[idx] += PIACR = dt * fmin(Qr, speed * PIACR);
-        PRACI = dt * fmin(Qc, speed * PRACI);
-        PRAUT = dt * fmin(Qw, speed * PRAUT);
-        PRACW = dt * fmin(Qw, speed * PRACW);
-        condens[idx] -= PREVP = dt * fmin(Qr, speed * PREVP * (1 - PTerm1));
-        PRACS = dt * fmin(Qs, speed * PRACS * (1 - PTerm2));
-        freeze[idx] += PSACR = dt * fmin(Qr, speed * PSACR);
-        freeze[idx] += PSACW = dt * fmin(Qw, speed * PSACW);
-        PSACI = dt * fmin(Qc, speed * PSACI);
-        PSAUT = dt * fmin(Qc, speed * PSAUT);
-        freeze[idx] += PSFW = dt * fmin(Qw, speed * PSFW);
-        PSFI = dt * fmin(Qc, speed * PSFI);
-        depos[idx] += PSDEP = dt * fmin(Qv, speed * PSDEP * (PTerm1));
-        depos[idx] -= PSSUB = dt * fmin(Qs, speed * PSSUB * (1 - PTerm1));
-        //PSMLT;
-
-        PGAUT = dt * fmin(Qs, speed * PGAUT);
-        freeze[idx] += PGFR = dt * fmin(Qr, speed * PGFR);
-        //PGACW;
-        PGACI = dt * fmin(Qc, speed * PGACI);
-        freeze[idx] += PGACR = dt * fmin(Qr, speed * PGACR * (1 - WTerm));
-        PGACS = dt * fmin(Qs, speed * PGACS);
-        depos[idx] -= PGSUB = dt * fmin(Qi, speed * PGSUB * (1 - PTerm1));
-        //PGMLT;
-        if (WTerm == 0.0f)
+        if (graphActive)
         {
-            //Values that were used for PGDRY are already limited, and added to the correct heat latency
-            //PGDRY is only used as addition, so no use of limiting
-            //PGDRY;
-        }
-        else if (WTerm == 1.0f)
-        {
-            //Values that were used for PGWET are already limited, and added to the correct heat latency
-            //Altough PGWET is calculated a bit different, it still is okay, since the other values are accounted for in PGACR1
-            //PGWET;
-            //PGACR1 we want to limit on rain or ice depending on if its positive or negative.
-            //Although we don't remove PGACR1 from hail, if value is negative, we add to rain (thus take from ice)
-            if (PGACR1 >= 0) freeze[idx] += PGACR1 = dt * fmin(Qr, speed * PGACR1);
-            else if (PGACR1 < 0) freeze[idx] += PGACR1 = dt * fmax(-Qi, speed * PGACR1); //Use negative numbers
-        }
-    }
-    else
-    {
-        if (PVCON >= 0) condens[idx] += PVCON = dt * fmin(Qv, speed * PVCON);
-        else if (PVCON < 0) condens[idx] += PVCON = dt * fmax(-Qw, speed * PVCON); //Use negative numbers
-        if (PVDEP >= 0) depos[idx] += PVDEP = dt * fmin(Qv, speed * PVDEP);
-        else if (PVDEP < 0) depos[idx] += PVDEP = dt * fmax(-Qc, speed * PVDEP); //Use negative numbers
-
-        freeze[idx] -= PIMLT = dt * fmin(Qc, speed * PIMLT);
-        //PIDW;
-        //PIHOM;
-        PIACR = 0.0f;
-        //PRACI;
-        PRAUT = dt * fmin(Qw, speed * PRAUT);
-        PRACW = dt * fmin(Qw, speed * PRACW);
-        condens[idx] -= PREVP = dt * fmin(Qr, speed * PREVP * (1 - PTerm1));
-        //PRACS;
-        //PSACR;
-        PSACW = dt * fmin(Qw, speed * PSACW);
-        //PSACI;
-        //PSAUT;
-        //PSFW;
-        //PSFI;
-        //PSDEP;
-        //PSSUB;
-        freeze[idx] -= PSMLT = dt * fmin(Qs, speed * PSMLT);
-
-        //PGAUT;
-        //PGFR;
-        freeze[idx] += PGACW = dt * fmin(Qw, speed * PGACW);
-        //PGACI;
-        //PGACR;
-        PGACS = dt * fmin(Qs, speed * PGACS);
-        //PGSUB;
-        freeze[idx] -= PGMLT = dt * fmin(Qi, speed * PGMLT);
-        if (WTerm == 0.0f)
-        {
-            //Values that were used for PGDRY are already limited, and added to the correct heat latency
-            //PGDRY is only used as addition, so no use of limiting
-            //PGDRY;
-        }
-        else if (WTerm == 1.0f)
-        {
-            //Values that were used for PGWET are already limited, and added to the correct heat latency
-            //Altough PGWET is calculated a bit different, it still is okay, since the other values are accounted for in PGACR1
-            //PGWET;
-            //PGACR1 we want to limit on rain or ice depending on if its positive or negative.
-            //if (PGACR1 >= 0) PGACR1;
-            //else if (PGACR1 < 0) PGACR1;
-        }
-    }
-
-    // Var       Add       Sub       Description
-    //---------------------------------------------
-    //PVCON   | +Qv, Qw | -Qv, Qw | (Depending on positive or negative)
-    //PVDEP   | +Qv, Qc | -Qv, Qc | (Depending on positive or negative)
-    //PIMLT:  | +Qw     | -Qc     | (if T >= 0)
-    //PIDW:   | +Qc     | -Qw     | (if T < 0)
-    //PIHOM:  | +Qc     | -Qw     | (if T < -40)
-    //PIACR:  | +Qs, Qi | -Qr     | (Depending on PTerm3)
-    //PRACI:  | +Qs, Qi | -Qc     | (Depending on PTerm3)
-    //PRAUT:  | +Qr     | -Qw     |
-    //PRACW:  | +Qr     | -Qw     |
-    //PREVP:  | +Qv     | -Qr     |
-    //PRACS:  | +Qi     | -Qs     | (Depending on PTerm2, and T < 0)
-    //PSACW:  | +Qs, Qr | -Qr, Qw | (+Qs if T < 0, +Qr if T >= 0)
-    //PSACR:  | +Qs, Qi | -Qr     | (Depending on PTerm2)
-    //PSACI:  | +Qs     | -Qc     |
-    //PSAUT:  | +Qs     | -Qc     |
-    //PSFW:   | +Qs     | -Qw     |
-    //PSFI:   | +Qs     | -Qc     |
-    //PSDEP:  | +Qs     | -Qv     |
-    //PSSUB:  | +Qv     | -Qs     |
-    //PSMLT:  | +Qr     | -Qs     | (if T >= 0)
-    //PGAUT:  | +Qi     | -Qs     |
-    //PGFR:   | +Qi     | -Qr     |
-    //PGACW:  | +Qi, Qr | -Qw     | (Included in PGWET or PGDRY)
-    //PGACI:  | +Qi     | -Qc     | (Included in PGWET or PGDRY)
-    //PGACR:  | +Qi     | -Qr     | (Included in PGWET or PGDRY)
-    //PGACS:  | +Qi     | -Qs     | (Included in PGWET or PGDRY)
-    //PGDRY:  | +Qi     |         | (Depending on dry or wet)
-    //PGSUB:  | +Qv     | -Qi     |
-    //PGMLT:  | +Qr     | -Qi     | (if T >= 0)
-    //PGWET:  | +Qi     |         | (Is included in PGACR1)
-    //PGACR1: | +Qr, Qi | -Qr, Qi | (If PGWET and depending on positive or negative)
-
-    if (tempC < 0)
-    {
-        _Qv[idx] += PSSUB * (1 - PTerm1) + PGSUB * (1 - PTerm1) +
-            PREVP * (1 - PTerm1) - PSDEP * (PTerm1)-
-            PVCON - PVDEP;
-
-        _Qw[idx] += PVCON - PSACW - PSFW - PRAUT - PRACW - PIDW - PIHOM;
-        _Qc[idx] += PVDEP + PIDW + PIHOM - PSAUT - PSACI - PRACI - PSFI - PGACI;
-
-        _Qr[idx] += PRAUT + PRACW - PIACR - PSACR -
-            PGACR * (1 - WTerm) - PGACR1 * (WTerm)- //Dependent on wet or dry growth
-            PGFR - PREVP * (1 - PTerm1);
-
-        _Qs[idx] += PSAUT + PSACI + PSACW + PSFW + PSFI +
-            PRACI * (PTerm3)+PIACR * (PTerm3)-PGACS - PGAUT -
-            PRACS * (1 - PTerm2) + PSACR * (PTerm2)-
-            PSSUB * (1 - PTerm1) + PSDEP * (PTerm1);
-
-        _Qi[idx] += PGAUT + PGFR +
-            PGDRY * (1 - WTerm) + PGWET * (WTerm)+ //Wet or dry growth
-            PSACR * (1 - PTerm2) + PRACS * (1 - PTerm2) +
-            PRACI * (1 - PTerm3) + PIACR * (1 - PTerm3) - PGSUB * (1 - PTerm1);
-    }
-    else
-    {
-        _Qv[idx] += PREVP * (1 - PTerm1) -
-            PVCON - PVDEP;
-        _Qw[idx] += PVCON + PIMLT - PRAUT - PRACW - PGACW - PSACW;
-
-        _Qc[idx] += PVDEP - PIMLT;
-
-        _Qr[idx] += PRAUT + PRACW + PSACW + PGACW +
-            PGMLT + PSMLT - PREVP * (1 - PTerm1);
-
-
-        _Qs[idx] += -PSMLT - PGACS;
-        _Qi[idx] += -PGMLT + PGACS;
-    }
-    __syncthreads();
-
-    //Make data ready for return but only inside the set-region
-    if (graphActive)
-    {
-        bool insideRegion = (tX >= minSelectPos.x && tX <= maxSelectPos.x &&
-            tY >= minSelectPos.y && tY <= maxSelectPos.y);
-
-        int LIdx = tX;
-
-        if (insideRegion)
-        {
-            if (minSelectPos.x >= 0)
-            {
-                //Offset the index to the left, so we can correctly grab the most left one easily.
-                LIdx = tX - minSelectPos.x;
-            }
-
-            float PVVAP = 0.0f;
-            float PVSUB = 0.0f;
-            if (PVCON < 0.0f)
-            {
-                PVVAP = -PVCON;
-                PVCON = 0.0f;
-            }
-            if (PVDEP < 0.0f)
-            {
-                PVSUB = -PVDEP;
-                PVDEP = 0.0f;
-            }
-            PGWET *= WTerm;
-            PGDRY *= (1 - WTerm);
-
-            microPhysValuesShared[LIdx].init(PVCON, PVDEP, PIMLT, PIDW, PIHOM, PIACR, PRACI, PRAUT,
-                PRACW, PREVP, PRACS, PSACW, PSACR, PSACI, PSAUT, PSFW,
-                PSFI, PSDEP, PSSUB, PSMLT, PGAUT, PGFR, PGACW, PGACI,
-                PGACR, PGDRY, PGACS, PGSUB, PGMLT, PGWET, PGACR1, PVVAP, PVSUB);
-        }
-        __syncthreads();
-
-
-        //Basically, we grab half of the block, add all the values on the other side and repeat the process.
-        for (int i = GRIDSIZESKYX / 2; i > 0; i >>= 1)
-        {
-            if (insideRegion && LIdx < i)
-            {
-                microPhysValuesShared[LIdx] = microPhysValuesShared[LIdx] + microPhysValuesShared[LIdx + i];
-            }
+            microPhysValuesShared[x].reset();
             __syncthreads();
         }
 
+        //Is ground?
+        if (y <= _groundHeight[idxG]) continue;
+        //if (x == GRIDSIZESKYX - 1) continue; //TODO: Right side is not fully working due to pressure project 
 
-        //Using atomicAdd(), we can safely add all block values to a singular value
-        if (insideRegion && LIdx == 0)
+
+        float PVCON{ 0.0f }; // Condensation/Evaporation rate of cloud water to vapor
+        float PVDEP{ 0.0f }; // Redacted | now Qc forms using PIDW only.~~Deposition/Sublimation rate of cloud ice to vapor.~~
+
+        float PIMLT{ 0.0f }; // Melting of cloud ice to form cloud water T > 0
+        float PIDW{ 0.0f };  // Depositional growth of cloud ice at expense of cloud water
+        float PIHOM{ 0.0f }; // Homogeneous freezing of cloud water to form cloud ice
+        float PIACR{ 0.0f }; // Accretion of rain by cloud ice; produces snow or graupel depending on the amount of rain
+        float PRACI{ 0.0f }; // Accretion of cloud ice by rain; produces snow or graupel depending on the amount of rain.
+        float PRAUT{ 0.0f }; // Autoconversion of cloud water to form rain.
+        float PRACW{ 0.0f }; // Accretion of cloud water by rain.
+        float PREVP{ 0.0f }; // Evaporation of rain.
+        float PRACS{ 0.0f }; // Accretion of snow by rain; produces graupel if rain or snow exceeds threshold and T < 0
+        float PSACW{ 0.0f }; // Accretion of cloud water by snow; produces snow if T < 0 or rain if T >= 0. Also enhances snow melting for T >= 0
+        float PSACR{ 0.0f }; // Accretion of rain by snow. For T < 0, produces graupel if rain or snow exceeds threshold; if now, produces snow. For T >= 0, the accreted water enchances snow melting
+        float PSACI{ 0.0f }; // Accretion of cloud ice by snow.
+        float PSAUT{ 0.0f }; // Autoconversion (aggregation) of cloud ice to form snow
+        float PSFW{ 0.0f };  // Bergeron process (deposition and riming) transfer of cloud water to form snow.
+        float PSFI{ 0.0f };  // Transfer rate of cloud ice to snow through growth of Bergeron process embryos.
+        float PSDEP{ 0.0f }; // Depositional growth of snow
+        float PSSUB{ 0.0f }; // Sublimation of snow
+        float PSMLT{ 0.0f }; // Melting of snow to form rain, T > 0
+        float PGAUT{ 0.0f }; // Autoconversion (aggregation) of snow to form graupel.
+        float PGFR{ 0.0f };  // Probalistic freezing of rain to form graupel.
+        float PGACW{ 0.0f }; // Accretion of cloud water by graupel
+        float PGACI{ 0.0f }; // Accretion of cloud ice by graupel
+        float PGACR{ 0.0f }; // Accretion of rain by graupel
+        float PGACS{ 0.0f }; // Accretion of snow by graupel
+        float PGDRY{ 0.0f }; // Dry growth of graupel
+        float PGSUB{ 0.0f }; // Sublimation of graupel
+        float PGMLT{ 0.0f }; // Melting of graupel to form rain, T > 0. (In this regime, PGACW is assumed to be shed off as rain)
+        float PGWET{ 0.0f }; // Wet growth of graupel; may involve PGACS and PGACI and must include: PGACW or PGACR, or both. The amount of PGACW which is not able to freeze is shed off as rain.
+        float PGACR1{ 0.0f }; // Fallout or growth of hail by wetness
+
+        //Setting data
+        const float Qv = _Qv[idx] > 1e-18f ? _Qv[idx] : 0.0f;
+        const float Qw = _Qw[idx] > 1e-18f ? _Qw[idx] : 0.0f;
+        const float Qc = _Qc[idx] > 1e-18f ? _Qc[idx] : 0.0f;
+        const float Qr = _Qr[idx] > 1e-18f ? _Qr[idx] : 0.0f;
+        const float Qs = _Qs[idx] > 1e-18f ? _Qs[idx] : 0.0f;
+        const float Qi = _Qi[idx] > 1e-18f ? _Qi[idx] : 0.0f;
+
+        const float QwMin = 0.001f; // the minimum cloud water content required before rainmaking begins
+        const float QcMin = 0.001f; // the minimum cloud ice content required before snowmaking begins
+        const float QiMin = 0.0006f; // the minimum ice content required before snow turns into ice
+
+        float tempK = 0.0f;
+        float tempC = 0.0f;
+
+        const float ps = _pressure[idx];
+        float3 fallVel = { 0.0f, 0.0f, 0.0f };
+        float Dair = _densAir[idx];
+
+        //Setting temperature and falling velocity 
+        tempK = float(_temp[idx]) * powf(ps / _groundpressure[idxG], Rsd / Cpd);
+        tempC = tempK - 273.15f;
+        if (Qr > 0.0f || Qs > 0.0f || Qi > 0.0f) fallVel = calculateFallingVelocityGPU(Qr, Qs, Qi, Dair, 3, m_gammaQr, m_gammaQs, m_gammaQi);
+
+
+        const float QWS = wsGPU(tempC, ps); //Maximum water vapor air can hold
+        const float QWI = wiGPU(tempC, ps); //Maximum water vapor cold air can hold
+
+        //Production terms, used to sometimes create snow or ice or other stuff (formula 20): https://research.csiro.au/ccam/wp-content/uploads/sites/520/2024/01/1377337420.pdf 
+        const float PTerm1 = tempC < 0.0f && Qw + Qc > 0 + 1e-6f ? 1.0f : 0.0f; //TODO: when is there no cloud? (value 1e-6f)
+        const float PTerm2 = tempC < 0.0f && Qr < 1e-4f && Qs < 1e-4f ? 1.0f : 0.0f;
+        const float PTerm3 = tempC < 0.0f && Qr < 1e-4f ? 1.0f : 0.0f;
+
+        const float slopeR = slopePrecipGPU(Dair, Qr, 0);
+        const float slopeS = slopePrecipGPU(Dair, Qs, 1);
+        const float slopeI = slopePrecipGPU(Dair, Qi, 2);
+
+
+        //Setting variables
+        PVCON = FPVCON(tempC, ps, Qv, QWS, dt, speed);
+        PVDEP = FPVDEP(tempC, ps, Qv, QWI, dt, speed);
+        PVDEP = fminf(PVDEP, 0.0f); //TODO: TEST limit to only sublimate
+
+        PIMLT = FPIMLT(tempC, Qc);
+        PIDW = FPIDW(dt, tempC, Qc, Qw, Dair, ps);
+        PIHOM = FPIHOM(tempC, Qw);
+        PIACR = FPIACR(Qr, Qc, Dair, slopeR);
+        PRACI = FPRACI(Qr, Qc, Dair, slopeR);
+        PRAUT = FPRAUT(Qw, QwMin, tempC);
+        PRACW = FPRACW(Qr, Qw, Dair, slopeR);
+        PREVP = FPREVP(tempC, Qr, Qv, QWS, Dair, ps, slopeR, PTerm1);
+        PRACS = FPRACS(Qr, Qs, PTerm2, fallVel, Dair, slopeS, slopeR);
+        PSACW = FPSACW(Qs, Qw, Dair, slopeS);
+        PSACR = FPSACR(Qr, Qs, fallVel, Dair, slopeR, slopeS);
+        PSACI = FPSACI(tempC, Qs, Qc, Dair, slopeS);
+        PSAUT = FPSAUT(tempC, Qc, QcMin);
+        PSFW = FPSFW(dt, tempC, ps, Qs, Qw, Qc, Qv, QWI, Dair);
+        PSFI = FPSFI(dt, tempC, ps, Qs, Qw, Qc, Qv, QWI, Dair);
+        PSDEP = FPSDEP(tempC, ps, Qv, QWI, Dair, slopeS);
+        PSSUB = FPSSUB(PSDEP);
+        PSDEP = fmax(0.0f, PSDEP); //Can't be negative
+        PSMLT = FPSMLT(tempC, ps, Qw, Qr, Qs, Qv, Dair, slopeS, PSACW, PSACR, dt * speed);
+        PGAUT = FPGAUT(tempC, Qs, QiMin);
+        PGFR = FPGFR(tempC, Qr, Dair, slopeR);
+        PGACW = FPGACW(Qi, Qw, slopeI, Dair);
+        PGACI = FPGACI(Qi, Qc, slopeI, Dair);
+        PGACR = FPGACR(Qi, Qr, Dair, fallVel, slopeR, slopeI);
+        PGACS = FPGACS(tempC, Qs, Qi, Dair, fallVel, slopeS, slopeI, false);
+        PGSUB = FPGSUB(tempC, ps, Qv, QWI, Qi, Dair, slopeI);
+        PGMLT = FPGMLT(tempC, ps, Qw, Qr, Qi, Qv, Dair, slopeI, PGACW, PGACR, dt * speed);
+        PGDRY = FPGDRY(Qw, Qc, Qr, Qs, PGACW, PGACI, PGACR, PGACS, dt * speed);
+        PGWET = FPGWET(tempC, ps, Qc, Qs, Qi, Qv, fallVel, Dair, slopeS, slopeI, PGACI, PGACS, dt * speed);
+        PGACR1 = FPGACR1(tempC, Qw, Qc, Qs, Qi, Dair, fallVel, slopeS, slopeI, PGWET, PGACW, PGACI, PGACS, dt * speed);
+
+        //Depending on which value is smaller, we choose or PGDRY or PGWET.
+        //In case of PGWET, we use PGACR1 to decide how much rain or ice we gain, else we use PGACR
+        //If PGACR1 >= 0, we remove from rain, because some will be frozen
+        //IF PGACR1 < 0, we add to rain, since water will be sheded from hail
+        float WTerm = 0.0f;
+        if (PGDRY > PGWET) WTerm = 1.0f;
+
+        //Limit by speed and add to heat latency.
+        if (tempC < 0)
         {
-            microPhysValuesShared->atomicAddValues(microPhysicsResult, microPhysValuesShared[0]);
+            if (PVCON >= 0) condens[idx] += PVCON = dt * fmin(Qv, speed * PVCON);
+            else if (PVCON < 0) condens[idx] += PVCON = dt * fmax(-Qw, speed * PVCON); //Use negative numbers
+            if (PVDEP >= 0) depos[idx] += PVDEP = dt * fmin(Qv, speed * PVDEP);
+            else if (PVDEP < 0) depos[idx] += PVDEP = dt * fmax(-Qc, speed * PVDEP); //Use negative numbers
+
+            //PIMLT;
+            depos[idx] += PIDW = dt * fmin(Qw, speed * PIDW);
+            freeze[idx] += PIHOM = dt * fmin(Qw, speed * PIHOM);
+            freeze[idx] += PIACR = dt * fmin(Qr, speed * PIACR);
+            PRACI = dt * fmin(Qc, speed * PRACI);
+            PRAUT = dt * fmin(Qw, speed * PRAUT);
+            PRACW = dt * fmin(Qw, speed * PRACW);
+            condens[idx] -= PREVP = dt * fmin(Qr, speed * PREVP * (1 - PTerm1));
+            PRACS = dt * fmin(Qs, speed * PRACS * (1 - PTerm2));
+            freeze[idx] += PSACR = dt * fmin(Qr, speed * PSACR);
+            freeze[idx] += PSACW = dt * fmin(Qw, speed * PSACW);
+            PSACI = dt * fmin(Qc, speed * PSACI);
+            PSAUT = dt * fmin(Qc, speed * PSAUT);
+            freeze[idx] += PSFW = dt * fmin(Qw, speed * PSFW);
+            PSFI = dt * fmin(Qc, speed * PSFI);
+            depos[idx] += PSDEP = dt * fmin(Qv, speed * PSDEP * (PTerm1));
+            depos[idx] -= PSSUB = dt * fmin(Qs, speed * PSSUB * (1 - PTerm1));
+            //PSMLT;
+
+            PGAUT = dt * fmin(Qs, speed * PGAUT);
+            freeze[idx] += PGFR = dt * fmin(Qr, speed * PGFR);
+            //PGACW;
+            PGACI = dt * fmin(Qc, speed * PGACI);
+            freeze[idx] += PGACR = dt * fmin(Qr, speed * PGACR * (1 - WTerm));
+            PGACS = dt * fmin(Qs, speed * PGACS);
+            depos[idx] -= PGSUB = dt * fmin(Qi, speed * PGSUB * (1 - PTerm1));
+            //PGMLT;
+            if (WTerm == 0.0f)
+            {
+                //Values that were used for PGDRY are already limited, and added to the correct heat latency
+                //PGDRY is only used as addition, so no use of limiting
+                //PGDRY;
+            }
+            else if (WTerm == 1.0f)
+            {
+                //Values that were used for PGWET are already limited, and added to the correct heat latency
+                //Altough PGWET is calculated a bit different, it still is okay, since the other values are accounted for in PGACR1
+                //PGWET;
+                //PGACR1 we want to limit on rain or ice depending on if its positive or negative.
+                //Although we don't remove PGACR1 from hail, if value is negative, we add to rain (thus take from ice)
+                if (PGACR1 >= 0) freeze[idx] += PGACR1 = dt * fmin(Qr, speed * PGACR1);
+                else if (PGACR1 < 0) freeze[idx] += PGACR1 = dt * fmax(-Qi, speed * PGACR1); //Use negative numbers
+            }
+        }
+        else
+        {
+            if (PVCON >= 0) condens[idx] += PVCON = dt * fmin(Qv, speed * PVCON);
+            else if (PVCON < 0) condens[idx] += PVCON = dt * fmax(-Qw, speed * PVCON); //Use negative numbers
+            if (PVDEP >= 0) depos[idx] += PVDEP = dt * fmin(Qv, speed * PVDEP);
+            else if (PVDEP < 0) depos[idx] += PVDEP = dt * fmax(-Qc, speed * PVDEP); //Use negative numbers
+
+            freeze[idx] -= PIMLT = dt * fmin(Qc, speed * PIMLT);
+            //PIDW;
+            //PIHOM;
+            PIACR = 0.0f;
+            //PRACI;
+            PRAUT = dt * fmin(Qw, speed * PRAUT);
+            PRACW = dt * fmin(Qw, speed * PRACW);
+            condens[idx] -= PREVP = dt * fmin(Qr, speed * PREVP * (1 - PTerm1));
+            //PRACS;
+            //PSACR;
+            PSACW = dt * fmin(Qw, speed * PSACW);
+            //PSACI;
+            //PSAUT;
+            //PSFW;
+            //PSFI;
+            //PSDEP;
+            //PSSUB;
+            freeze[idx] -= PSMLT = dt * fmin(Qs, speed * PSMLT);
+
+            //PGAUT;
+            //PGFR;
+            freeze[idx] += PGACW = dt * fmin(Qw, speed * PGACW);
+            //PGACI;
+            //PGACR;
+            PGACS = dt * fmin(Qs, speed * PGACS);
+            //PGSUB;
+            freeze[idx] -= PGMLT = dt * fmin(Qi, speed * PGMLT);
+            if (WTerm == 0.0f)
+            {
+                //Values that were used for PGDRY are already limited, and added to the correct heat latency
+                //PGDRY is only used as addition, so no use of limiting
+                //PGDRY;
+            }
+            else if (WTerm == 1.0f)
+            {
+                //Values that were used for PGWET are already limited, and added to the correct heat latency
+                //Altough PGWET is calculated a bit different, it still is okay, since the other values are accounted for in PGACR1
+                //PGWET;
+                //PGACR1 we want to limit on rain or ice depending on if its positive or negative.
+                //if (PGACR1 >= 0) PGACR1;
+                //else if (PGACR1 < 0) PGACR1;
+            }
+        }
+
+        // Var       Add       Sub       Description
+        //---------------------------------------------
+        //PVCON   | +Qv, Qw | -Qv, Qw | (Depending on positive or negative)
+        //PVDEP   | +Qv, Qc | -Qv, Qc | (Depending on positive or negative)
+        //PIMLT:  | +Qw     | -Qc     | (if T >= 0)
+        //PIDW:   | +Qc     | -Qw     | (if T < 0)
+        //PIHOM:  | +Qc     | -Qw     | (if T < -40)
+        //PIACR:  | +Qs, Qi | -Qr     | (Depending on PTerm3)
+        //PRACI:  | +Qs, Qi | -Qc     | (Depending on PTerm3)
+        //PRAUT:  | +Qr     | -Qw     |
+        //PRACW:  | +Qr     | -Qw     |
+        //PREVP:  | +Qv     | -Qr     |
+        //PRACS:  | +Qi     | -Qs     | (Depending on PTerm2, and T < 0)
+        //PSACW:  | +Qs, Qr | -Qr, Qw | (+Qs if T < 0, +Qr if T >= 0)
+        //PSACR:  | +Qs, Qi | -Qr     | (Depending on PTerm2)
+        //PSACI:  | +Qs     | -Qc     |
+        //PSAUT:  | +Qs     | -Qc     |
+        //PSFW:   | +Qs     | -Qw     |
+        //PSFI:   | +Qs     | -Qc     |
+        //PSDEP:  | +Qs     | -Qv     |
+        //PSSUB:  | +Qv     | -Qs     |
+        //PSMLT:  | +Qr     | -Qs     | (if T >= 0)
+        //PGAUT:  | +Qi     | -Qs     |
+        //PGFR:   | +Qi     | -Qr     |
+        //PGACW:  | +Qi, Qr | -Qw     | (Included in PGWET or PGDRY)
+        //PGACI:  | +Qi     | -Qc     | (Included in PGWET or PGDRY)
+        //PGACR:  | +Qi     | -Qr     | (Included in PGWET or PGDRY)
+        //PGACS:  | +Qi     | -Qs     | (Included in PGWET or PGDRY)
+        //PGDRY:  | +Qi     |         | (Depending on dry or wet)
+        //PGSUB:  | +Qv     | -Qi     |
+        //PGMLT:  | +Qr     | -Qi     | (if T >= 0)
+        //PGWET:  | +Qi     |         | (Is included in PGACR1)
+        //PGACR1: | +Qr, Qi | -Qr, Qi | (If PGWET and depending on positive or negative)
+
+        if (tempC < 0)
+        {
+            _Qv[idx] += PSSUB * (1 - PTerm1) + PGSUB * (1 - PTerm1) +
+                PREVP * (1 - PTerm1) - PSDEP * (PTerm1)-
+                PVCON - PVDEP;
+
+            _Qw[idx] += PVCON - PSACW - PSFW - PRAUT - PRACW - PIDW - PIHOM;
+            _Qc[idx] += PVDEP + PIDW + PIHOM - PSAUT - PSACI - PRACI - PSFI - PGACI;
+
+            _Qr[idx] += PRAUT + PRACW - PIACR - PSACR -
+                PGACR * (1 - WTerm) - PGACR1 * (WTerm)- //Dependent on wet or dry growth
+                PGFR - PREVP * (1 - PTerm1);
+
+            _Qs[idx] += PSAUT + PSACI + PSACW + PSFW + PSFI +
+                PRACI * (PTerm3)+PIACR * (PTerm3)-PGACS - PGAUT -
+                PRACS * (1 - PTerm2) + PSACR * (PTerm2)-
+                PSSUB * (1 - PTerm1) + PSDEP * (PTerm1);
+
+            _Qi[idx] += PGAUT + PGFR +
+                PGDRY * (1 - WTerm) + PGWET * (WTerm)+ //Wet or dry growth
+                PSACR * (1 - PTerm2) + PRACS * (1 - PTerm2) +
+                PRACI * (1 - PTerm3) + PIACR * (1 - PTerm3) - PGSUB * (1 - PTerm1);
+        }
+        else
+        {
+            _Qv[idx] += PREVP * (1 - PTerm1) -
+                PVCON - PVDEP;
+            _Qw[idx] += PVCON + PIMLT - PRAUT - PRACW - PGACW - PSACW;
+
+            _Qc[idx] += PVDEP - PIMLT;
+
+            _Qr[idx] += PRAUT + PRACW + PSACW + PGACW +
+                PGMLT + PSMLT - PREVP * (1 - PTerm1);
+
+
+            _Qs[idx] += -PSMLT - PGACS;
+            _Qi[idx] += -PGMLT + PGACS;
         }
         __syncthreads();
+
+        //Make data ready for return but only inside the set-region
+        if (graphActive)
+        {
+            bool insideRegion = (x >= minSelectPos.x && x <= maxSelectPos.x &&
+                y >= minSelectPos.y && y <= maxSelectPos.y &&
+                z >= minSelectPos.z && z <= maxSelectPos.z);
+
+            int LIdx = x;
+
+            if (insideRegion)
+            {
+                if (minSelectPos.x >= 0)
+                {
+                    //Offset the index to the left, so we can correctly grab the most left one easily.
+                    LIdx = x - minSelectPos.x;
+                }
+
+                float PVVAP = 0.0f;
+                float PVSUB = 0.0f;
+                if (PVCON < 0.0f)
+                {
+                    PVVAP = -PVCON;
+                    PVCON = 0.0f;
+                }
+                if (PVDEP < 0.0f)
+                {
+                    PVSUB = -PVDEP;
+                    PVDEP = 0.0f;
+                }
+                PGWET *= WTerm;
+                PGDRY *= (1 - WTerm);
+
+                microPhysValuesShared[LIdx].init(PVCON, PVDEP, PIMLT, PIDW, PIHOM, PIACR, PRACI, PRAUT,
+                    PRACW, PREVP, PRACS, PSACW, PSACR, PSACI, PSAUT, PSFW,
+                    PSFI, PSDEP, PSSUB, PSMLT, PGAUT, PGFR, PGACW, PGACI,
+                    PGACR, PGDRY, PGACS, PGSUB, PGMLT, PGWET, PGACR1, PVVAP, PVSUB);
+
+            }
+            __syncthreads();
+
+
+            //Basically, we grab half of the block, add all the values on the other side and repeat the process.
+            for (int i = GRIDSIZESKYX / 2; i > 0; i >>= 1)
+            {
+                if (insideRegion && LIdx < i)
+                {
+                    microPhysValuesShared[LIdx] = microPhysValuesShared[LIdx] + microPhysValuesShared[LIdx + i];
+                }
+                __syncthreads();
+            }
+
+
+            //Using atomicAdd(), we can safely add all block values to a singular value
+            if (insideRegion && LIdx == 0)
+            {
+                microPhysValuesShared->atomicAddValues(microPhysicsResult, microPhysValuesShared[0]);
+            }
+            __syncthreads();
+        }
     }
 }
 
@@ -1407,10 +1421,12 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
     float* _time, const float irradiance, const float* _windSpeedX, const float* _cloudCover,
     const int* _groundHeight)
 {
-    const int tX = threadIdx.x;
+    const int x = threadIdx.x;
+    const int z = blockIdx.x;
+    const int idxG = x + z * GRIDSIZESKYX;
 
-    const int tY = _groundHeight[tX]; //Y to use index on environment variables
-    const int idx = tX + (tY + 1) * GRIDSIZESKYX;
+    const int y = _groundHeight[idxG]; //Y to use index on environment variables
+    const int idx = getIdx(x, y + 1, z);
 
 
     float PGREVP{ 0.0f }; // Evaporation of (rain)water.
@@ -1428,26 +1444,26 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
 
 
     //Setting data
-    const float Qrs = _Qrs[tX] > 1e-18f ? _Qrs[tX] : 0.0f;
-    const float Qgr = _Qgr[tX] > 1e-18f ? _Qgr[tX] : 0.0f;
-    const float Qgs = _Qgs[tX] > 1e-18f ? _Qgs[tX] : 0.0f;
-    const float Qgi = _Qgi[tX] > 1e-18f ? _Qgi[tX] : 0.0f;
+    const float Qrs = _Qrs[idxG] > 1e-18f ? _Qrs[idxG] : 0.0f;
+    const float Qgr = _Qgr[idxG] > 1e-18f ? _Qgr[idxG] : 0.0f;
+    const float Qgs = _Qgs[idxG] > 1e-18f ? _Qgs[idxG] : 0.0f;
+    const float Qgi = _Qgi[idxG] > 1e-18f ? _Qgi[idxG] : 0.0f;
     const float Qv = _Qv[idx] > 1e-18f ? _Qv[idx] : 0.0f;
 
     float condens = 0.0f;
     float freeze = 0.0f;
     float depos = 0.0f;
 
-    const float tempGroundC = _tempGround[tX] - 273.15f;
+    const float tempGroundC = _tempGround[idxG] - 273.15f;
     float tempAirK = 0.0f;
     const float ps = _pressure[idx];
     const float windSpeed = _windSpeedX[idx];
-    const float cloudCover = _cloudCover[tX];
+    const float cloudCover = _cloudCover[idxG];
     float Dair = _densAir[idx];
-    float* time = &_time[tX];
+    float* time = &_time[idxG];
 
     //Calculating T from potential temp
-    tempAirK = float(_tempAir[idx]) * powf(ps / groundPressure[tX], Rsd / Cpd);
+    tempAirK = float(_tempAir[idx]) * powf(ps / groundPressure[idxG], Rsd / Cpd);
     
 
     //printf("tempGroundC[(%i, %i), %i (Y + 1)]: %f\n", tX, tY, idx, tempGroundC);
@@ -1488,11 +1504,11 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
     //PGFLW:  | +Qrs    | -Qr     | 
     //PGDEVP: | +Qv     | -Qrs    | 
 
-    _Qrs[tX] += PGFLW - PGDEVP;
+    _Qrs[idxG] += PGFLW - PGDEVP;
     _Qv[idx] += PGREVP + PGDEVP;
-    _Qgr[tX] += PGSMLT + PGGMLT - PGREVP - PGGFR - PGSFR - PGFLW;
-    _Qgs[tX] += PGSFR - PGSMLT;
-    _Qgi[tX] += PGGFR - PGGMLT;
+    _Qgr[idxG] += PGSMLT + PGGMLT - PGREVP - PGGFR - PGSFR - PGFLW;
+    _Qgs[idxG] += PGSFR - PGSMLT;
+    _Qgi[idxG] += PGGFR - PGGMLT;
 
 
     //Adding ground heat
@@ -1520,7 +1536,7 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
         sumPhaseheat += LiceGPU(tempGroundC) / (mass_soil * cp_soil) * depos;
         sumPhaseheat += Lf / (mass_soil * cp_soil) * freeze;
 
-        _tempGround[tX] += sumPhaseheat;
+        _tempGround[idxG] += sumPhaseheat;
     }
 }
 
@@ -1529,19 +1545,21 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
     const float dt, const float speed, float* _tempGround, const float* _tempAir, const float* _densAir, const float* _pressure, const float* groundPressure,
     const float* _windSpeedX, const int* _groundHeight)
 {
-    const int tX = threadIdx.x;
+    const int x = threadIdx.x;
+    const int z = blockIdx.x;
+    const int idxG = x + z * GRIDSIZESKYX;
 
-    const int tY = _groundHeight[tX]; //Y to use index on environment variables
-    const int idx = tX + (tY + 1) * GRIDSIZESKYX;
+    const int y = _groundHeight[idxG]; //Y to use index on environment variables
+    const int idx = getIdx(x, y + 1, z);
 
 
     float PGRFR{ 0.0f }; // Freezing rain hitting the ground forming ice
 
 
     //Setting data
-    const float Qgr = _Qgr[tX] > 1e-18f ? _Qgr[tX] : 0.0f;
-    const float Qgs = _Qgs[tX] > 1e-18f ? _Qgs[tX] : 0.0f;
-    const float Qgi = _Qgi[tX] > 1e-18f ? _Qgi[tX] : 0.0f;
+    const float Qgr = _Qgr[idxG] > 1e-18f ? _Qgr[idxG] : 0.0f;
+    const float Qgs = _Qgs[idxG] > 1e-18f ? _Qgs[idxG] : 0.0f;
+    const float Qgi = _Qgi[idxG] > 1e-18f ? _Qgi[idxG] : 0.0f;
     const float Qv = _Qv[idx] > 1e-18f ? _Qv[idx] : 0.0f;
     const float Qr = _Qr[idx] > 1e-18f ? _Qr[idx] : 0.0f;
     const float Qs = _Qs[idx] > 1e-18f ? _Qs[idx] : 0.0f;
@@ -1549,7 +1567,7 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
 
     float freeze = 0.0f;
 
-    const float tempGroundC = _tempGround[tX] - 273.15f;
+    const float tempGroundC = _tempGround[idxG] - 273.15f;
     float tempAirK = _tempAir[idx];
     const float ps = _pressure[idx];
     const float windSpeed = _windSpeedX[idx];
@@ -1557,7 +1575,7 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
     float Dair = _densAir[idx];
 
     //Setting falling velocity and calculate air temp from pottemp  
-    tempAirK = _tempAir[idx] * powf(ps / groundPressure[tX], Rsd / Cpd);
+    tempAirK = _tempAir[idx] * powf(ps / groundPressure[idxG], Rsd / Cpd);
     if (Qgr > 0.0f || Qgs > 0.0f || Qgi > 0.0f)
     {
         fallVel = calculateFallingVelocityGPU(Qgr, Qgs, Qgi, Dair, 3, m_gammaQr, m_gammaQs, m_gammaQi);
@@ -1593,9 +1611,9 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
     _Qr[idx] += -GR;
     _Qs[idx] += -GS;
     _Qi[idx] += -GI;
-    _Qgr[tX] += GR - PGRFR;
-    _Qgs[tX] += GS;
-    _Qgi[tX] += GI + PGRFR;
+    _Qgr[idxG] += GR - PGRFR;
+    _Qgs[idxG] += GS;
+    _Qgi[idxG] += GI + PGRFR;
 
     //Adding ground heat
     {
@@ -1613,6 +1631,6 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
         float sumPhaseheat = 0.0f;
         sumPhaseheat += Lf / cpth * freeze;
 
-        _tempGround[tX] += sumPhaseheat;
+        _tempGround[idxG] += sumPhaseheat;
     }
 }
