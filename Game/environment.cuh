@@ -112,6 +112,13 @@ private:
 	gridDataSkyGPU m_envGrid;
 	gridDataGroundGPU m_groundGrid;
 
+	// Grid and Block size based on size of simulation
+	// Set default to 16, but increase based on threads available. 
+	dim3 gridDim = { ((GRIDSIZESKYX + 15) / 16), ((GRIDSIZESKYY + 15) / 16), ((GRIDSIZESKYZ + 15) / 16) };
+	dim3 blockDim = { uint32_t(std::min(16, GRIDSIZESKYX)), uint32_t(std::min(16, GRIDSIZESKYY)) };
+	bool canFillAll{ false }; // If we can fit all threads within the simulation or not
+
+
 	float m_time = 43200.0f; //0 to 86.400 time in seconds
 	static constexpr float m_dayLightDuration = 14.0f;
 	static constexpr float m_hourOfSunrise = 6.0f;
