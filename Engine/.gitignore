@@ -20,4 +20,3 @@ external/NVIDIA/bin/12/nvcomp.dll
 *.dll
 *.so
 *.dylib
-*.lib 
