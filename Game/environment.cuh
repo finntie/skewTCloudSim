@@ -109,8 +109,9 @@ private:
 
 
 
-	gridDataSkyGPU m_envGrid;
-	gridDataGroundGPU m_groundGrid;
+	gridDataSkyGPU m_envGrid{};
+	gridDataGroundGPU m_groundGrid{};
+	simInfo simKernelInfo{};
 
 	// Grid and Block size based on size of simulation
 	// Set default to 16, but increase based on threads available. 

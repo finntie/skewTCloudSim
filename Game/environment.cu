@@ -25,6 +25,19 @@
 #include "editor.h"
 #include "game.h"
 
+
+// Constant simulation variables (extern in utils.cuh)
+__constant__ int simSizeX{ GRIDSIZESKYX };
+__constant__ int simSizeY{ GRIDSIZESKYY };
+__constant__ int simSizeZ{ GRIDSIZESKYZ };
+__constant__ int simSize{ GRIDSIZESKY };
+__constant__ float voxelSize{ VOXELSIZE };
+__constant__ int simSizeGround{ GRIDSIZEGROUND };
+__constant__ float simSpeed{ 1.0f };
+__constant__ float simDeltaTime{ 0.0f };
+__constant__ float invBlockSpreadDepth{ 1.0f };
+
+
 namespace ConstantsGPU
 {
 	__constant__ float Lb = -0.0065f; //Standard lapse rate in K/m
@@ -60,7 +73,6 @@ namespace ConstantsGPU
 }
 
 
-
 environmentGPU::environmentGPU()
 {
 	// Set block and grid dimension based on GPU specs.
@@ -68,7 +80,7 @@ environmentGPU::environmentGPU()
 	cudaGetDeviceProperties(&prop, 0);
 	unsigned int totalThreadsPerBlock = prop.maxThreadsPerBlock;
 	unsigned int totalBlocksPerGrid = prop.maxBlocksPerMultiProcessor * prop.multiProcessorCount;
-
+	unsigned int totalRegsPerThread = prop.regsPerBlock / totalThreadsPerBlock;
 	// Set block dimensions to be square root of the max threads available. Making use of as much threads as possible
 	const unsigned int threadsBlock = uint32_t(floor(sqrt(totalThreadsPerBlock)));
 	// If one side is smaller than 1 block, we still want to use as many threads as possible per block
@@ -102,11 +114,16 @@ environmentGPU::environmentGPU()
 
 	canFillAll = GRIDSIZESKYZ <= gridDim.z;
 
+	// Fill info
+	const float _invBlockSpreadDepth = 1.0f / (float(gridDim.z) / float(GRIDSIZESKYZ));
+	cudaMemcpyToSymbol(invBlockSpreadDepth, &_invBlockSpreadDepth, sizeof(float), 0, cudaMemcpyHostToDevice);
+	simKernelInfo.neighbourData = m_neighbourData;
+
 	printf("[%sSim info%s] ", "\033[32m", "\033[0m");
 	printf("Simulation size x: %i, y: %i, z: %i\n", GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ);
 
 	printf("[%sSim info%s] ", "\033[32m", "\033[0m");
-	printf("Max blocks: %i, Max Threads: %i\n", totalBlocksPerGrid, totalThreadsPerBlock);
+	printf("Max Blocks: %i, Max Threads: %i, Max Register Per Thread: %i\n", totalBlocksPerGrid, totalThreadsPerBlock, totalRegsPerThread);
 
 	printf("[%sSim info%s] ", "\033[32m", "\033[0m");
 	printf("Block Dimension x: %i y: %i\n", blockDim.x, blockDim.y);
@@ -438,6 +455,10 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 	//Main function that goes through the loop
 	cudaError_t err = cudaGetLastError();
 
+	// Set values info
+	cudaMemcpyToSymbol(simDeltaTime, &dt, sizeof(float));
+	cudaMemcpyToSymbol(simSpeed, &speed, sizeof(float));
+
 	setToValue << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_density, 1.0f, GRIDSIZESKYZ);
 
 	editorDataGPU();
@@ -690,20 +711,44 @@ void environmentGPU::diffuseGPU(float* diffuseArray, int type, const float dt)
 	const float k = 0.005f * dt / (VOXELSIZE * VOXELSIZE); //Viscosity value
 	const int LOOPS = 20 / 2; //Total loops for the Gauss-Seidel method (divided by 2 due to doing 2 times)
 
+	const int sharedDataSize = (blockDim.x + 2) * (blockDim.y + 2) * sizeof(float);
+
+
+	//Create events to track time taking of parts
+	//cudaEvent_t start;
+	//cudaEvent_t stop;
+	//cudaEventCreate(&start);
+	//cudaEventCreate(&stop);
+	//cudaEventRecord(start);
+
 	for (int L = 0; L < LOOPS; L++)
 	{
-		diffuseRedBlack << <gridDim, blockDim >> > (m_neighbourData, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_array, m_outputArray, k, type, boundsConditions, true);
+		diffuseRedBlack << <gridDim, blockDim, sharedDataSize >> > (m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_array, m_outputArray, k, type, boundsConditions, true, m_neighbourData);
 		cudaDeviceSynchronize();
-		diffuseRedBlack << <gridDim, blockDim >> > (m_neighbourData, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_array, m_outputArray, k, type, boundsConditions, false);
+		diffuseRedBlack << <gridDim, blockDim, sharedDataSize >> > (m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_array, m_outputArray, k, type, boundsConditions, false, m_neighbourData);
 		cudaDeviceSynchronize();
 
 		//Switch output and input around
-		diffuseRedBlack << <gridDim, blockDim >> > (m_neighbourData, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_outputArray, m_array, k, type, boundsConditions, true);
+		diffuseRedBlack << <gridDim, blockDim, sharedDataSize >> > (m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_outputArray, m_array, k, type, boundsConditions, true, m_neighbourData);
 		cudaDeviceSynchronize();
-		diffuseRedBlack << <gridDim, blockDim >> > (m_neighbourData, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_outputArray, m_array, k, type, boundsConditions, false);
+		diffuseRedBlack << <gridDim, blockDim, sharedDataSize >> > (m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_outputArray, m_array, k, type, boundsConditions, false, m_neighbourData);
 		cudaDeviceSynchronize();
 	}
 	cudaMemcpy(diffuseArray, m_array, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToDevice);
+
+	////End recording and record time
+	//cudaEventRecord(stop);
+	//cudaStreamSynchronize(0);
+	//float elapsedTime;
+	//cudaEventElapsedTime(&elapsedTime, start, stop);
+	//std::cout << "Execution time: " << elapsedTime << " ms" << std::endl;
+	//cudaEventDestroy(start);
+	//cudaEventDestroy(stop);
+
+	//cudaFuncAttributes attr;
+	//cudaFuncGetAttributes(&attr, diffuseRedBlack);
+	//printf("Registers used in kernel per thread: %d\n", attr.numRegs);
+
 
 	err = cudaGetLastError();
 	if (err != cudaSuccess) {
@@ -717,11 +762,11 @@ void environmentGPU::diffuseGPU(float* diffuseArray, int type, const float dt)
 void environmentGPU::advectGroundWater(const float dt, const float speed)
 {
 	// For the ground we use also use block and gridsize, but now X and Z instead of Y
-	dim3 grid(gridDim.x, gridDim.z);
-	dim3 block(blockDim.z, blockDim.z);
+	dim3 grid(std::min(16, GRIDSIZESKYX), std::min(16, GRIDSIZESKYZ));
+	dim3 block((GRIDSIZESKYX + 15) / 16, (GRIDSIZESKYZ + 15) / 16);
 
 	//Need red-black due to accessing previous index
-	advectGroundWaterGPU<<<grid, block>>> (m_groundGrid.Qrs, m_groundGrid.Qgr, dt, speed);
+	advectGroundWaterGPU<<<grid, block>>> (m_groundGrid.Qrs, m_groundGrid.Qgr);
 	cudaDeviceSynchronize();
 }
 
@@ -772,6 +817,9 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 		printf("WARNING: Courant number is high: %f, increase size of voxels or decrease timesteps, %f, %i\n", C, dtSub, subSteps);
 	}
 
+	const int sharedDataSize = (blockDim.x + 2) * (blockDim.y + 2) * sizeof(float);
+
+
 	// We advect the default value and density. 
 	// After each time we advect, we need to divide by the density, this is to make sure any errors that accumulate are immediately resolved.
 	// Using half x, half y and full z, we use second order accuracy, making sure we treat x, y and z equally. 
@@ -788,8 +836,8 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 		//------------------------------ 0.5 X -----------------------------------
 
 		//First advect density and array on half X
-		advectPPMX << <gridDim, blockDim >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldX, m_neighbourData, boundsVal, dtSub * 0.5f);
-		advectPPMX << <gridDim, blockDim >> > (advectArray, m_outputArray, defaultVal, m_envGrid.velfieldX, m_neighbourData, boundsVal, dtSub * 0.5f);
+		advectPPMX << <gridDim, blockDim, sharedDataSize >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldX, m_neighbourData, boundsVal, dtSub * 0.5f);
+		advectPPMX << <gridDim, blockDim, sharedDataSize >> > (advectArray, m_outputArray, defaultVal, m_envGrid.velfieldX, m_neighbourData, boundsVal, dtSub * 0.5f);
 		cudaDeviceSynchronize();
 
 		//Divide to get them both up to speed
@@ -801,8 +849,8 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 
 		//Switch blocks and threads around (x and y are swapped)
 		//Also input and output are swapped because of previous result
-		advectPPMY << <gridDim, blockDim >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldY, m_neighbourData, boundsVal, dtSub * 0.5f);
-		advectPPMY << <gridDim, blockDim >> > (m_outputArray, advectArray, defaultVal, m_envGrid.velfieldY, m_neighbourData, boundsVal, dtSub * 0.5f);
+		advectPPMY << <gridDim, blockDim, sharedDataSize >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldY, m_neighbourData, boundsVal, dtSub * 0.5f);
+		advectPPMY << <gridDim, blockDim, sharedDataSize >> > (m_outputArray, advectArray, defaultVal, m_envGrid.velfieldY, m_neighbourData, boundsVal, dtSub * 0.5f);
 		cudaDeviceSynchronize();
 
 		//Divide to get them both up to speed
@@ -822,8 +870,8 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 
 		//------------------------------ 0.5 Y -----------------------------------
 
-		advectPPMY << <gridDim, blockDim >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldY, m_neighbourData, boundsVal, dtSub * 0.5f);
-		advectPPMY << <gridDim, blockDim >> > (m_outputArray, advectArray, defaultVal, m_envGrid.velfieldY, m_neighbourData, boundsVal, dtSub * 0.5f);
+		advectPPMY << <gridDim, blockDim, sharedDataSize >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldY, m_neighbourData, boundsVal, dtSub * 0.5f);
+		advectPPMY << <gridDim, blockDim, sharedDataSize >> > (m_outputArray, advectArray, defaultVal, m_envGrid.velfieldY, m_neighbourData, boundsVal, dtSub * 0.5f);
 		cudaDeviceSynchronize();
 
 		divideValues << <GRIDSIZESKYY, GRIDSIZESKYX >> > (advectArray, m_stor0, GRIDSIZESKYZ);
@@ -832,8 +880,8 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 
 		//------------------------------ 0.5 X -----------------------------------
 
-		advectPPMX << <gridDim, blockDim >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldX, m_neighbourData, boundsVal, dtSub * 0.5f);
-		advectPPMX << <gridDim, blockDim >> > (advectArray, m_outputArray, defaultVal, m_envGrid.velfieldX, m_neighbourData, boundsVal, dtSub * 0.5f);
+		advectPPMX << <gridDim, blockDim, sharedDataSize >> > (m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldX, m_neighbourData, boundsVal, dtSub * 0.5f);
+		advectPPMX << <gridDim, blockDim, sharedDataSize >> > (advectArray, m_outputArray, defaultVal, m_envGrid.velfieldX, m_neighbourData, boundsVal, dtSub * 0.5f);
 		cudaDeviceSynchronize();
 
 		divideValues << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_outputArray, m_stor0, GRIDSIZESKYZ);
@@ -843,6 +891,10 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 		//Switch over input and output for our next iteration or return result.
 		cudaMemcpy(advectArray, m_outputArray, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToDevice);
 	}
+
+	//cudaFuncAttributes attr;
+	//cudaFuncGetAttributes(&attr, advectPPMZ);
+	//printf("Registers used in kernel per thread: %d\n", attr.numRegs);
 
 	cudaError_t err = cudaGetLastError();
 	if (err != cudaSuccess) {
@@ -892,6 +944,8 @@ void environmentGPU::pressureProject(const float dt)
 	boundsEnv boundsDensity{ NEUMANN, NEUMANN, DIRICHLET };
 	boundsEnv boundsA{ NEUMANN, DIRICHLET, DIRICHLET };
 
+	const int sharedDataSize = (blockDim.x + 2) * (blockDim.y + 2) * sizeof(float);
+
 	setToValue << <1, GRIDSIZESKYY >> > (m_dummyArraySky2, 1.0f, 1);
 
 	//Should not be needed if handled correctly in advection and other velocity updates?
@@ -899,8 +953,19 @@ void environmentGPU::pressureProject(const float dt)
 	cudaDeviceSynchronize();
 
 	//Initialize A and precon every frame due to changed based on density
-	initAMatrix << <gridDim, blockDim >> > (m_A, m_neighbourData, m_densityAir, m_dummyArraySky2, boundsA);
+	initAMatrix << <gridDim, blockDim, sharedDataSize >> > (m_A, m_neighbourData, m_densityAir, m_dummyArraySky2, boundsA);
 	cudaDeviceSynchronize();
+
+	//cudaFuncAttributes attr;
+	//cudaFuncGetAttributes(&attr, initAMatrix);
+	//printf("Registers used in kernel per thread: %d\n", attr.numRegs);
+
+	cudaError_t err = cudaGetLastError();
+	if (err != cudaSuccess) {
+
+		std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+		__debugbreak();
+	}
 
 
 	initPrecon << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_precon, m_A);
@@ -924,14 +989,14 @@ void environmentGPU::pressureProject(const float dt)
 		m_densityAir, m_envGrid.pressure, boundsDensity, dt);
 	cudaDeviceSynchronize();
 
-	cudaError_t err = cudaGetLastError();
+	err = cudaGetLastError();
 	if (err != cudaSuccess) {
 		std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
 		__debugbreak();
 	}
 }
 
-void environmentGPU::calculatePressureProject(float* outputPressure, const float dt)
+void environmentGPU::calculatePressureProject(float* outputPressure, const float )
 {	
 	boundsEnv boundsDensity{ NEUMANN, NEUMANN, DIRICHLET };
 	boundsEnv boundsA{ DIRICHLET, DIRICHLET, DIRICHLET };
@@ -939,6 +1004,7 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 	const float tolValue = 1e-5f;
 	const int MAXITERATION = 200;
 	float maxr = 0.0f;
+	const int sharedDataSize = (blockDim.x + 2) * (blockDim.y + 2) * sizeof(float);
 
 	//m_stor0 = divergence
 	//m_stor1 = z
@@ -954,9 +1020,19 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 
 
 	//Divergence
-	calculateDivergenceGPU << <gridDim, blockDim >> > (m_stor0, m_neighbourData, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ, m_densityAir, m_oldDensityAir, m_dummyArraySky2, boundsDensity, m_boundsVelX, dt);
+	calculateDivergenceGPU << <gridDim, blockDim, sharedDataSize >> > (m_stor0, m_neighbourData, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ, m_densityAir, m_oldDensityAir, m_dummyArraySky2, boundsDensity, m_boundsVelX);
 	cudaDeviceSynchronize();
 
+	//cudaFuncAttributes attr;
+	//cudaFuncGetAttributes(&attr, calculateDivergenceGPU);
+	//printf("Registers used in kernel per thread: %d\n", attr.numRegs);
+
+	cudaError_t err = cudaGetLastError();
+	if (err != cudaSuccess) {
+
+		std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+		__debugbreak();
+	}
 
 	//Debug
 	Game.Editor().setDebugValueNum(m_stor0, 2);
@@ -980,7 +1056,7 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 	for (int i = 0; i < MAXITERATION; i++)
 	{
 		// Same bounds as density since A = density
-		applyAGPU<<<gridDim, blockDim >>>(m_stor1, m_stor2, m_neighbourData, m_A, boundsA);
+		applyAGPU<<<gridDim, blockDim, sharedDataSize >>>(m_stor1, m_stor2, m_neighbourData, m_A, boundsA);
 		cudaDeviceSynchronize();
 
 		dotProductGPU << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_sigma1, m_stor1, m_stor2);
@@ -1077,15 +1153,20 @@ void environmentGPU::updateGroundTemps(const float dt, const float speed, const 
 
 void environmentGPU::calculateBuoyancy(const float dt)
 {
-	const float mDistance = 1.0f;// TODO: probably always 1.0f, Distance that buoyancy will be taken into account.
-	
 	// Neumann, since we will just use the current temp but divide by 2, meaning we don't actually use outside or ground
 	boundsEnv buoyancyBounds{ DIRICHLET, DIRICHLET, DIRICHLET };
 
-	buoyancyGPU << <gridDim, blockDim >> > (m_envGrid.velfieldY, m_neighbourData, m_envGrid.potTemp, m_envGrid.Qv, m_envGrid.Qr, m_envGrid.Qs, m_envGrid.Qi, m_isentropicTemp, m_isentropicVapor, m_envGrid.pressure, m_groundGrid.P, m_stor0, mDistance, buoyancyBounds, m_boundsVelY, dt);
+	const int sharedDataSize = (blockDim.x + 2) * (blockDim.y + 2) * sizeof(float);
+
+	buoyancyGPU << <gridDim, blockDim, sharedDataSize >> > (m_envGrid.velfieldY, m_neighbourData, m_envGrid.potTemp, m_envGrid.Qv, m_envGrid.Qr, m_envGrid.Qs, m_envGrid.Qi, m_isentropicTemp, m_isentropicVapor, m_envGrid.pressure, m_groundGrid.P, m_stor0, buoyancyBounds, m_boundsVelY);
 	cudaDeviceSynchronize();
 	//Set debug
 	Game.Editor().setDebugValueNum(m_stor0, 1);
+
+	//cudaFuncAttributes attr;
+	//cudaFuncGetAttributes(&attr, buoyancyGPU);
+	//printf("Registers used in kernel per thread: %d\n", attr.numRegs);
+
 
 	cudaError_t err = cudaGetLastError();
 	if (err != cudaSuccess) {

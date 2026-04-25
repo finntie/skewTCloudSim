@@ -1,12 +1,12 @@
 #pragma once
 
-#define GRIDSIZESKYX 5
-#define GRIDSIZESKYY 128
-#define GRIDSIZESKYZ 44
+#define GRIDSIZESKYX 64
+#define GRIDSIZESKYY 64
+#define GRIDSIZESKYZ 64
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY * GRIDSIZESKYZ)
 #define GRIDSIZEGROUND (GRIDSIZESKYX * GRIDSIZESKYZ)
-#define VOXELSIZE 64.0f //Meters
+#define VOXELSIZE 128.0f //Meters
 
 // Data graph
 #define MAXGRAPHLENGTH 100
@@ -62,4 +62,9 @@ struct boundsEnv
 enum parameter
 {
 	POTTEMP, QV, QW, QC, QR, QS, QI, WIND, PGROUND, PRESSURE, DEBUG1, DEBUG2, DEBUG3
+};
+
+struct simInfo
+{
+	Neigh* neighbourData{ nullptr }; // Neighbouring data
 };

@@ -156,7 +156,7 @@
     </Link>
     <CudaCompile>
       <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
-      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" --ptxas-options=-v --keep %(AdditionalOptions)</AdditionalOptions>
       <Warning>InheritFromHost</Warning>
       <CudaRuntime>Static</CudaRuntime>
       <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120
@@ -191,7 +191,7 @@
     </Link>
     <CudaCompile>
       <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
-      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" --ptxas-options=-v --keep %(AdditionalOptions)</AdditionalOptions>
       <Warning>InheritFromHost</Warning>
       <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120
 ;%(CodeGeneration)</CodeGeneration>
