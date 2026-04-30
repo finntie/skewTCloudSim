@@ -63,7 +63,7 @@ __global__ void diffuseRedBlack(const float* groundT, const float* pressuresAir,
 	float backward = 0.0f;
 
 	// We just grab the Z for the next block index and loop until there
-	for (z; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		// Early birds can wait
 		__syncthreads();
@@ -391,7 +391,7 @@ __global__ void advectPPMX(const float* __restrict__ arrayIn,
 	volatile const int idxsData = threadIdx.x + 1 + (threadIdx.y + 1) * sharedBlockWidth;
 
 	// We just grab the Z for the next block index and loop until there
-	for (z; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		// Early birds can wait
 		__syncthreads();
@@ -462,7 +462,7 @@ __global__ void advectPPMY(const float* __restrict__ arrayIn,
 	int idx = getIdx(x, y, z);
 	volatile const int idxsData = threadIdx.x + 1 + (threadIdx.y + 1) * sharedBlockWidth;
 
-	for (z; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		// Early birds can wait
 		__syncthreads();
@@ -540,7 +540,7 @@ __global__ void advectPPMZ(const float* __restrict__ arrayIn,
 	float backward = current; // Can reuse current due to both being outside
 	float backwardExtra = 0.0f;
 
-	for (z; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		// We do not return, we just continue 
 		idx = getIdx(x, y, z);
@@ -748,7 +748,7 @@ __global__ void applyAGPU(float* output, const float* input, const Neigh* neigh,
 	float current = fillNeighbourData(neigh[idx].backward, bounds, input, idx, -GRIDSIZESKYX * GRIDSIZESKYY, 0.0f);
 	volatile float backward = 0.0f;
 
-	for (z; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		idx = getIdx(x, y, z);
 
@@ -812,7 +812,7 @@ __global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, co
 	float current = fillNeighbourData(neigh[idx].backward, bounds, dens, idx, -GRIDSIZESKYX * GRIDSIZESKYY, 1.0f);
 	volatile float backward = 0.0f;
 
-	for (z; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		// Be polite and wait a second.
 		__syncthreads();
@@ -978,7 +978,7 @@ __global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* dive
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 	int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
 	const int idxsData = threadIdx.x + threadIdx.y * blockDim.x;
-	
+
 	if (idxsData == 0)
 	{
 		sresult = *S1 / *S2;
@@ -990,7 +990,7 @@ __global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* dive
 	}
 
 	__syncthreads();
-	
+
 	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		//Adding up pressure value and reducing residual value
@@ -1001,10 +1001,6 @@ __global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* dive
 			divergence[idx] -= sresult * valZ[idx];
 		}
 	}
-	if (idxsData == 0 && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) // Only the very very first thread will set the result 
-	{
-		*S2 = sresult;
-	}
 }
 
 __global__ void endIteration(float* S1, float* S2, float* s, const float* valZ)
@@ -1013,6 +1009,7 @@ __global__ void endIteration(float* S1, float* S2, float* s, const float* valZ)
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 	int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
+	int oldZ = z;
 	const int idxsData = threadIdx.x + threadIdx.y * blockDim.x;
 
 	if (idxsData == 0)
@@ -1033,7 +1030,7 @@ __global__ void endIteration(float* S1, float* S2, float* s, const float* valZ)
 		}
 	}
 
-	if (idxsData == 0 && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) // Only the very very first thread will set the result 
+	if (x == 0 && y == 0 && oldZ == 0)
 	{
 		*S1 = *S2;
 	}
@@ -1117,7 +1114,7 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 	volatile float backwardT = 0;
 
 
-	for (z; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		// Early birds can wait
 		__syncthreads();
@@ -1367,7 +1364,7 @@ __global__ void initAMatrix(float4* A, const Neigh* neigh, const float* density,
 	float current = fillNeighbourData(neigh[idx].backward, bounds, density, idx, -GRIDSIZESKYX * GRIDSIZESKYY, 1.0f);
 	volatile float backward = 0.0f;
 
-	for (z; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		// Early birds can wait
 		__syncthreads();

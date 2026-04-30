@@ -1057,7 +1057,7 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 	dotProductGPU << <gridDim, blockDim, sharedDataSizeNoHalo >> > (m_sigma0, m_stor1, m_stor0);
 	//cudaDeviceSynchronize();
 
-	for (int i = 0; i < 1; i++)
+	for (int i = 0; i < MAXITERATION; i++)
 	{
 		// Same bounds as density since A = density
 		applyAGPU<<<gridDim, blockDim, sharedDataSize >>>(m_stor1, m_stor2, m_neighbourData, m_A, boundsA);
@@ -1083,15 +1083,18 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 
 		applyPreconditionerGPU << <gridDim, blockDim >> > (m_stor1, m_precon, m_stor0, m_A);
 
-		cudaMemset(m_sigma1, 0, sizeof(float));
 		//cudaDeviceSynchronize();
 
 		//Dotproduct
+		cudaMemset(m_sigma1, 0, sizeof(float));
 		dotProductGPU << <gridDim, blockDim, sharedDataSizeNoHalo >> > (m_sigma1, m_stor1, m_stor0);
 		//cudaDeviceSynchronize();
 
 		//Set values and set search vector
 		endIteration << <gridDim, blockDim >> > (m_sigma0, m_sigma1, m_stor2, m_stor1);
+
+		cudaMemset(m_sigma1, 0, sizeof(float));
+
 		//cudaDeviceSynchronize();
 	}
 	//printf("Max iterations reached!\n");
