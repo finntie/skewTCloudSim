@@ -45,12 +45,12 @@ __global__ void diffuseRedBlack(const float* groundT, const float* pressuresAir,
 {
 	// Kernel data
 	extern __shared__ float sharedBlock[]; // Dynamic shared data
-	volatile const int sharedBlockWidth = blockDim.x + 2;
-	volatile int x = threadIdx.x + blockDim.x * blockIdx.x;
-	volatile int y = threadIdx.y + blockDim.y * blockIdx.y;
+	const int sharedBlockWidth = blockDim.x + 2;
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
 	int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
 	int idx = getIdx(x, y, z);
-	volatile const int idxsData = threadIdx.x + 1 + (threadIdx.y + 1) * sharedBlockWidth;
+	const int idxsData = threadIdx.x + 1 + (threadIdx.y + 1) * sharedBlockWidth;
 
 	// Make sure to not access nullptr
 	float defaultValue = defaultVal ? defaultVal[y] : 0.0f;
@@ -88,17 +88,17 @@ __global__ void diffuseRedBlack(const float* groundT, const float* pressuresAir,
 		// This is because we do not save potential temp on the ground
 		if (type == 0)
 		{
-			volatile const int idxG = x + z * simSizeX;
-			volatile const int idxGL = x > 0 ? idxG - 1 : idxG;
-			volatile const int idxGR = x + 1 < simSizeX ? idxG + 1 : idxG;
-			volatile const int idxGF = z + simSizeX < simSizeZ ? idxG + simSizeX : idxG;
-			volatile const int idxGB = z > 0 ? idxG - simSizeX : idxG;
+			const int idxG = x + z * simSizeX;
+			const int idxGL = x > 0 ? idxG - 1 : idxG;
+			const int idxGR = x + 1 < simSizeX ? idxG + 1 : idxG;
+			const int idxGF = z + simSizeX < simSizeZ ? idxG + simSizeX : idxG;
+			const int idxGB = z > 0 ? idxG - simSizeX : idxG;
 
-			volatile unsigned char NTLeft = neigh[idx].left.type;
-			volatile unsigned char NTRight = neigh[idx].right.type;
-			volatile unsigned char NTDown = neigh[idx].down.type;
-			volatile unsigned char NTBack = neigh[idx].backward.type;
-			volatile unsigned char NTFor = neigh[idx].forward.type;
+			unsigned char NTLeft = neigh[idx].left.type;
+			unsigned char NTRight = neigh[idx].right.type;
+			unsigned char NTDown = neigh[idx].down.type;
+			unsigned char NTBack = neigh[idx].backward.type;
+			unsigned char NTFor = neigh[idx].forward.type;
 
 			sumDirs += (NTLeft == GROUND && isGroundLevel(z)) ? (potentialTempGPU(groundT[idxGL] - 273.15f, pressuresAir[idx], groundP[idxGL]) + 273.15f) : sharedBlock[idxsData - 1];
 			sumDirs += (NTRight == GROUND && isGroundLevel(z) ? (potentialTempGPU(groundT[idxGR] - 273.15f, pressuresAir[idx], groundP[idxGR]) + 273.15f) : sharedBlock[idxsData + 1]);
@@ -667,11 +667,11 @@ __global__ void advectPrecipGPU(float* Qj, const Neigh* neigh, const float* potT
 
 __global__ void applyPreconditionerGPU(float* output, const float* precon, const float* div, float4* A)
 {
-	const int x = threadIdx.x;
-	const int y = blockIdx.x;
-	int z = 0;
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+	int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
 
-	for (z = 0; z < GRIDSIZESKYZ; z++)
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		const int idx = getIdx(x, y, z);
 		output[idx] = 0.0f;
@@ -685,41 +685,44 @@ __global__ void dotProductGPU(float* result, const float* a, const float* b)
 {
 	//To speed up dot product, we make all blocks sum up their values and then connect them together.
 	//This is faster than 1 thead doing all the work.
-	__shared__ float sresult[GRIDSIZESKYX];
-	const int x = threadIdx.x;
-	const int y = blockIdx.x;
-	const int idx = getIdx(x, y, 0);
+	extern __shared__ float sresult[];
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+	int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
+	const int idxsData = threadIdx.x + threadIdx.y * blockDim.x;
 
-	sresult[x] = 0.0f;
-	if (!isGroundGPU(x, y, 0))
+
+	// We now add multiply and add the values on the z direction if there are any extra z values except the current one
+	sresult[idxsData] = 0.0f;
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
-		sresult[x] = a[idx] * b[idx];
-	}
-	__syncthreads();
-
-	// We now add multiply and add the values on the z direction, this would be the slowest part
-	for (int z = 1; z < GRIDSIZESKYZ; z++)
-	{
-		if (isGroundGPU(x, y, z)) continue;
-		const int idx = getIdx(x, y, z);
-
-		sresult[x] += a[idx] * b[idx];
-	}
-	__syncthreads();
-
-
-	//Basically, we grab half of the block, add all the values on the other side and repeat the process.
-	for (int i = GRIDSIZESKYX / 2; i > 0; i >>= 1)
-	{
-		if (x < i)
+		if (!isGroundGPU(x, y, z))
 		{
-			sresult[x] += sresult[x + i];
+			const int idx = getIdx(x, y, z);
+			sresult[idxsData] += a[idx] * b[idx];
+		}
+	}
+	__syncthreads();
+
+	// Now we did the dot product of every index in our block including the z side
+
+	// We use a stride which has to be a power of 2, thus we increase just over the total threads and then decrease it
+	int stride = 1;
+	while (stride < blockDim.x * blockDim.y) stride <<= 1;
+	stride >>= 1;
+
+	// Basically, we grab half of the block, add all the values on the other side and repeat the process.
+	for (int i = stride; i > 0; i >>= 1)
+	{
+		if (idxsData < i && idxsData + i < blockDim.x * blockDim.y) // Second check is extra to make sure we don't access outside of our data
+		{
+			sresult[idxsData] += sresult[idxsData + i];
 		}
 		__syncthreads();
 	}
 
 	//Using atomicAdd(), we can safely add all block values to a singular value
-	if (x == 0)
+	if (idxsData == 0)
 	{
 		atomicAdd(result, sresult[0]);
 	}
@@ -925,40 +928,42 @@ __global__ void getMaxDivergence(float* output, const float* div)
 {
 	//To speed up getting the max divergence, we make all blocks sum up their values and then connect them together.
 	//This is faster than 1 thead doing all the work.
-	__shared__ float sresult[GRIDSIZESKYX];
-	const int x = threadIdx.x;
-	const int y = blockIdx.x;
-	const int idx = getIdx(x, y, 0);
+	extern __shared__ float sresult[];
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+	int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
+	const int idxsData = threadIdx.x + threadIdx.y * blockDim.x;
 
-	float maxVal = 0.0f;
-	if (!isGroundGPU(x, y, 0))
+	// We now check all the values on the z direction
+	sresult[idxsData] = 0.0f;
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
-		maxVal = fabsf(div[idx]);
-	}
-	sresult[x] = maxVal;
-	__syncthreads();
-
-	// We now check all the values on the z direction, this would be the slowest part
-	for (int z = 1; z < GRIDSIZESKYZ; z++)
-	{
-		if (isGroundGPU(x, y, z)) continue;
-		sresult[x] = fmaxf(sresult[x], div[getIdx(x, y, z)]);
+		if (!isGroundGPU(x, y, z))
+		{
+			sresult[idxsData] = fmaxf(sresult[idxsData], div[getIdx(x, y, z)]);
+		}
 	}
 	__syncthreads();
 
+	// Now we did the dot product of every index in our block including the z side
+
+	// We use a stride which has to be a power of 2, thus we increase just over the total threads and then decrease it
+	int stride = 1;
+	while (stride < blockDim.x * blockDim.y) stride <<= 1;
+	stride >>= 1;
 
 	// Basically, we grab half of the block, add all the values on the other side and repeat the process.
-	for (int i = GRIDSIZESKYX / 2; i > 0; i >>= 1)
+	for (int i = stride; i > 0; i >>= 1)
 	{
-		if (x < i)
+		if (idxsData < i && idxsData + i < blockDim.x * blockDim.y) // Second check is extra to make sure we don't access outside of our data
 		{
-			sresult[x] = fmaxf(sresult[x] ,sresult[x + i]);
+			sresult[idxsData] = fmaxf(sresult[idxsData], sresult[idxsData + i]);
 		}
 		__syncthreads();
 	}
 
 	// Using atomicAdd(), we can safely add all block values to a singular value
-	if (x == 0)
+	if (idxsData == 0)
 	{
 		//Using atomic max, supports only ints, so we cast sort of to float
 		atomicMax((int*)output, __float_as_int(sresult[0]));
@@ -968,21 +973,25 @@ __global__ void getMaxDivergence(float* output, const float* div)
 
 __global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* divergence, const float* s, const float* valZ)
 {
-	__shared__ float sresult;
-	const int x = threadIdx.x;
-	const int y = blockIdx.x;
-	int z = 0;
-
-	if (x == 0)
+	__shared__ volatile float sresult;
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+	int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
+	const int idxsData = threadIdx.x + threadIdx.y * blockDim.x;
+	
+	if (idxsData == 0)
 	{
 		sresult = *S1 / *S2;
 
-		if (*S2 == 0.0f) printf("ERROR: S2 = 0.0f in updatePandDiv\n");
+		if (*S2 == 0.0f)
+		{
+			printf("ERROR: S2 = 0.0f in updatePandDiv\n");
+		}
 	}
 
 	__syncthreads();
 	
-	for (z = 0; z < GRIDSIZESKYZ; z++)
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		//Adding up pressure value and reducing residual value
 		if (!isGroundGPU(x, y, z))
@@ -992,7 +1001,7 @@ __global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* dive
 			divergence[idx] -= sresult * valZ[idx];
 		}
 	}
-	if (x == 0 && y == 0)
+	if (idxsData == 0 && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) // Only the very very first thread will set the result 
 	{
 		*S2 = sresult;
 	}
@@ -1000,18 +1009,21 @@ __global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* dive
 
 __global__ void endIteration(float* S1, float* S2, float* s, const float* valZ)
 {
-	__shared__ float sresult;
-	const int x = threadIdx.x;
-	const int y = blockIdx.x;
-	int z = 0;
+	__shared__ volatile float sresult;
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+	int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
+	const int idxsData = threadIdx.x + threadIdx.y * blockDim.x;
 
-	if (x == 0)
+	if (idxsData == 0)
 	{
 		sresult = *S2 / *S1;
+
+		if (*S1 == 0.0f) printf("ERROR: S1 = 0.0f in updatePandDiv\n");
 	}
 	__syncthreads();
 
-	for (z = 0; z < GRIDSIZESKYZ; z++)
+	for (; z < fminf(gridDim.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		if (!isGroundGPU(x, y, z))
 		{
@@ -1021,7 +1033,7 @@ __global__ void endIteration(float* S1, float* S2, float* s, const float* valZ)
 		}
 	}
 
-	if (x == 0 && y == 0)
+	if (idxsData == 0 && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) // Only the very very first thread will set the result 
 	{
 		*S1 = *S2;
 	}
