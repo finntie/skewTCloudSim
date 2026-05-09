@@ -157,11 +157,11 @@
     </Link>
     <CudaCompile>
       <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
-      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" -arch=native %(AdditionalOptions)</AdditionalOptions>
       <Warning>InheritFromHost</Warning>
       <CudaRuntime>Static</CudaRuntime>
-      <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120
-;%(CodeGeneration)</CodeGeneration>
+      <CodeGeneration>
+      </CodeGeneration>
       <GenerateLineInfo>true</GenerateLineInfo>
       <FastMath>true</FastMath>
     </CudaCompile>
@@ -183,8 +183,9 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalOptions>/Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/Zc:preprocessor -Xcompiler "/d1reportTime" %(AdditionalOptions)</AdditionalOptions>
       <FloatingPointModel>Precise</FloatingPointModel>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -192,13 +193,14 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <LinkTimeCodeGeneration>UseFastLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <ShowProgress>NotSet</ShowProgress>
     </Link>
     <CudaCompile>
       <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
-      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" -arch=native %(AdditionalOptions)</AdditionalOptions>
       <Warning>InheritFromHost</Warning>
-      <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120
-;%(CodeGeneration)</CodeGeneration>
+      <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120;%(CodeGeneration)</CodeGeneration>
       <GenerateLineInfo>true</GenerateLineInfo>
       <FastMath>true</FastMath>
     </CudaCompile>

@@ -94,7 +94,6 @@ public:
 	//------------------------------------------
 
 	//-------------------Get/Set------------------
-
 	envDebugData* getDebugData();
 	//gridDataSkyGPU& getEnvGridGPU() { return m_envGrid; }
 	//gridDataGroundGPU& getGroundGridGPU() { return m_groundGrid; }

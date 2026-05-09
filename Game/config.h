@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #define GRIDSIZESKYX 32
 #define GRIDSIZESKYY 32
@@ -11,6 +11,14 @@
 // Data graph
 #define MAXGRAPHLENGTH 100
 
+#define BOUNDSTEMP boundsEnv{ CUSTOM, CUSTOM, CUSTOM}
+#define BOUNDSVAPOR boundsEnv{ CUSTOM, CUSTOM, DIRICHLET}
+#define BOUNDSVELXZ boundsEnv{ CUSTOM, CUSTOM, DIRICHLET}
+#define BOUNDSVELY boundsEnv{ NEUMANN, NEUMANN, DIRICHLET}
+#define BOUNDSAPPLYA boundsEnv{ NEUMANN, DIRICHLET, DIRICHLET }
+#define BOUNDSDENSITY boundsEnv{ NEUMANN, NEUMANN, DIRICHLET }
+#define BOUNDSBUOYANCY boundsEnv{ DIRICHLET, DIRICHLET, DIRICHLET }
+#define BOUNDSPRESPROJ boundsEnv{ DIRICHLET, NEUMANN, NEUMANN }
 
 //Storage array for setting boundary conditions easier.
 enum envType : unsigned char
@@ -31,7 +39,7 @@ struct singleNeigh
 struct Neigh
 {
 	//With forward being +z and backward -z
-	singleNeigh left, right, up, down, forward, backward;
+	singleNeigh left, right, up, down, forward, backward, current;
 };
 
 enum direction
