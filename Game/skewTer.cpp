@@ -1,17 +1,9 @@
+#include "pch.h"
+
 #include "skewTer.h"
 
 #include "math/meteoformulas.h"
 #include "math/constants.hpp"
-
-#include "core/engine.hpp"
-#include "rendering/colors.hpp"
-#include "rendering/debug_render.hpp"
-#include "platform/opengl/draw_image.hpp"
-
-#include "core/input.hpp"
-#include "math/geometry.hpp"
-#include <glm/glm.hpp>
-
 
 skewTer::skewTer()
 {

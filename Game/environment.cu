@@ -1047,7 +1047,7 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 	dotProductGPU << <gridDim, blockDim, sharedDataSizeNoHalo >> > (m_sigma0, m_stor1, m_stor0);
 	//cudaDeviceSynchronize();
 
-	for (int i = 0; i < MAXITERATION; i++)
+	for (int i = 0; i < 1; i++) // TODO: MAXITERATIONdS
 	{
 		// Same bounds as density since A = density
 		applyAGPU<<<gridDim, blockDim, sharedDataSize >>>(m_stor1, m_stor2, m_neighbourData, m_A);

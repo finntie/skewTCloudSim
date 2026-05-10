@@ -92,7 +92,7 @@ __global__ void diffuseRedBlack(const float* groundT, const float* pressuresAir,
 		current = forward;
 		forward = fillNeighbourData(curNeigh.forward, bounds, input, idx, simSizeX * simSizeY, defaultValue);
 
-		if (valid) fillSharedNeigh(neigh, sharedBlock, input, defaultVal, z, bounds);
+		if (valid) fillSharedNeigh(curNeigh, sharedBlock, input, defaultValue, z, bounds);
 		__syncthreads();
 
 		//float l = 0.0f, r = 0.0f, d = 0.0f, u = 0.0f, f = 0.0f, b = 0.0f;
@@ -445,7 +445,7 @@ __global__ void advectPPMX(const float* __restrict__ arrayIn,
 		// Early birds can wait
 		__syncthreads();
 
-		if (valid) fillSharedNeigh(neigh, sharedBlock, arrayIn, defaultVal, z, bounds);
+		if (valid) fillSharedNeigh(neigh[idx], sharedBlock, arrayIn, (defaultVal ? defaultVal[y] : 0.0f), z, bounds);
 		__syncthreads();
 
 		// We do not return, we just continue and wait for the rest of the threads. 
@@ -524,7 +524,7 @@ __global__ void advectPPMY(const float* __restrict__ arrayIn,
 		// Early birds can wait
 		__syncthreads();
 
-		if (valid) fillSharedNeigh(neigh, sharedBlock, arrayIn, defaultVal, z, bounds);
+		if (valid) fillSharedNeigh(neigh[idx], sharedBlock, arrayIn, (defaultVal ? defaultVal[y] : 0.0f), z, bounds);
 		__syncthreads();
 
 		// We do not return, we just continue and wait for the rest of the threads. 
@@ -846,11 +846,11 @@ __global__ void applyAGPU(float* output, const float* input, const Neigh* neigh,
 		idx = getIdx(x, y, z);
 		currentNeigh = neigh[idx];
 
-		if (valid) fillSharedNeigh(neigh, sharedBlock, input, nullptr, z, bounds);
+		if (valid) fillSharedNeigh(currentNeigh, sharedBlock, input, 0.0f, z, bounds);
 
 		backward = current;
 		current = forward;
-		forward = fillNeighbourData(neigh[idx].forward, bounds, input, idx, GRIDSIZESKYX * GRIDSIZESKYY, 0.0f);
+		forward = fillNeighbourData(currentNeigh.forward, bounds, input, idx, GRIDSIZESKYX * GRIDSIZESKYY, 0.0f);
 
 		__syncthreads();
 
@@ -920,12 +920,13 @@ __global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, co
 		__syncthreads();
 
 		idx = getIdx(x, y, z);
+		Neigh currentNeigh = neigh[idx];
 
-		if (valid) fillSharedNeigh(neigh, sharedBlock, dens, defaultDens, z, boundsDens);
+		if (valid) fillSharedNeigh(currentNeigh, sharedBlock, dens, (defaultDens ? defaultDens[y] : 0.0f), z, boundsDens);
 
 		backward = current;
 		current = forward;
-		forward = fillNeighbourData(neigh[idx].forward, boundsDens, dens, idx, GRIDSIZESKYX * GRIDSIZESKYY, 1.0f);
+		forward = fillNeighbourData(currentNeigh.forward, boundsDens, dens, idx, GRIDSIZESKYX * GRIDSIZESKYY, 1.0f);
 
 		__syncthreads();
 
@@ -941,11 +942,11 @@ __global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, co
 		if (!valid || isGroundGPU(x, y, z)) continue;
 
 		ur = velX[idx];
-		ul = fillNeighbourData(neigh[idx].left, boundsVelXZ, velX, idx, -1, defaultVelX[y]);
+		ul = fillNeighbourData(currentNeigh.left, boundsVelXZ, velX, idx, -1, defaultVelX[y]);
 		uu = velY[idx];
-		ud = fillNeighbourData(neigh[idx].down, boundsVelY, velY, idx, -GRIDSIZESKYX, 0.0f);
+		ud = fillNeighbourData(currentNeigh.down, boundsVelY, velY, idx, -GRIDSIZESKYX, 0.0f);
 		uf = velZ[idx];
-		ub = fillNeighbourData(neigh[idx].backward, boundsVelXZ, velZ, idx, -GRIDSIZESKYX * GRIDSIZESKYY, defaultVelZ[y]);
+		ub = fillNeighbourData(currentNeigh.backward, boundsVelXZ, velZ, idx, -GRIDSIZESKYX * GRIDSIZESKYY, defaultVelZ[y]);
 
 		// Get correct densities
 		dr = sharedBlock[idxsData + 1];
@@ -1273,8 +1274,8 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 		const float psU = up && valid ? pressures[idx + GRIDSIZESKYX] : psC;
 		const float psD = down && valid ? pressures[idx - GRIDSIZESKYX] : psC;
 
-		if (valid) fillSharedNeigh(neigh, sharedBlockQv, Qv, defQv, z, boundsBuoyancy);
-		if (valid) fillSharedNeigh(neigh, sharedBlockT, potTemp, defTemp, z, boundsBuoyancy);
+		if (valid) fillSharedNeigh(neigh[idx], sharedBlockQv, Qv, defaultValueQv, z, boundsBuoyancy);
+		if (valid) fillSharedNeigh(neigh[idx], sharedBlockT, potTemp, defaultValueTemp, z, boundsBuoyancy);
 		__syncthreads();
 
 		// We do not return, we just continue 
@@ -1526,7 +1527,7 @@ __global__ void initAMatrix(float4* A, const Neigh* neigh, const float* density,
 		current = forward;
 		forward = fillNeighbourData(neigh[idx].forward, bounds, density, idx, GRIDSIZESKYX * GRIDSIZESKYY, 1.0f);
 
-		if (valid) fillSharedNeigh(neigh, sharedBlock, density, defDens, z, bounds);
+		if (valid) fillSharedNeigh(neigh[idx], sharedBlock, density, (defDens ? defDens[y] : 0.0f), z, bounds);
 		__syncthreads();
 
 		float l = 0.0f, r = 0.0f, d = 0.0f, u = 0.0f, f = 0.0f, b = 0.0f;
@@ -1961,7 +1962,7 @@ __device__ __noinline__ float getVelAtIdx(const Neigh* neigh, const boundsEnv& b
 	return (current + other) * 0.5f;
 }
 
-__device__ __noinline__ void fillSharedNeigh(const Neigh* neigh, float* sharedData, const float* data, const float* customData, const int z, const boundsEnv& bounds)
+__device__ __noinline__ void fillSharedNeigh(const Neigh& neigh, float* sharedData, const float* data, const float customDataVal, const int z, const boundsEnv& bounds)
 {
 	const int x = threadIdx.x + blockDim.x * blockIdx.x;
 	const int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -1972,21 +1973,18 @@ __device__ __noinline__ void fillSharedNeigh(const Neigh* neigh, float* sharedDa
 
 	if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return; // Able to return due to no syncing
 
-	float customDataVal = customData ? customData[y] : 0.0f;
-	float dataVal = data[idx];
-
 	// We can already set our current cell, if it is ground, we set our data based on our ground condition
-	if (neigh[idx].current.type == GROUND)
+	if (neigh.current.type == GROUND)
 	{
 		switch (bounds.ground) {
-		case NEUMANN:    sharedData[sharedIdx] = dataVal; break;
+		case NEUMANN:    sharedData[sharedIdx] = data[idx]; break;
 		case DIRICHLET:  sharedData[sharedIdx] = 0.0f; break;
 		case CUSTOM:     sharedData[sharedIdx] = customDataVal; break;
 		}
 	}
 	else
 	{
-		sharedData[sharedIdx] = dataVal;
+		sharedData[sharedIdx] = data[idx];
 	}
 
 	// Now we need to make sure the threads at the edges set the values of their neighbours
@@ -1996,22 +1994,24 @@ __device__ __noinline__ void fillSharedNeigh(const Neigh* neigh, float* sharedDa
 	const bool down = threadIdx.y == 0 || y == 0;
 	const bool up = threadIdx.y == blockDim.y - 1 || y == GRIDSIZESKYY - 1;
 
+	if (!left && !right && !down && !up) return;
+
 	// At left side of block
 	if (left)
 	{
-		sharedData[sharedIdx - 1] = fillNeighbourData(neigh[idx].left, bounds, data, idx, -1, customDataVal);
+		sharedData[sharedIdx - 1] = fillNeighbourData(neigh.left, bounds, data, idx, -1, customDataVal);
 	}
 	if (right)
 	{
-		sharedData[sharedIdx + 1] = fillNeighbourData(neigh[idx].right, bounds, data, idx, 1, customDataVal);
+		sharedData[sharedIdx + 1] = fillNeighbourData(neigh.right, bounds, data, idx, 1, customDataVal);
 	}
 	if (down)
 	{
-		sharedData[sharedIdx - sharedBlockWidth] = fillNeighbourData(neigh[idx].down, bounds, data, idx, -GRIDSIZESKYX, customDataVal);
+		sharedData[sharedIdx - sharedBlockWidth] = fillNeighbourData(neigh.down, bounds, data, idx, -GRIDSIZESKYX, customDataVal);
 	}
 	if (up)
 	{
-		sharedData[sharedIdx + sharedBlockWidth] = fillNeighbourData(neigh[idx].up, bounds, data, idx, GRIDSIZESKYX, customDataVal);
+		sharedData[sharedIdx + sharedBlockWidth] = fillNeighbourData(neigh.up, bounds, data, idx, GRIDSIZESKYX, customDataVal, up);
 	}
 
 	
@@ -2021,29 +2021,29 @@ __device__ __noinline__ void fillSharedNeigh(const Neigh* neigh, float* sharedDa
 	{
 		// Make sure to set outside value to true if one of the neighbours are outside
 		singleNeigh sNeighbour;
-		sNeighbour.outside = neigh[idx].down.outside || neigh[idx].left.outside;
-		sNeighbour.type = neigh[idx].down.type;
+		sNeighbour.outside = neigh.down.outside || neigh.left.outside;
+		sNeighbour.type = neigh.down.type;
 		sharedData[sharedIdx - 1 - sharedBlockWidth] = fillNeighbourData(sNeighbour, bounds, data, idx, -1 - GRIDSIZESKYX, customDataVal);
 	}
 	else if (right && down)
 	{
 		singleNeigh sNeighbour;
-		sNeighbour.outside = neigh[idx].down.outside || neigh[idx].right.outside;
-		sNeighbour.type = neigh[idx].down.type;
+		sNeighbour.outside = neigh.down.outside || neigh.right.outside;
+		sNeighbour.type = neigh.down.type;
 		sharedData[sharedIdx + 1 - sharedBlockWidth] = fillNeighbourData(sNeighbour, bounds, data, idx, 1 - GRIDSIZESKYX, customDataVal);
 	}
 	else if (right && up)
 	{
 		singleNeigh sNeighbour;
-		sNeighbour.outside = neigh[idx].up.outside || neigh[idx].right.outside;
-		sNeighbour.type = neigh[idx].right.type;
+		sNeighbour.outside = neigh.up.outside || neigh.right.outside;
+		sNeighbour.type = neigh.right.type;
 		sharedData[sharedIdx + 1 + sharedBlockWidth] = fillNeighbourData(sNeighbour, bounds, data, idx, 1 + GRIDSIZESKYX, customDataVal);
 	}
 	else if (left && up)
 	{
 		singleNeigh sNeighbour;
-		sNeighbour.outside = neigh[idx].up.outside || neigh[idx].left.outside;
-		sNeighbour.type = neigh[idx].left.type;
+		sNeighbour.outside = neigh.up.outside || neigh.left.outside;
+		sNeighbour.type = neigh.left.type;
 		sharedData[sharedIdx - 1 + sharedBlockWidth] = fillNeighbourData(sNeighbour, bounds, data, idx, -1 + GRIDSIZESKYX, customDataVal);
 	}
 }
@@ -2068,18 +2068,13 @@ __device__ __forceinline__ float fillNeighbourData(singleNeigh neighbourType, co
 	{
 		switch (neighbourType.type)
 		{
-		case SKY:
-			return data[idx + offset];
-			break;
+		case SKY: return data[idx + offset];
 		case GROUND:
 			switch (condition.ground) {
-			case NEUMANN:   return data[idx]; break;
-			case DIRICHLET: return 0.0f; break;
-			case CUSTOM:    return customData; break;
+			case NEUMANN:   return data[idx];
+			case DIRICHLET: return 0.0f;
+			case CUSTOM:    return customData;
 			}
-			break;
-		default:
-			break;
 		}
 	}
 	return 0.0f;

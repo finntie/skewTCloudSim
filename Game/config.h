@@ -1,8 +1,11 @@
 ﻿#pragma once
 
-#define GRIDSIZESKYX 32
-#define GRIDSIZESKYY 32
-#define GRIDSIZESKYZ 32
+//Do we want to use the GPU? (CPU is very unstable if not working at all atm)
+#define USE_GPU 1
+
+#define GRIDSIZESKYX 128
+#define GRIDSIZESKYY 128
+#define GRIDSIZESKYZ 64
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY * GRIDSIZESKYZ)
 #define GRIDSIZEGROUND (GRIDSIZESKYX * GRIDSIZESKYZ)

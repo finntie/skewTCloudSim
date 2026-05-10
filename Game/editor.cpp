@@ -1,33 +1,15 @@
+#include "pch.h"
+
 #include "environment.h"
 #include "editor.h"
 #include "skewTer.h"
-#include "dataClass.cuh"
-//#include "game.h" //Done in .h due to need for USE_GPU
+#include "game.h"
+#include "tracing.h"
 
 #include "math/meteoformulas.h"
 #include "math/constants.hpp"
-#include "math/geometry.hpp"
-
-#include "core/engine.hpp"
-#include "core/input.hpp"
-#include "core/transform.hpp"
-
-#include "rendering/colors.hpp"
-#include "rendering/debug_render.hpp"
-#include "rendering/render.hpp"
-
-#include "platform/opengl/render_gl.hpp"
-#include "platform/opengl/draw_image.hpp"
-
-#include "tools/inspector.hpp"
-
-#include "imgui/IconsFontAwesome.h"
-#include "imgui/imgui.h"
-#include "imgui/imgui_internal.h"
+#include "dataClass.cuh"
 #include "utils.cuh"
-
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
 
 #if USE_GPU
 #include "environment.cuh"
@@ -42,11 +24,13 @@ editor::editor(envDebugData* _envDebugData)
 {
 	m_envData = _envDebugData;
 	m_backGroundColor = { 0.35f, 0.55f, 0.9f };
+	tracerObj = new tracing();
 }
 
 editor::~editor()
 {
 	//Cleanup
+	delete tracerObj;
 	delete m_envData; //Created from environment.cpp
 }
 
@@ -80,8 +64,8 @@ void editor::setColors()
 	colorScheme.addColor("debugColor", 0.01f, bee::Colors::Red);
 	colorScheme.addColor("debugColor", 0.1f, bee::Colors::Pink + glm::vec4(0, 0.8f, 0, 0));
 
-	colorScheme.createColorScheme("realistic", 0.0f, bee::Colors::Blue, 1.0f, bee::Colors::Black);
-	colorScheme.addColor("realistic", 0.0005f, glm::vec4(0.6f, 0.9f, 1.0f, 1.0f));
+	colorScheme.createColorScheme("realistic", 0.0f, bee::Colors::Grey, 1.0f, bee::Colors::Black);
+	colorScheme.addColor("realistic", 0.0005f, glm::vec4(0.6f, 0.7f, 0.8f, 1.0f));
 	colorScheme.addColor("realistic", 0.001f, bee::Colors::White);
 	colorScheme.addColor("realistic", 0.005f, glm::vec4(0.8f, 0.8f, 0.8f, 1.0f));
 	colorScheme.addColor("realistic", 0.01f, glm::vec4(0.4f, 0.4f, 0.4f, 1.0f));
@@ -448,7 +432,7 @@ void editor::setVariables()
 	MousePos3D = bee::screenToGround(bee::Engine.Input().GetMousePosition());
 
 	//Mouse pos index
-	const int pointingAtIdx = tracerObj.getVoxelAtMouse();
+	const int pointingAtIdx = tracerObj->getVoxelAtMouse();
 	if (pointingAtIdx == -1)
 	{
 		m_selectionInGrid = false;
@@ -1042,7 +1026,7 @@ void editor::viewSky()
 {
 	auto& colorScheme = bee::Engine.DebugRenderer().GetColorScheme();
 
-	tracerObj.resetGrid(false);
+	tracerObj->resetGrid(false);
 
 	// Usage of min and max view to possibly use slices
 	for (int z = m_minViewZ; z < m_maxViewZ; z++)
@@ -1055,7 +1039,7 @@ void editor::viewSky()
 				const int idxG = x + z * GRIDSIZESKYX;
 				if (y <= m_envData->m_groundHeight[idxG]) 
 				{
-					tracerObj.setVoxelValue(idx, true); // Add voxel to tracer so we can select it
+					tracerObj->setVoxelValue(idx, true); // Add voxel to tracer so we can select it
 					if (y == m_envData->m_groundHeight[idxG]) continue; // Leaving 1 voxel space for ground itself
 					bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 0.999f, bee::Colors::Brown);
 					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, bee::Colors::Black);
@@ -1123,7 +1107,7 @@ void editor::viewSky()
 
 				//bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.0f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
 				
-				tracerObj.setVoxelValue(idx, true); // Add voxel to tracer so we can select it
+				tracerObj->setVoxelValue(idx, true); // Add voxel to tracer so we can select it
 
 				bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 0.999f, { color, 1.0f });
 				bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, { 0.0f, 0.0f,0.0f, 1.0f });

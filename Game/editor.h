@@ -1,14 +1,12 @@
 #pragma once
-#include <memory>
-#include "game.h"
 #include "config.h"
-#include <glm/glm.hpp>
-#include "tracing.h"
 
 class environment;
 class environmentGPU;
+class tracing;
 struct gridDataSky;
 struct gridDataGround;
+//namespace glm { struct ivec3; struct vec3; struct vec2; }
 
 class editor
 {
@@ -107,7 +105,7 @@ private:
 	envDebugData* m_envData;
 
 	// Ray tracer
-	tracing tracerObj = tracing();
+	tracing* tracerObj;
 
 	float m_deltatime = 1.0f / 60.0f;
 
@@ -198,7 +196,7 @@ struct envDebugData
 	environment::gridDataSky m_envView;
 	environment::gridDataGround m_groundView;
 
-	int m_groundHeight[GRIDSIZEGROUND]{};
+	int m_groundHeight[GRIDSIZEGROUND];
 
 #else
 	envDebugData(environment::gridDataSky& skyData, environment::gridDataGround& groundData, int(&height)[GRIDSIZEGROUND])
@@ -215,11 +213,11 @@ struct envDebugData
 
 
 
-	float m_debugArray0[GRIDSIZESKY]{};
-	float m_debugArray1[GRIDSIZESKY]{};
-	float m_debugArray2[GRIDSIZESKY]{};
+	float m_debugArray0[GRIDSIZESKY];
+	float m_debugArray1[GRIDSIZESKY];
+	float m_debugArray2[GRIDSIZESKY];
 
-	float m_envTemp[GRIDSIZESKYY]{};
-	float m_envVapor[GRIDSIZESKYY]{};
-	float m_envPressure[GRIDSIZESKYY]{};
+	float m_envTemp[GRIDSIZESKYY];
+	float m_envVapor[GRIDSIZESKYY];
+	float m_envPressure[GRIDSIZESKYY];
 };

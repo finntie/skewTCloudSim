@@ -1,22 +1,12 @@
+#include "pch.h"
+
 #include "readTable.h"
 
-//Engine specific
-#include "core/engine.hpp"
-#include "rendering/debug_render.hpp"
-#include "rendering/colors.hpp"
-
-#include "zip_file.hpp"
+#include "zip_file.hpp" // Function header file, can not be put in pch.h
 #include "math/constants.hpp"
 #include "math/meteoformulas.h"
 #include "environment.h"
 #include "game.h"
-
-#include <sstream>
-#include <iostream>
-#include <cassert>
-#include <memory>
-#include <chrono>
-#include <ctime>
 
 #include "utils.cuh"
 #include "environment.cuh"

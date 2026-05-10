@@ -1,7 +1,8 @@
+#include "pch.h"
+
 #include "game.h"
 
 //Engine
-
 #include "readTable.h"
 #include "environment.h"
 #include "editor.h"

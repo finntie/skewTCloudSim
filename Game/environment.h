@@ -1,42 +1,38 @@
 #pragma once
-#include <vector>
-#include "half/half.hpp"
-#include <glm/glm.hpp>
 #include "config.h"
-
-struct envDebugData;
+#include <vector> // Also in PCH, but needed for std::vector
+ 
 class environmentGPU;
+struct envDebugData;
 
 class environment
 {
 public:
 
 	//TODO: doubles are used for the temps, due to only 14 million precision between biggest and smallest number stored.
-	struct gridDataSky //28 bytes, using floats: 40
+	struct gridDataSky 
 	{
-		/*half_float::half*/float Qv[GRIDSIZESKY]{ 0.01f }; //  Mixing Ratio of Water Vapor
-		/*half_float::half*/float Qw[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of	Liquid Water
-		/*half_float::half*/float Qc[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Ice 
-		/*half_float::half*/float Qr[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Rain
-		/*half_float::half*/float Qs[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Snow
-		/*half_float::half*/float Qi[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Ice (precip)
-		float potTemp[GRIDSIZESKY]{ 1.0f };			 // Potential temperature
-		glm::vec3 velField[GRIDSIZESKY]{};				 // Velocity field (fluid sim)
-		float pressure[GRIDSIZESKY]{};
-
-		//float dummy{ 0.0f }; //Room for 4 bytes?		
+		float Qv[GRIDSIZESKY]; //  Mixing Ratio of Water Vapor
+		float Qw[GRIDSIZESKY]; //	Mixing Ratio of	Liquid Water
+		float Qc[GRIDSIZESKY]; //	Mixing Ratio of Ice 
+		float Qr[GRIDSIZESKY]; //	Mixing Ratio of Rain
+		float Qs[GRIDSIZESKY]; //	Mixing Ratio of Snow
+		float Qi[GRIDSIZESKY]; //	Mixing Ratio of Ice (precip)
+		float potTemp[GRIDSIZESKY];			 // Potential temperature
+		glm::vec3 velField[GRIDSIZESKY];	// Velocity field  (fluid sim)
+		float pressure[GRIDSIZESKY];
 	};
 
 	//TODO: do we want halfs or not? precision lies on about 6e-8f; 
-	struct gridDataGround //16 bytes, using floats: 32
+	struct gridDataGround 
 	{
-		/*half_float::half*/float Qrs[GRIDSIZEGROUND]{0.01f }; // Subsurface water content
-		/*half_float::half*/float Qgr[GRIDSIZEGROUND]{0.01f }; // Rain content
-		/*half_float::half*/float Qgs[GRIDSIZEGROUND]{0.01f }; // Snow content
-		/*half_float::half*/float Qgi[GRIDSIZEGROUND]{0.01f }; // Ice content
-		/*half_float::half*/float P[GRIDSIZEGROUND]{ 1000.0f }; // Ground Pressure
-		/*half_float::half*/float t[GRIDSIZEGROUND]{ 0.0f }; // Time since ground was wet
-		float T[GRIDSIZEGROUND]{ 0.0f };  // Ground temperature
+		float Qrs[GRIDSIZEGROUND]; // Subsurface water content
+		float Qgr[GRIDSIZEGROUND]; // Rain content
+		float Qgs[GRIDSIZEGROUND]; // Snow content
+		float Qgi[GRIDSIZEGROUND]; // Ice content
+		float P[GRIDSIZEGROUND];   // Ground Pressure
+		float t[GRIDSIZEGROUND];   // Time since ground was wet
+		float T[GRIDSIZEGROUND];   // Ground temperature
 	};
 
 	environment();

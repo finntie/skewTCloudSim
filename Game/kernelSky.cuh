@@ -102,7 +102,7 @@ __global__ void setToDefault(float* array, const float* defaultValue);
 // Get avarage velocity at index due to use of MAC grid, direction telling if we want X, Y or Z velocity
 __device__ __noinline__ float getVelAtIdx(const Neigh* neigh, const boundsEnv& boundaryCondition, direction XYZ, const float* velocityField, const float customData, const int idx);
 
-__device__ __noinline__ void fillSharedNeigh(const Neigh* neigh, float* sharedData, const float* data, const float* customData, const int z, const boundsEnv& boundaryConditions);
+__device__ __noinline__ void fillSharedNeigh(const Neigh& neigh, float* sharedData, const float* data, const float customData, const int z, const boundsEnv& boundaryConditions);
 
 __device__ __forceinline__ float fillNeighbourData(const singleNeigh neighbourType, const boundsEnv& boundaryConditions, const float* data, const int idx, const int offset, const float customData, bool up = false);
 

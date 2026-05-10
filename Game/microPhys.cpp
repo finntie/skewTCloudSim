@@ -1,8 +1,8 @@
-﻿#include "microPhys.h"
+﻿#include "pch.h"
+#include "microPhys.h"
 
 #include "math/constants.hpp"
 #include "math/meteoformulas.h"
-#include <algorithm> //For std::clamp
 
 microPhys::microPhys()
 {

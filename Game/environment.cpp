@@ -1,6 +1,5 @@
-﻿#define _CRTDBG_MAP_ALLOC
-#include <crtdbg.h>
-
+﻿#include "pch.h"
+#define _CRTDBG_MAP_ALLOC
 
 #include "environment.h"
 #include "environment.cuh"
@@ -10,17 +9,8 @@
 #include "microPhys.h"
 #include "math/meteoformulas.h"
 #include "math/constants.hpp"
-#include "core/engine.hpp"
-#include "imgui/IconsFontAwesome.h"
-#include "math/math.hpp"
-#include "rendering/colors.hpp"
 #include "utils.cuh"
 
-#include "math/geometry.hpp"
-#include "rendering/debug_render.hpp"
-#include "core/input.hpp"
-#include "tools/log.hpp"
-#include "imgui/imgui.h"
 #include "game.h"
 
 
@@ -119,7 +109,6 @@ void environment::init(float* potTemps, glm::vec2* velField, float* Qv, float* g
 //|                                                  Code                                                     |
 //|-----------------------------------------------------------------------------------------------------------|
 
-using namespace half_float;
 using namespace Constants;
 
 void environment::EditorData()

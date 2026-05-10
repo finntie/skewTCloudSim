@@ -1,30 +1,11 @@
+#include "pch.h"
 #include "gameSystem.h"
-
-//Engine
-#include "core/engine.hpp"
-#include "core/input.hpp"
-#include "core/transform.hpp"
-#include "rendering/debug_render.hpp"
-#include "rendering/render.hpp"
-#include "core/resources.hpp"
-#include "rendering/model.hpp"
-#include "rendering/mesh.hpp"
-#include "imgui/imgui.h"
-#include "tools/profiler.hpp"
-#include "core/device.hpp"
-#include "tools/inspector.hpp"
-#include "math/geometry.hpp"
 
 #include "readTable.h"
 #include "environment.h"
 #include "editor.h"
 #include "skewTer.h"
 #include "game.h"
-
-#include <sstream>
-#include <iostream>
-#include <random>
-
 
 //Game includes
 

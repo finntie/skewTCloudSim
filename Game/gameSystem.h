@@ -1,7 +1,4 @@
 #pragma once
-#include <glm/glm.hpp>
-#include "core/ecs.hpp"
-#include "tools/inspectable.hpp"
 
 using namespace bee; 
 
