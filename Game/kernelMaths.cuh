@@ -10,6 +10,8 @@ __global__ void multiplyValues(float* array1, const float* array2, const int dep
 
 // Divides array1 with array2 into array1, use for how many blocks in Y and how many threads in X.
 __global__ void divideValues(float* array1, const float* array2, const int depth);
+// Divides array1 with array2 into array1, Uses dim3 calculation to speed up z
+__global__ void divideValuesFull(float* array1, const float* array2);
 
 // Subtracts value from array, use for how many blocks in Y and how many threads in X.
 __global__ void subtractValue(float* array, const float value, const int depth);

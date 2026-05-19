@@ -99,7 +99,7 @@ struct microPhysicsParams
 
 	__host__ __device__ void reset()
 	{
-		memset(this, 0, sizeof(*this)); //This works?
+		*this = microPhysicsParams{};
 	}
 
 };

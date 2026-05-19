@@ -25,6 +25,8 @@ editor::editor(envDebugData* _envDebugData)
 	m_envData = _envDebugData;
 	m_backGroundColor = { 0.35f, 0.55f, 0.9f };
 	tracerObj = new tracing();
+	setSliceMinMax(false);
+
 }
 
 editor::~editor()
@@ -1419,14 +1421,14 @@ void editor::applySelect()
 		int maxY = int(std::max(m_corners[0].y, m_corners[1].y));
 		int maxZ = int(std::max(m_corners[0].z, m_corners[1].z));
 
+#if USE_GPU
 		if (m_microPhysSelect)
 		{
 			Game.DataClass().confirmMicroPhysCheckRegion({ minX, minY, minZ }, { maxX, maxY, maxZ });
 			m_selecting = false;
 			m_microPhysSelect = false;
 		}
-#if USE_GPU
-		Game.EnvGPU().prepareSelectionGPU(m_editParamSky, { minX, minY, minZ }, { maxX, maxY, maxZ }, m_applyValue, { m_valueDir.x, m_valueDir.y, m_valueDir.z }, m_groundErase);
+		else Game.EnvGPU().prepareSelectionGPU(m_editParamSky, { minX, minY, minZ }, { maxX, maxY, maxZ }, m_applyValue, { m_valueDir.x, m_valueDir.y, m_valueDir.z }, m_groundErase);
 
 #else
 		else

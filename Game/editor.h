@@ -128,7 +128,7 @@ private:
 	glm::ivec3 m_skewTPos{ 0 };
 
 	// Viewing Settings
-	bool m_viewSlice{ false };
+	bool m_viewSlice{ true };
 	bool m_viewGround{ true };
 	// X = 0, Y = 1, Z = 2
 	int m_viewSliceCoord{ 0 };

@@ -8,6 +8,7 @@
 #include <stdio.h>
 
 #include "config.h"
+#include "utils.cuh"
 
 __device__ unsigned long randomState = 1;
 
@@ -52,6 +53,21 @@ __global__ void divideValues(float* array1, const float* array2, const int depth
     for (z = 0; z < depth; z++)
     {
         const int idx = x + y * blockDim.x + z * blockDim.x * gridDim.x;
+        array1[idx] /= array2[idx];
+    }
+}
+
+__global__ void divideValuesFull(float* array1, const float* array2)
+{
+    int x = threadIdx.x + blockDim.x * blockIdx.x;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
+    int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
+
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return;
+
+    for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+    {
+        int idx = x + y * GRIDSIZESKYX + z * GRIDSIZESKYX * GRIDSIZESKYY;
         array1[idx] /= array2[idx];
     }
 }

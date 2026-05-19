@@ -1041,11 +1041,12 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     //--------- Formulas and variables from https://research.csiro.au/ccam/wp-content/uploads/sites/520/2024/01/1377337420.pdf ---------//
     //----------------------------------------------------------------------------------------------------------------------------------//
 
-    __shared__ microPhysicsParams microPhysValuesShared[GRIDSIZESKYX];
-    int x = threadIdx.x;
-    int y = blockIdx.x;
-    int z = 0;
+    extern __shared__ microPhysicsParams microPhysValuesShared[];
+    int x = threadIdx.x + blockDim.x * blockIdx.x;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
+    int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
     int idx = getIdx(x, y, z);
+    int idxsData = threadIdx.x + threadIdx.y * blockDim.x;
 
     bool valid = true;
     if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) // Avoid outside access
@@ -1054,14 +1055,14 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
         valid = false;
     }
 
-    for (z = 0; z < GRIDSIZESKYZ; z++)
+    for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
     {
         idx = getIdx(x, y, z);
         const int idxG = x + z * GRIDSIZESKYX;
 
         if (graphActive)
         {
-            if (valid) microPhysValuesShared[x].reset();
+            if (valid) microPhysValuesShared[idxsData].reset();
             __syncthreads();
         }
 
@@ -1368,16 +1369,14 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
                 y >= minSelectPos.y && y <= maxSelectPos.y &&
                 z >= minSelectPos.z && z <= maxSelectPos.z);
 
-            int LIdx = x;
+            // Check if there would be any selected cell within this block
+            bool selectedCellInBlock = (0 + blockDim.x * blockIdx.x) <= maxSelectPos.x &&
+                ((blockDim.x - 1) + blockDim.x * blockIdx.x) >= minSelectPos.x &&
+                (0 + blockDim.y * blockIdx.y) <= maxSelectPos.y &&
+                ((blockDim.y - 1) + blockDim.y * blockIdx.y) >= minSelectPos.y;
 
             if (insideRegion)
             {
-                if (minSelectPos.x >= 0)
-                {
-                    //Offset the index to the left, so we can correctly grab the most left one easily.
-                    LIdx = x - minSelectPos.x;
-                }
-
                 float PVVAP = 0.0f;
                 float PVSUB = 0.0f;
                 if (PVCON < 0.0f)
@@ -1393,7 +1392,7 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
                 PGWET *= WTerm;
                 PGDRY *= (1 - WTerm);
 
-                if (valid) microPhysValuesShared[LIdx].init(PVCON, PVDEP, PIMLT, PIDW, PIHOM, PIACR, PRACI, PRAUT,
+                if (valid) microPhysValuesShared[idxsData].init(PVCON, PVDEP, PIMLT, PIDW, PIHOM, PIACR, PRACI, PRAUT,
                     PRACW, PREVP, PRACS, PSACW, PSACR, PSACI, PSAUT, PSFW,
                     PSFI, PSDEP, PSSUB, PSMLT, PGAUT, PGFR, PGACW, PGACI,
                     PGACR, PGDRY, PGACS, PGSUB, PGMLT, PGWET, PGACR1, PVVAP, PVSUB);
@@ -1401,20 +1400,24 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
             }
             __syncthreads();
 
+            // We use a stride which has to be a power of 2, thus we increase just over the total threads and then decrease it
+            int stride = 1;
+            while (stride < blockDim.x * blockDim.y) stride <<= 1;
+            stride >>= 1;
 
-            //Basically, we grab half of the block, add all the values on the other side and repeat the process.
-            for (int i = GRIDSIZESKYX / 2; i > 0; i >>= 1)
+            // Basically, we grab half of the block, add all the values on the other side and repeat the process.
+            for (int i = stride; i > 0; i >>= 1)
             {
-                if (insideRegion && LIdx < i && valid)
+                if (selectedCellInBlock && idxsData < i && idxsData + i < blockDim.x * blockDim.y && valid) // Second check is extra to make sure we don't access outside of our data
                 {
-                    microPhysValuesShared[LIdx] = microPhysValuesShared[LIdx] + microPhysValuesShared[LIdx + i];
+                    microPhysValuesShared[idxsData] = microPhysValuesShared[idxsData] + microPhysValuesShared[idxsData + i];
                 }
                 __syncthreads();
             }
 
 
             //Using atomicAdd(), we can safely add all block values to a singular value
-            if (insideRegion && LIdx == 0 && valid)
+            if (selectedCellInBlock && idxsData == 0 && valid)
             {
                 microPhysValuesShared->atomicAddValues(microPhysicsResult, microPhysValuesShared[0]);
             }
