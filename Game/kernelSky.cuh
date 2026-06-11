@@ -52,7 +52,7 @@ __global__ void dotProductGPU(float* result, const float* a, const float* b);
 __global__ void applyAGPU(float* ouput, const float* input, const Neigh* neigh, const float4* A);
 __global__ void applyPreconditionerGPU(float* output, const float* precon, const float* div, float4* A);
 __global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, const float* velX, const float* velY, const float* velZ, const float* dens, const float* oldDens, const float* defaultDens);
-__global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, float* velX, float* velY, float* velZ, const float* density, const float* pressureEnv, const float dt);
+__global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, float* velX, float* velY, float* velZ, const float* density, const float* pressureEnv, const float dt, float* m_stor0);
 __global__ void getMaxDivergence(float* output, const float* div);
 __global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* divergence, const float* s, const float* z);
 __global__ void endIteration(float* S1, float* S2, float* s, const float* z);
@@ -106,11 +106,11 @@ __device__ __forceinline__ void fillSharedNeigh(const Neigh neigh, float* shared
 
 __device__ __forceinline__ float fillNeighbourData(const bool neighbourOutside, const envType type, const boundsEnv& boundaryConditions, const float* data, const int idx, const int offset, const float customData, bool up = false);
 
-__device__ __noinline__ void fillDataBoundCon(boundCon condition, float& output, const float data, const float customData);
+__device__ __forceinline__ void fillDataBoundCon(boundCon condition, float& output, const float data, const float customData);
 
-__device__ __noinline__ float getValueExtraDirShared(const Neigh* neigh, const float* data, const float* sharedData, const int idx, const int idxShared, const int offset, const int offsetShared, direction dir);
+__device__ __forceinline__ float getValueExtraDirShared(const Neigh* neigh, const float* data, const float* sharedData, const int idx, const int idxShared, const int offset, const int offsetShared, direction dir);
 
 
-__device__ __noinline__ float getValueExtraForward(const Neigh* neigh, const boundsEnv& boundaryConditions, const float* data, const float customData, const int x, const int y, const int z);
+__device__ __forceinline__ float getValueExtraForwardBackward(const Neigh* neigh, const boundsEnv& boundaryConditions, const float* data, const float customData, const int x, const int y, const int z, bool forward = true);
 
 //------------------------------------------

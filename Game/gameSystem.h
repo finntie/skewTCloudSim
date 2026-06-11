@@ -16,9 +16,13 @@ public:
 	void OnPanel() override;
 	std::string GetName() const override;
 	std::string GetIcon() const override;
+
+	void startMenu();
 //#endif
 
 
 private:
 
+	bool loaded{ false };
+	bool makingSkewT{ false };
 };

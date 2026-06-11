@@ -1079,10 +1079,12 @@ void editor::viewSky()
 					colorScheme.getColor("mixingRatio", m_envData->m_envView.Qi[idx], color);
 					break;
 				case WIND:
-					const glm::vec3 VelUV = Game.Environment().getUV(m_envData->m_envView.velField, x, y, z);
+					//const glm::vec3 VelUV = Game.Environment().getUV(m_envData->m_envView.velField, x, y, z);
 					// = m_envData->m_envView.velField[x + y * GRIDSIZESKYX];// getUV(idx);
-					colorScheme.getColor("velField", glm::length(VelUV), color);
-					bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), glm::vec3(0.0f, 0.0f, 1.0f), VelUV, 0.9f, bee::Colors::Black);
+					//colorScheme.getColor("velField", glm::length(VelUV), color);
+					colorScheme.getColor("velField", glm::length(m_envData->m_envView.velField[idx]), color);
+
+					//bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), glm::vec3(0.0f, 0.0f, 1.0f), VelUV, 0.9f, bee::Colors::Black);
 					break;
 				case PRESSURE:
 					colorScheme.getColor("pressure", m_envData->m_envView.pressure[idx], color);
@@ -1342,7 +1344,7 @@ void editor::viewSkewT()
 void editor::applyBrush()
 {
 
-	//printf("brushing: %i, MouseWheel: %f, getMousewheel: %f, !selectedInspector: %i\n", m_brushing, MouseWheel, bee::Engine.Input().GetMouseWheel(), !bee::Engine.Inspector().IsSelected());
+	//printf("brushing: %i, m_mouseWheel: %f, getMousewheel: %f, !selectedInspector: %i\n", m_brushing, m_mouseWheel, bee::Engine.Input().GetMouseWheel(), !bee::Engine.Inspector().IsSelected());
 	if (m_brushing && MouseWheel != bee::Engine.Input().GetMouseWheel() && !bee::Engine.Inspector().IsSelected())
 	{
 		const float diff = bee::Engine.Input().GetMouseWheel() - MouseWheel;

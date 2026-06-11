@@ -452,16 +452,18 @@ __global__ void advectPPMX(const float* __restrict__ arrayIn,
 		if (valid) idx = getIdx(x, y, z);
 
 		Neigh curNeigh = neigh[idx];
+		float curVel = velfieldX[idx];
 
 		if (valid) fillSharedNeigh(curNeigh, sharedBlock, arrayIn, (defaultVal ? defaultVal[y] : 0.0f), z, bounds);
 		__syncthreads();
+
 
 		// We do not return, we just continue and wait for the rest of the threads. 
 		if (!valid || isGroundGPU(x, y, z)) continue;
 
 		// Downwind is when velocity is coming from the back
 		// And since we are currently looking forward, downwind is moving with use thus positive
-		bool downWind = velfieldX[idx] >= 0.0f;
+		bool downWind = curVel >= 0.0f;
 
 		float extraRight = 0.0f;
 		// If not downwind, we need to use extra Up
@@ -474,7 +476,7 @@ __global__ void advectPPMX(const float* __restrict__ arrayIn,
 		float valR = downWind ? sharedBlock[idxsData + 1] : sharedBlock[idxsData];
 		float valC = downWind ? sharedBlock[idxsData] : sharedBlock[idxsData + 1];
 
-		float fluxRight = advectPPMFlux(velfieldX[idx], valL, valC, valR, *dt);
+		float fluxRight = advectPPMFlux(curVel, valL, valC, valR, *dt);
 
 		// For the correct velocity, we need to do some neighbouring checks
 		float velL = fillNeighbourData(curNeigh.getOutsideLeft(), curNeigh.getEnvTypeLeft(), bounds, velfieldX, idx, -1, defaultVelX[y]);
@@ -615,7 +617,7 @@ __global__ void advectPPMZ(const float* __restrict__ arrayIn,
 	if (isGroundGPU(x, y, z)) fillDataBoundCon(bounds.ground, forward, arrayIn[idx], defaultValue); // Fill forward if at ground
 	else forward = arrayIn[idx];
 	float current = fillNeighbourData(curNeigh.getOutsideBackward(), curNeigh.getEnvTypeBackward(), bounds, arrayIn, idx, -GRIDSIZESKYX * GRIDSIZESKYY, defaultValue);
-	float backward = current; // Can reuse current due to both being outside
+	float backward = getValueExtraForwardBackward(neigh, bounds, arrayIn, defaultValue, x, y, z, false);
 	float backwardExtra = 0.0f;
 
 	for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
@@ -628,7 +630,7 @@ __global__ void advectPPMZ(const float* __restrict__ arrayIn,
 		backward = current;
 		current = forward;
 		forward = forwardExtra;
-		forwardExtra = getValueExtraForward(neigh, bounds, arrayIn, defaultValue, x, y, z);
+		forwardExtra = getValueExtraForwardBackward(neigh, bounds, arrayIn, defaultValue, x, y, z);
 
 		//if (z > 27 && y == 1 && x == 31) printf("x %i y: %i, z %i value: %f, value2 %f, final %f, FE %f, F %f, C %f, B %f, BE %f\n", x, y, z, 0.0f, 0.0f, (dt / VOXELSIZE) * (0.0f - 0.0f), forwardExtra, forward, current, backward, backwardExtra);
 		if (isGroundGPU(x, y, z)) continue;
@@ -961,11 +963,11 @@ __global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, co
 		// We do not return, since we still need to fill data
 		if (!valid || isGroundGPU(x, y, z)) continue;
 
-		ur = velX[idx];
+		ur = velX[idx];// currentNeigh.getOutsideRight() ? (boundsVelXZ.sides == NEUMANN ? velX[idx - 1] : 0.0f) : velX[idx];// If outside and using NEUMANN, we use the previous, since current value is set to 0
 		ul = fillNeighbourData(currentNeigh.getOutsideLeft(), currentNeigh.getEnvTypeLeft(), boundsVelXZ, velX, idx, -1, defaultVelX[y]);
-		uu = velY[idx];
+		uu = velY[idx];// currentNeigh.getOutsideUp() ? (boundsVelY.up == NEUMANN ? velY[idx - GRIDSIZESKYX] : 0.0f) : velY[idx]; // If outside and using NEUMANN, we use the previous, since current value is set to 0
 		ud = fillNeighbourData(currentNeigh.getOutsideDown(), currentNeigh.getEnvTypeDown(), boundsVelY, velY, idx, -GRIDSIZESKYX, 0.0f);
-		uf = velZ[idx];
+		uf = velZ[idx];// currentNeigh.getOutsideForward() ? (boundsVelXZ.sides == NEUMANN ? velZ[idx - GRIDSIZESKYX * GRIDSIZESKYY] : 0.0f) : velZ[idx];// If outside and using NEUMANN, we use the previous, since current value
 		ub = fillNeighbourData(currentNeigh.getOutsideBackward(), currentNeigh.getEnvTypeBackward(), boundsVelXZ, velZ, idx, -GRIDSIZESKYX * GRIDSIZESKYY, defaultVelZ[y]);
 
 		// Get correct densities
@@ -994,12 +996,12 @@ __global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, co
 		//Using divergence minus the change in compressibility
 		//Dividing again by dt to get kg/m3*s2 instead of only s TODO: should we?
 		divergence[idx] = (massFluxDiv - densityChange);
-		//if (z < 3 && y == 1) printf("x %i, y %i, z %i, massFluxDiv = %f, densChange %f, backward %f, current %f, forward %f, oldDens %f, divergence %f\n", x, y, z, massFluxDiv, densityChange, backward, current, forward, oldDens[idx], divergence[idx]);
-		//if (z > 29 && y == 1) printf("x %i, y %i, z %i, massFluxDiv = %f, densChange %f, dr %f,dl %f,du %f,dd %f,df %f,db %f\n", x, y, z, massFluxDiv, densityChange, ur, ul, uu, ud, uf, ub);
+		//if (y >= 14 && x == 8 && z == 8) printf("x %i, y %i, z %i, massFluxDiv = %f, densChange %f, backward %f, current %f, forward %f, oldDens %f, divergence %f\n", x, y, z, massFluxDiv, densityChange, backward, current, forward, oldDens[idx], divergence[idx]);
+		//if (y >= 14 && x == 8 && z == 8) printf("x %i, y %i, z %i, massFluxDiv = %f, densChange %f, dr %f,dl %f,du %f,dd %f,df %f,db %f\n", x, y, z, massFluxDiv, densityChange, ur, ul, uu, ud, uf, ub);
 	}
 }
 
-__global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, float* velX, float* velY, float* velZ, const float* density,const float* pressureEnv, const float dt)
+__global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, float* velX, float* velY, float* velZ, const float* density,const float* pressureEnv, const float dt, float* m_stor0)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -1047,6 +1049,8 @@ __global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, floa
 		velX[idx] += (pr - currentP) / dr;
 		velY[idx] += (pu - currentP) / du;
 		velZ[idx] += (pf - currentP) / df;
+
+		m_stor0[idx] = pf - currentP;
 
 		//if (x == 31 && z == 16) printf("x %i, y %i, z %i, pressure[%i] = %e, pr %e, pu %e, pf %e, currentP %e, outside: %i\n", x, y, z, idx, pressure[idx], pr, pu, pf, currentP, neigh.getOutsideUp());
 	}
@@ -1117,12 +1121,12 @@ __global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* dive
 
 	if (idxsData == 0)
 	{
-		sresult = *S1 / *S2;
-
-		if (*S2 == 0.0f)
+		if (*S2 == 0.0f || *S2 != *S2 || *S1 != *S1)
 		{
 			printf("ERROR: S2 = 0.0f in updatePandDiv\n");
 		}
+		else sresult = *S1 / *S2;
+
 	}
 
 	__syncthreads();
@@ -1152,9 +1156,11 @@ __global__ void endIteration(float* S1, float* S2, float* s, const float* valZ)
 
 	if (idxsData == 0)
 	{
-		sresult = *S2 / *S1;
-
-		if (*S1 == 0.0f) printf("ERROR: S1 = 0.0f in updatePandDiv\n");
+		if (*S1 == 0.0f || *S2 != *S2 || *S1 != *S1)
+		{
+			printf("ERROR: S1 = 0.0f in endIteration\n");
+		}
+		else sresult = *S2 / *S1;
 	}
 	__syncthreads();
 
@@ -2072,7 +2078,7 @@ __device__ __forceinline__ float fillNeighbourData(const bool neighbourOutside, 
 	return 0.0f;
 }
 
-__device__ __noinline__ void fillDataBoundCon(boundCon condition, float& output, const float data, const float customData)
+__device__ __forceinline__ void fillDataBoundCon(boundCon condition, float& output, const float data, const float customData)
 {
 	switch (condition)
 	{
@@ -2090,7 +2096,7 @@ __device__ __noinline__ void fillDataBoundCon(boundCon condition, float& output,
 	}
 }
 
-__device__ __noinline__ float getValueExtraDirShared(const Neigh* neigh, const float* data, const float* sharedData, const int idx, const int idxS, const int offset, const int offsetS, direction dir)
+__device__ __forceinline__ float getValueExtraDirShared(const Neigh* neigh, const float* data, const float* sharedData, const int idx, const int idxS, const int offset, const int offsetS, direction dir)
 {
 	bool outsideDir = false;
 
@@ -2150,65 +2156,83 @@ __device__ __noinline__ float getValueExtraDirShared(const Neigh* neigh, const f
 	return 0.0f;
 }
 
-__device__ __noinline__ float getValueExtraForward(const Neigh* neigh, const boundsEnv& bounds, const float* data, const float customData, const int x, const int y, const int z)
+__device__ __forceinline__ float getValueExtraForwardBackward(const Neigh* neigh, const boundsEnv& bounds, const float* data, const float customData, const int x, const int y, const int z, bool forward)
 {
 	if (isOutside(x, y, z)) return 0.0f;
 	int idx = getIdx(x, y, z);
 
-	float value = 0.0f; 
-
 	// If next one is outside, meaning extra forward is also outside
-	if (neigh[idx].getOutsideForward())
+	if (forward ? neigh[idx].getOutsideForward() : neigh[idx].getOutsideBackward())
 	{
-		if (neigh[idx].getEnvTypeForward() == GROUND) // Meaning current is ground and outside it thus marked as ground
+		if (forward ? neigh[idx].getEnvTypeForward() == GROUND : neigh[idx].getEnvTypeBackward() == GROUND) // Meaning current is ground and outside it thus marked as ground
 		{
-			if (bounds.ground == NEUMANN) printf("Warning: Neumann at ground is not handled correctly with forward, current and backward\n");
-			
-			fillDataBoundCon(bounds.ground, value, data[idx], customData);
+			switch (bounds.ground){
+			case NEUMANN: printf("Warning: Neumann at ground is not handled correctly with forward, current and backward\n"); return 0.0f;
+			case DIRICHLET: return 0.0f;
+			case CUSTOM: return customData; break;
+			default: break;
+			}
 		}
 		else
 		{
-			fillDataBoundCon(bounds.sides, value, data[idx], customData);
+			switch (bounds.sides) {
+			case NEUMANN: return data[idx];
+			case DIRICHLET: return 0.0f;
+			case CUSTOM: return customData; break;
+			default: break;
+			}
 		}
 	}
 	else
 	{
-		idx += GRIDSIZESKYX * GRIDSIZESKYY;
+		idx += forward ? GRIDSIZESKYX * GRIDSIZESKYY : -GRIDSIZESKYX * GRIDSIZESKYY;
 
 		// We now can safely access the next forward
-		if (neigh[idx].getOutsideForward())
+		if (forward ? neigh[idx].getOutsideForward() : neigh[idx].getOutsideBackward())
 		{
-			if (neigh[idx].getEnvTypeForward() == GROUND) // Meaning current is ground and outside it thus marked as ground
+			if (forward ? neigh[idx].getEnvTypeForward() == GROUND : neigh[idx].getEnvTypeBackward() == GROUND) // Meaning current is ground and outside it thus marked as ground
 			{
-				if (bounds.ground == NEUMANN) printf("Warning: Neumann at ground is not handled correctly with forward, current and backward\n");
-
-				fillDataBoundCon(bounds.ground, value, data[idx], customData);
+				switch (bounds.ground) {
+				case NEUMANN: printf("Warning: Neumann at ground is not handled correctly with forward, current and backward\n"); return 0.0f;
+				case DIRICHLET: return 0.0f;
+				case CUSTOM: return customData; break;
+				default: break;
+				}
 			}
 			else
 			{
-
-				fillDataBoundCon(bounds.sides, value, data[idx], customData);
+				switch (bounds.sides) {
+				case NEUMANN: return data[idx];
+				case DIRICHLET: return 0.0f;
+				case CUSTOM: return customData; break;
+				default: break;
+				}
 			}
 		}
 		else
 		{
 
 			// Target is inside
-			if (neigh[idx].getEnvTypeForward() == GROUND)
+			if (forward ? neigh[idx].getEnvTypeForward() == GROUND : neigh[idx].getEnvTypeBackward() == GROUND)
 			{
-				if (bounds.ground == NEUMANN) printf("Warning: Neumann at ground is not handled correctly with forward, current and backward\n");
-
-				fillDataBoundCon(bounds.ground, value, data[idx], customData);
+				switch (bounds.ground) {
+				case NEUMANN: printf("Warning: Neumann at ground is not handled correctly with forward, current and backward\n"); return 0.0f;
+				case DIRICHLET: return 0.0f;
+				case CUSTOM: return customData; break;
+				default: break;
+				}
 			}
 			else
 			{
+				idx += forward ? GRIDSIZESKYX * GRIDSIZESKYY : -GRIDSIZESKYX * GRIDSIZESKYY;
+
 				// Finally, the target is inside and not ground
-				value = data[idx + GRIDSIZESKYX * GRIDSIZESKYY];
+				return data[idx];
 
 				//if (z > 27 && y == 1 && x == 31) printf("x %i y: %i, z %i value: %f\n", x, y, z, value);
 			}
 		}
 	}
-	return value;
+	return 0.0f;
 }
 

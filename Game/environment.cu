@@ -172,7 +172,7 @@ environmentGPU::environmentGPU()
 
 	cudaMalloc((void**)&m_array, GRIDSIZESKY * sizeof(float));
 	cudaMalloc((void**)&m_outputArray, GRIDSIZESKY * sizeof(float));
-	cudaMalloc((void**)&m_defaultVal, GRIDSIZESKY * sizeof(float));
+	cudaMalloc((void**)&m_storPres, GRIDSIZESKY * sizeof(float));
 	cudaMalloc((void**)&m_neighbourData, GRIDSIZESKY * sizeof(Neigh));
 	cudaMalloc((void**)&m_density, GRIDSIZESKY * sizeof(float));
 	cudaMalloc((void**)&m_densityAir, GRIDSIZESKY * sizeof(float));
@@ -279,7 +279,7 @@ environmentGPU::~environmentGPU()
 	cudaFree(m_microPhysRes);
 	cudaFree(m_density);
 	cudaFree(m_neighbourData);
-	cudaFree(m_defaultVal);
+	cudaFree(m_storPres);
 	cudaFree(m_outputArray);
 	cudaFree(m_array);
 
@@ -311,8 +311,6 @@ environmentGPU::~environmentGPU()
 
 void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures, float* smallPressure)
 {
-	//velField[getIdx(31, 16, 16)].y = 10.0f;
-
 	//Init sky
 	cudaMemcpy(m_envGrid.potTemp, potTemps, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice);
 	
@@ -378,6 +376,9 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 		std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
 		__debugbreak();
 	}
+
+	// Reset pressure
+	cudaMemset(m_storPres, 0, GRIDSIZESKY * sizeof(float));
 
 	//Init ground
 	float* noise = nullptr;
@@ -844,9 +845,6 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 	float maxVel = 1.0f;
 	cudaMemcpy(&maxVel, m_singleStor0, sizeof(float), cudaMemcpyDeviceToHost); // Causing long stall due to GPU work catching up to this point.
 
-	// Now use single storage as dt holder
-	cudaMemcpy(m_singleStor0, &dt, sizeof(float), cudaMemcpyHostToDevice);
-
 
 	const float C = maxVel * dt / VOXELSIZE;
 	const float MAXSUBSTEPS = 100;
@@ -857,6 +855,9 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 	{
 		printf("WARNING: Courant number is high: %f, increase size of voxels or decrease timesteps, %f, %i\n", C, dtSub, subSteps);
 	}
+
+	// Now use single storage as dt holder
+	cudaMemcpy(m_singleStor0, &dtSub, sizeof(float), cudaMemcpyHostToDevice);
 
 	const int sharedDataSize = (blockDim.x + 2) * (blockDim.y + 2) * sizeof(float);
 
@@ -1043,9 +1044,9 @@ void environmentGPU::pressureProject(const float dt)
 	//Actual pressure project
 	calculatePressureProject(m_outputArray, dt);
 
-
 	//Set new density
 	updatePressure << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_envGrid.pressure, m_outputArray);
+
 	initDensity << <GRIDSIZESKYY, GRIDSIZESKYX >> > (m_densityAir, m_envGrid.potTemp, m_envGrid.pressure, m_envGrid.Qv, m_groundGrid.P);
 	//cudaDeviceSynchronize();
 
@@ -1055,8 +1056,10 @@ void environmentGPU::pressureProject(const float dt)
 
 	//Apply calculate pressure to velocity field
 	applyPresProjGPU << <gridDim, blockDim >> > (m_outputArray, m_neighbourData, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ,
-		m_densityAir, m_envGrid.pressure, dt);
+		m_densityAir, m_envGrid.pressure, dt, m_stor0);
 	//cudaDeviceSynchronize();
+
+
 
 	err = cudaGetLastError();
 	if (err != cudaSuccess) {
@@ -1068,7 +1071,7 @@ void environmentGPU::pressureProject(const float dt)
 void environmentGPU::calculatePressureProject(float* outputPressure, const float )
 {	
 	//const float tolValue = 1e-5f;
-	const int MAXITERATION = 200;
+	const int MAXITERATION = 50;
 	float maxr = 0.0f;
 	const int sharedDataSize = (blockDim.x + 2) * (blockDim.y + 2) * sizeof(float);
 	const int sharedDataSizeNoHalo = blockDim.x * blockDim.y * sizeof(float);
@@ -1080,7 +1083,7 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 	cudaMemset(m_stor0, 0, GRIDSIZESKY * sizeof(float));
 	cudaMemset(m_stor1, 0, GRIDSIZESKY * sizeof(float));
 	cudaMemset(m_stor2, 0, GRIDSIZESKY * sizeof(float));
-	cudaMemset(outputPressure, 0, GRIDSIZESKY * sizeof(float));
+	cudaMemcpy(outputPressure, m_storPres, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToDevice); // Starting with previous result
 	cudaMemset(m_singleStor0, 0, sizeof(float));
 	cudaMemset(m_sigma0, 0, sizeof(float));
 	cudaMemset(m_sigma1, 0, sizeof(float));
@@ -1089,6 +1092,11 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 	//Divergence
 	calculateDivergenceGPU << <gridDim, blockDim, sharedDataSize >> > (m_stor0, m_neighbourData, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ, m_densityAir, m_oldDensityAir, m_dummyArraySky2);
 	//cudaDeviceSynchronize();
+
+
+	// Set initial residual vector guess r = d - Ap
+	applyAGPU << <gridDim, blockDim, sharedDataSize >> > (m_stor1, m_storPres, m_neighbourData, m_A);
+	subtractArrayFull << <gridDim, blockDim, sharedDataSize >> > (m_stor0, m_stor1);
 
 	//cudaFuncAttributes attr;
 	//cudaFuncGetAttributes(&attr, calculateDivergenceGPU);
@@ -1110,6 +1118,7 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 	//cudaDeviceSynchronize();
 	cudaMemcpy(&maxr, m_singleStor0, sizeof(float), cudaMemcpyDeviceToHost);
 	if (maxr == 0.0f) return;
+	//printf("init r value: %e\n", maxr);
 
 	applyPreconditionerGPU << <gridDim, blockDim >> > (m_stor1, m_precon, m_stor0, m_A);
 	//cudaDeviceSynchronize();
@@ -1135,9 +1144,16 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 		applyAGPU << <gridDim, blockDim, sharedDataSize, stream1 >> > (m_stor1, m_stor2, m_neighbourData, m_A);
 		dotProductGPU << <gridDim, blockDim, sharedDataSizeNoHalo, stream1 >> > (m_sigma1, m_stor1, m_stor2);
 		updatePandDiv << <gridDim, blockDim, 0, stream1 >> > (m_sigma0, m_sigma1, outputPressure, m_stor0, m_stor2, m_stor1);
+
 		//cudaMemsetAsync(m_singleStor0, 0, sizeof(float), stream1);
 		//getMaxDivergence << <gridDim, blockDim, sharedDataSizeNoHalo, stream1 >> > (m_singleStor0, m_stor0);
-
+		////cudaDeviceSynchronize();
+		//cudaMemcpyAsync(&maxr, m_singleStor0, sizeof(float), cudaMemcpyDeviceToHost, stream1);
+		//if (maxr <= tolValue)
+		//{
+		//	printf("Iterations pressure projection lower than max\n");
+		//	//return;
+		//}
 
 		applyPreconditionerGPU << <gridDim, blockDim, 0, stream1 >> > (m_stor1, m_precon, m_stor0, m_A);
 		cudaMemsetAsync(m_sigma1, 0, sizeof(float), stream1);
@@ -1193,6 +1209,21 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 
 		//cudaDeviceSynchronize();
 	}
+
+	// Check r
+	//cudaMemsetAsync(m_singleStor0, 0, sizeof(float), stream1);
+	//getMaxDivergence << <gridDim, blockDim, sharedDataSizeNoHalo, stream1 >> > (m_singleStor0, m_stor0);
+	//////cudaDeviceSynchronize();
+	//cudaMemcpyAsync(&maxr, m_singleStor0, sizeof(float), cudaMemcpyDeviceToHost, stream1);
+	//printf("r value: %e\n", maxr);
+
+
+	Game.Editor().setDebugValueNum(outputPressure, 1);
+
+	// Set our next initial pressure guess. 
+	cudaMemcpyAsync(m_storPres, outputPressure, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToDevice, stream1);
+	
+
 	cudaStreamSynchronize(stream1);
 	//printf("Max iterations reached!\n");
 }

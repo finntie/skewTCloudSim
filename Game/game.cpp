@@ -10,6 +10,7 @@
 #include "microPhys.h"
 #include "environment.cuh"
 #include "dataClass.cuh"
+#include "skewTMaker.h"
 
 // Make the game a global variable on free store memory.
 game Game;
@@ -22,6 +23,7 @@ game::game()
 game::~game()
 {
 	//Cleanup from last created to first.
+	delete m_skewTMakerObj;
 	delete m_dataClassObj;
 	delete m_microPhysObj;
 	delete m_skewTerObj;
@@ -44,6 +46,7 @@ void game::Initialize()
 	m_skewTerObj = new skewTer();
 	m_microPhysObj = new microPhys();
 	m_dataClassObj = new dataClass();
+	m_skewTMakerObj = new skewTMaker();
 }
 
 //Update function 

@@ -16,6 +16,9 @@ __global__ void divideValuesFull(float* array1, const float* array2);
 // Subtracts value from array, use for how many blocks in Y and how many threads in X.
 __global__ void subtractValue(float* array, const float value, const int depth);
 
+// Subtracts an array2 from array1, Uses dim3 calculation to speed up z
+__global__ void subtractArrayFull(float* array1, const float* array2);
+
 // Debug print float array, use for how many blocks in Y and how many threads in X.
 __global__ void debugPrintArray(const float* array, const int depth);
 

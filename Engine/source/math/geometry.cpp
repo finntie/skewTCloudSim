@@ -45,6 +45,43 @@ glm::vec3 bee::mouseRayDirection(glm::vec2 screenPos, const glm::quat& cameraRot
     return cameraRot * glm::normalize(pos3D - glm::vec3(0));
 }
 
+glm::vec3 bee::getCameraBottomLeftDir()
+{
+    glm::vec3 dir = glm::vec3(0);
+    for (const auto& [CameraEntity, camera, transform] : Engine.ECS().Registry.view<Camera, Transform>().each())
+    {
+        dir = mouseRayDirection(glm::vec2(0, 0), transform.GetRotation(), camera.Projection);
+    }
+    return dir;
+}
+glm::vec3 bee::getCameraBottomRightDir()
+{
+    glm::vec3 dir = glm::vec3(0);
+    for (const auto& [CameraEntity, camera, transform] : Engine.ECS().Registry.view<Camera, Transform>().each())
+    {
+        dir = mouseRayDirection(glm::vec2(Engine.Device().GetWidth(), 0), transform.GetRotation(), camera.Projection);
+    }
+    return dir;
+}
+glm::vec3 bee::getCameraTopRightDir() 
+{
+    glm::vec3 dir = glm::vec3(0);
+    for (const auto& [CameraEntity, camera, transform] : Engine.ECS().Registry.view<Camera, Transform>().each())
+    {
+        dir = mouseRayDirection(glm::vec2(Engine.Device().GetWidth(), Engine.Device().GetHeight()), transform.GetRotation(), camera.Projection);
+    }
+    return dir;
+}
+glm::vec3 bee::getCameraTopLeftDir()
+{
+    glm::vec3 dir = glm::vec3(0);
+    for (const auto& [CameraEntity, camera, transform] : Engine.ECS().Registry.view<Camera, Transform>().each())
+    {
+        dir = mouseRayDirection(glm::vec2(0, Engine.Device().GetHeight()), transform.GetRotation(), camera.Projection);
+    }
+    return dir;
+}
+
 glm::vec3 bee::screenToGround(glm::vec2 screenPos)
 {
     glm::quat camRot;
@@ -276,4 +313,16 @@ void PNoise2D(const int seed, float* output, const int width, const int depth, c
     }
 
 
+}
+
+float distance(glm::vec2 point1, glm::vec2 point2) 
+{ 
+    return sqrt((point2.x - point1.x) * (point2.x - point1.x) + (point2.y - point1.y) * (point2.y - point2.y));
+}
+
+float distance(glm::vec3 point1, glm::vec3 point2) 
+{ 
+    return sqrt((point2.x - point1.x) * (point2.x - point1.x) + 
+                (point2.y - point1.y) * (point2.y - point1.y) +
+                (point2.z - point1.z) * (point2.z - point1.z));
 }

@@ -139,7 +139,7 @@ private:
 	//GPU variables
 	float* m_array;
 	float* m_outputArray;
-	float* m_defaultVal;
+	float* m_storPres; // Storage for previous pressure outcome
 	float* m_density;
 
 	float* m_oldDensityAir;

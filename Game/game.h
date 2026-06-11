@@ -9,6 +9,7 @@ class skewTer;
 class microPhys;
 class environmentGPU;;
 class dataClass;
+class skewTMaker;
 
 class game
 {
@@ -29,6 +30,7 @@ public:
 	microPhys& mPhys() { return *m_microPhysObj; }
 	environmentGPU& EnvGPU() { return *m_envGPUObj; }
 	dataClass& DataClass() { return *m_dataClassObj; }
+	skewTMaker& SkewTMaker() { return *m_skewTMakerObj; }
 private:
 
 	environment* m_environmentObj = nullptr;
@@ -38,6 +40,8 @@ private:
 	microPhys* m_microPhysObj = nullptr;
 	environmentGPU* m_envGPUObj = nullptr;
 	dataClass* m_dataClassObj = nullptr;
+	skewTMaker* m_skewTMakerObj = nullptr;
+
 };
 
 extern game Game;

@@ -90,6 +90,21 @@ __global__ void subtractValue(float* array, const float value, const int depth)
     }
 }
 
+__global__ void subtractArrayFull(float* array1, const float* array2)
+{
+    int x = threadIdx.x + blockDim.x * blockIdx.x;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
+    int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
+
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return;
+
+    for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+    {
+        int idx = x + y * GRIDSIZESKYX + z * GRIDSIZESKYX * GRIDSIZESKYY;
+        array1[idx] -= array2[idx];
+    }
+}
+
 __global__ void debugPrintArray(const float* array, const int depth)
 {
     const int x = threadIdx.x;

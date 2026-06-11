@@ -114,8 +114,6 @@ void readTable::readKNMIFile(const char* _file)
 			std::memcpy(skewTData.data.altitude, altitude.data(), row * sizeof(float));
 		}
 	}
-
-	heightToPressureCalculate();
 }
 
 
@@ -339,8 +337,6 @@ void readTable::readDWDFile(const char* _file)
 		std::memcpy(skewTData.data.pressure, pressure.data(), row * sizeof(float));
 		std::memcpy(skewTData.data.altitude, altitude.data(), row * sizeof(float));
 	}
-
-	heightToPressureCalculate();
 }
 
 static float lerpEnvValue(const float H1, const float H2, const float HC, const float V1, const float V2)
@@ -464,39 +460,9 @@ void readTable::initEnvironment()
 }
  
 
-//TODO: just remove?
-void readTable::heightToPressureCalculate()
-{
-	for (int i = 0; i < int(skewTData.data.dataSize); i++)
-	{
-		skewTData.heightToPressure.emplace(skewTData.data.altitude[i], skewTData.data.pressure[i]);
-		skewTData.pressureToHeight.emplace(skewTData.data.pressure[i], skewTData.data.altitude[i]);
-	}
-}
-
-//TODO: just remove?
-std::pair<float, int> readTable::getPressureAtHeight(float height)
-{
-	auto upper = skewTData.heightToPressure.lower_bound(height);
-
-	if (upper == skewTData.heightToPressure.begin()) return { upper->second, 0 };
-	else if (upper == skewTData.heightToPressure.end()) return { std::prev(upper)->second, int(skewTData.heightToPressure.size() - 1) };
-
-	auto lower = std::prev(upper);
-
-	int index = std::max(int(std::distance(skewTData.heightToPressure.begin(), lower)),0);
-
-	//P = P1 + (P2 - P1) * (H - H1) / (H2 - H1)
-	float P1 = lower->second, P2 = upper->second;
-	float H1 = lower->first, H2 = upper->first;
-
-	return { P1 + (P2 - P1) * (height - H1) / (H2 - H1), index };
-}
 
 int readTable::getIndexAtHeight(float height)
 {
-	auto upper = skewTData.heightToPressure.lower_bound(height);
-
 	for (int i = 0; i < skewTData.data.dataSize; i++)
 	{
 		if (height <= skewTData.data.altitude[i])
@@ -504,25 +470,9 @@ int readTable::getIndexAtHeight(float height)
 			return i;
 		}
 	}
-
 	return -1;
 }
 
-float readTable::getHeightAtPressure(float pressure)
-{
-	auto upper = skewTData.pressureToHeight.lower_bound(pressure);
-
-	if (upper == skewTData.pressureToHeight.begin()) return upper->second;
-	else if (upper == skewTData.pressureToHeight.end()) return std::prev(upper)->second;
-
-	auto lower = std::prev(upper);
-
-	//P = P1 + (P2 - P1) * (H - H1) / (H2 - H1)
-	float P1 = lower->second, P2 = upper->second;
-	float H1 = lower->first, H2 = upper->first;
-
-	return P1 + (P2 - P1) * (pressure - H1) / (H2 - H1);
-}
 
 glm::vec2 readTable::convertToPlottingCoordinates(const float temp, const float value, const bool pressure, const float scaleWidth, const float maxHeight)
 {

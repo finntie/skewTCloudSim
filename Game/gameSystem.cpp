@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "gameSystem.h"
 
+#include "skewTMaker.h"
 #include "readTable.h"
 #include "environment.h"
 #include "editor.h"
@@ -34,7 +35,19 @@ gameSystem::~gameSystem() {}
 //Update function 
 void gameSystem::Update(float dt)
 {
-	Game.Update(dt);
+	if (makingSkewT)
+	{
+		Game.SkewTMaker().update(dt);
+		if (Game.SkewTMaker().doneMakingSkewT)
+		{
+			makingSkewT = false;
+			loaded = true;
+		}
+	}
+	if (loaded)
+	{
+		Game.Update(dt);
+	}
 	//Game.ReadTable().debugDrawData();
 }
 
@@ -44,10 +57,22 @@ void gameSystem::Render() {}
 std::string gameSystem::GetName() const { return Title; }
 std::string gameSystem::GetIcon() const { return ICON_FA_GAMEPAD; }
 
+
 void gameSystem::OnPanel()
 {
-	Game.Editor().panel();
-	
+	if (makingSkewT)
+	{
+		Game.SkewTMaker().panel();
+	}
+	else if (loaded)
+	{
+		Game.Editor().panel();
+	}
+	else
+	{
+		startMenu();
+	}
+
 	//ImGui::Begin("NewWindow");
 	//
 	//ImGui::SliderFloat("Angle", &Game.ReadTable().angle, 0, 90);
@@ -63,4 +88,49 @@ void gameSystem::OnPanel()
 	//ImGui::Text("CAPE: %f", Game.ReadTable().CAPE);
 	//
 	//ImGui::End();
+}
+
+void gameSystem::startMenu()
+{
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.3f, 0.3f, 0.7f, 1.0f));
+
+	ImGui::Begin("StartMenu", 0, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
+
+	// Set window settings
+	ImGui::SetWindowPos(ImVec2(0,0));
+	auto io = ImGui::GetIO();
+	ImGui::SetWindowSize(io.DisplaySize);
+	ImGui::SetWindowFocus();
+	ImVec2 centerOfScreen = ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
+
+	// Button customization
+	ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 1, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.45f, 0.3f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.55f, 0.4f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.3f, 0.15f, 1.0f));
+
+	ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
+
+
+	// Actual buttons
+	ImGui::SetCursorPos(ImVec2(centerOfScreen.x - 175, centerOfScreen.y - 200));
+	if (ImGui::Button("Create Skew-T", ImVec2(350, 100)))
+	{
+		Game.SkewTMaker().init();
+		makingSkewT = true;
+	}
+	ImGui::SetCursorPos(ImVec2(centerOfScreen.x - 175, centerOfScreen.y));
+	if (ImGui::Button("Load Observed Skew-T", ImVec2(350, 100)))
+	{
+		loaded = true;
+	}
+
+
+	ImGui::PopStyleColor(4);
+	ImGui::PopStyleVar(2);
+
+	ImGui::End();
+
+	ImGui::PopStyleColor();
 }

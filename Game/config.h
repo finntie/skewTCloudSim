@@ -22,7 +22,7 @@
 #define BOUNDSAPPLYA boundsEnv{ NEUMANN, DIRICHLET, DIRICHLET }
 #define BOUNDSDENSITY boundsEnv{ NEUMANN, NEUMANN, DIRICHLET }
 #define BOUNDSBUOYANCY boundsEnv{ DIRICHLET, DIRICHLET, DIRICHLET }
-#define BOUNDSPRESPROJ boundsEnv{ DIRICHLET, NEUMANN, NEUMANN }
+#define BOUNDSPRESPROJ boundsEnv{ NEUMANN, NEUMANN, NEUMANN } // NEUMANN in presProj means solid boundaries, DIRICHLET means free boundaries 
 
 
 // Wrapper for CPU/GPU functions
