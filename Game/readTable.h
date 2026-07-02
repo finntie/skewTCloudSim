@@ -1,7 +1,6 @@
 #pragma once
 
 
-
 struct radioSondeData
 {
 	float* altitude = nullptr; //In meter

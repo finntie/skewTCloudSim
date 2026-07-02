@@ -3,6 +3,11 @@
 using namespace bee; 
 
 
+enum gameStates
+{
+	STARTMENU, CHOOSEDATE, SKEWTMAKER, SIMULATION
+};
+
 class gameSystem : public bee::System, public bee::IPanel
 {
 public:
@@ -25,4 +30,9 @@ private:
 
 	bool loaded{ false };
 	bool makingSkewT{ false };
+	gameStates m_currentState = STARTMENU;
+	std::string m_countrySelected{};
+	std::string m_yearSelected{};
+	std::string m_monthSelected{};
+	std::string m_daySelected{};
 };

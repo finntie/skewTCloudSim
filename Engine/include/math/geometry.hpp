@@ -37,3 +37,6 @@ void PNoise2D(const int seed, float* output, const int width, const int depth, c
 float distance(glm::vec2 point1, glm::vec2 point2);
 
 float distance(glm::vec3 point1, glm::vec3 point2);
+
+// Returns only true if intersection happened between points
+bool intersectionPoint(glm::vec2 point1Line1, glm::vec2 point2Line1, glm::vec2 point1Line2, glm::vec2 point2Line2, glm::vec2& output);

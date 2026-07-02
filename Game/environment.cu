@@ -739,7 +739,7 @@ void environmentGPU::diffuseGPU(float* diffuseArray, int type, const float dt)
 	if (!initiatedStream)
 	{
 		cudaStreamCreate(&stream1);
-		initiatedStream = false;
+		initiatedStream = true;
 	}
 
 	if (executionGraphs.find(diffuseArray) == executionGraphs.end())
@@ -871,7 +871,7 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 	if (!initiatedStream)
 	{
 		cudaStreamCreate(&stream1);
-		initiatedStream = false;
+		initiatedStream = true;
 	}
 
 	if (executionGraphs.find(advectArray) == executionGraphs.end())

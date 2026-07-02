@@ -226,6 +226,7 @@
     <ClCompile Include="readTable.cpp" />
     <ClCompile Include="skewTer.cpp" />
     <ClCompile Include="skewTMaker.cpp" />
+    <ClCompile Include="skewTFile.cpp" />
     <ClCompile Include="tracing.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -251,6 +252,7 @@
     <ClInclude Include="readTable.h" />
     <ClInclude Include="skewTer.h" />
     <ClInclude Include="skewTMaker.h" />
+    <ClInclude Include="skewTFile.h" />
     <ClInclude Include="tracing.h" />
     <ClInclude Include="utils.cuh" />
     <ClInclude Include="zip_file.hpp" />

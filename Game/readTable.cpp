@@ -2,7 +2,6 @@
 
 #include "readTable.h"
 
-#include "zip_file.hpp" // Function header file, can not be put in pch.h
 #include "math/constants.hpp"
 #include "math/meteoformulas.h"
 #include "environment.h"
@@ -13,331 +12,6 @@
 
 using namespace Constants;
 using namespace bee;
-
-
-void readTable::readKNMIFile(const char* _file)
-{
-	//Open the MWX file
-	printf("Reading file...\n");
-	miniz_cpp::zip_file file(_file);
-	printf("File read\n");
-
-	if (!file.has_file("SynchronizedSoundingData.xml")) //Should always be included
-	{
-		perror("Error, file: SynchronizedSoundingData.xml is not included\n");
-		return;
-	}
-
-	std::string soundingDataFile = file.read("SynchronizedSoundingData.xml");
-
-	std::stringstream s(soundingDataFile);
-	std::string word;
-	std::string line;
-	int row = 0;
-	//Vector for every data type
-	std::vector<float> pressure;
-	std::vector<float> temperature;
-	std::vector<float> dewPoint;
-	std::vector<float> windDir;
-	std::vector<float> windSpeed;
-	std::vector<float> altitude;
-
-	std::getline(s, line); //Skip first line
-	while (std::getline(s, line))
-	{
-		std::stringstream ss(line);
-		int count = 0;
-		while (ss >> word)
-		{
-			switch (count)
-			{
-			case 4://pressure
-				word = &word[10];
-				word.pop_back();
-				pressure.push_back(std::stof(word));
-				break;
-			case 5://Temp in K
-				word = &word[13];
-				word.pop_back();
-				temperature.push_back(std::stof(word) - 273.15f);
-				break;
-			case 6://Dew in humidity
-				//For increased speed but less accurasy, the part after the Multiplication could be removed 
-				word = &word[10];
-				word.pop_back();
-				dewPoint.push_back(temperature[row] - ((100 - std::stof(word)) * 0.2f) * ((temperature[row] + 273.15f) * 0.01f));
-				break;
-			case 7://WindDir
-				word = &word[9];
-				word.pop_back();
-				windDir.push_back(std::stof(word));
-				break;
-			case 8://WindSpeed
-				word = &word[11];
-				word.pop_back();
-				windSpeed.push_back(std::stof(word));
-				break;
-			default:
-				//Because values have been added, these parts will not be hard-coded
-				if (word.substr(0, 8) == "Altitude")
-				{
-					word = &word[10];
-					word.pop_back();
-					altitude.push_back(std::stof(word));
-					break;
-				}
-				if (word.substr(0, 8) == "Dropping")
-				{
-					word = &word[10];
-					word.pop_back();
-					//int dropping = std::stoi(word);
-					if (false/*dropping*/) continue; //We discard when the balloon pops
-				}
-				break;
-			}
-			count++;
-		}
-		row++;
-	}
-	row--; //Go back once
-
-	//Copy the data over
-	{
-		//Copy the data over
-		{
-			skewTData.data.allocate(row);
-			std::memcpy(skewTData.data.temperature, temperature.data(), row * sizeof(float));
-			std::memcpy(skewTData.data.dewPoint, dewPoint.data(), row * sizeof(float));
-			std::memcpy(skewTData.data.windDir, windDir.data(), row * sizeof(float));
-			std::memcpy(skewTData.data.windSpeed, windSpeed.data(), row * sizeof(float));
-			std::memcpy(skewTData.data.pressure, pressure.data(), row * sizeof(float));
-			std::memcpy(skewTData.data.altitude, altitude.data(), row * sizeof(float));
-		}
-	}
-}
-
-
-
-
-void readTable::readDWDFile(const char* _file)
-{
-	//Open the zip file
-	printf("Reading zip file...\n");
-	miniz_cpp::zip_file file(_file);
-	printf("Zip file read\n");
-
-	std::string stationNumber;
-	std::vector<std::string> AllDates;
-	std::vector<float> groundTempsAtDates;
-	std::string targetDate;
-
-	//Get stationNumber
-	{
-		std::stringstream s(_file);
-		std::string word;
-		int count = 0;
-		while (std::getline(s, word, '_'))
-		{
-			if (count == 2)
-			{
-				stationNumber = word;
-				break;
-			}
-			count++;
-		}
-	}
-
-
-	//Check all dates that will be in the file
-	{
-		std::string fileName = "Metadaten_Sekunde_Aero_" + stationNumber + ".txt";
-
-		if (!file.has_file(fileName)) //Should always be included
-		{
-			perror("Error, file: Metadaten_Sekunde_Aero_....txt is not included\n");
-			return;
-		}
-		printf("Reading meta file...\n");
-		std::string metaSoundingDataFile = file.read(fileName);
-		printf("Meta File read\n");
-
-		std::stringstream s(file.read(fileName));
-		std::string line;
-
-		std::getline(s, line); //skip first one
-		while (std::getline(s, line))
-		{
-			std::stringstream ss(line);
-			std::string word;
-			int count = 0;
-
-			while (std::getline(ss, word, ';'))
-			{
-				if (count == 1)
-				{
-					word.pop_back(); //Remove time
-					word.pop_back();
-					AllDates.push_back(word);
-				}
-				else if (count == 8) //Ground temps
-				{
-					groundTempsAtDates.push_back(std::stof(word));
-					break;
-				}
-				count++;
-			}
-		}
-
-	}
-	
-	//TODO: Could do something with the dates, i.e. select a date, but for now we will grab the latest.
-	targetDate = AllDates[161] + "12"; // 2025 03 24 
-
-
-	//734
-	//srand(static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1)));
-	//int dateNum = rand() % 734;
-
-	//targetDate = AllDates[dateNum] + "12"; // AllDates[243] = 2024 05 01 - 1700 Cape?
-
-	printf("Reading file %s\n", targetDate.c_str());
-
-	std::string fileName = "produkt_sec_aero_" + AllDates[0] + "_" + AllDates[AllDates.size() - 1] + "_" + stationNumber + ".txt";
-
-	if (!file.has_file(fileName)) //Should always be included
-	{
-		perror("Error, file: produkt_sec_aero_n_n_n.txt is not included\n");
-		return;
-	}
-
-	std::string soundingDataFile = file.read(fileName);
-
-	std::stringstream s(soundingDataFile);
-	bool reachedDate = false;
-	std::string line;
-
-	//Skip lines until reached desired date
-	while (!reachedDate)
-	{
-		std::getline(s, line); //Skip to beginning of next line
-		std::getline(s, line);
-
-		std::string word;
-		std::stringstream ss(line);
-		int count = 0;
-		while (std::getline(ss, word, ';'))
-		{
-			if (count == 1) //date
-			{
-				if (word == targetDate)
-				{
-					s.seekg(-100000, std::ios::cur); //Move back
-					if (s.fail()) s.clear(); //Remove error flag
-					reachedDate = true;
-					std::getline(s, line);
-					break;
-				}
-				else
-				{
-					s.seekg(100000, std::ios::cur);
-					break;
-				}
-			}
-			count++;
-		}
-		if (s.tellg() == -1)
-		{
-			printf("Error, could not find date: %s\n", targetDate.c_str());
-			return;
-		}
-	}
-	reachedDate = false;
-
-	std::string word;
-	int row = 0;
-	bool quit = false;
-	//Vector for every data type
-	std::vector<float> pressure;
-	std::vector<float> temperature;
-	std::vector<float> dewPoint;
-	std::vector<float> windDir;
-	std::vector<float> windSpeed;
-	std::vector<float> altitude;
-
-	//Move getline until we find our exact position
-	while (std::getline(s, line) && !quit)
-	{
-		std::stringstream ss(line);
-		int count = 0;
-		while (std::getline(ss, word, ';'))
-		{
-			if (!reachedDate)
-			{
-				if (count == 1) //date
-				{
-					if (word == targetDate)
-					{
-						reachedDate = true;
-						count--;
-					}
-				}
-				count++;
-			}
-
-			if (reachedDate)
-			{
-				switch (count)
-				{
-				case 1:
-					if (word != targetDate) //Done with this date
-					{
-						reachedDate = false;
-						quit = true;
-					}
-					break;
-				case 6://Altitude
-					altitude.push_back(std::stof(word));
-					break;
-				case 7://Pressure
-					pressure.push_back(std::stof(word));
-					break;
-				case 8://Temperature in C
-					temperature.push_back(std::stof(word));
-					break;
-				case 10://Dew point in C
-					dewPoint.push_back(std::stof(word));
-					break;
-				case 11://WindSpeed
-					windSpeed.push_back(std::stof(word));
-					break;
-				case 12://Wind Direction
-					windDir.push_back(std::stof(word));
-					break;
-				default:
-					break;
-				}
-				count++;
-			}
-		}
-		if (reachedDate) row++;
-		if (s.tellg() == -1)
-		{
-			printf("Error, could not find date: %s\n", targetDate.c_str());
-			return;
-		}
-	}
-
-	//Copy the data over
-	{
-		skewTData.data.allocate(row);
-		std::memcpy(skewTData.data.temperature, temperature.data(), row * sizeof(float));
-		std::memcpy(skewTData.data.dewPoint, dewPoint.data(), row * sizeof(float));
-		std::memcpy(skewTData.data.windDir, windDir.data(), row * sizeof(float));
-		std::memcpy(skewTData.data.windSpeed, windSpeed.data(), row * sizeof(float));
-		std::memcpy(skewTData.data.pressure, pressure.data(), row * sizeof(float));
-		std::memcpy(skewTData.data.altitude, altitude.data(), row * sizeof(float));
-	}
-}
 
 static float lerpEnvValue(const float H1, const float H2, const float HC, const float V1, const float V2)
 {
@@ -370,7 +44,7 @@ void readTable::initEnvironment()
 	groundTemp.resize(GRIDSIZEGROUND);
 	groundPressure.resize(GRIDSIZEGROUND);
 	pressures.resize(GRIDSIZESKY);
-	pressuresSmall.resize(GRIDSIZESKY);
+	pressuresSmall.resize(GRIDSIZESKYY);
 
 	int j = 0;
 	for (float y = 0; y < GRIDSIZESKYY * VOXELSIZE; y += VOXELSIZE)
@@ -406,9 +80,14 @@ void readTable::initEnvironment()
 		const int idx = indices[i];
 		int Pidx = idx == 0 ? 0 : idx - 1;
 		int Pi = i == 0 ? 0 : i - 1;
-		//Sin for X and cos for Y
-		const float velFieldValueX = std::sinf((skewTData.data.windDir[idx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[idx];
-		const float velFieldValueZ = std::cosf((skewTData.data.windDir[idx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[idx];
+		// Sin for X and cos for Y to get previous and current values
+		float velFieldValueX = std::sinf((skewTData.data.windDir[idx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[idx];
+		const float prevVelFieldValueX = std::sinf((skewTData.data.windDir[Pidx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[Pidx];
+		float velFieldValueZ = std::cosf((skewTData.data.windDir[idx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[idx];
+		const float prevVelFieldValueZ = std::cosf((skewTData.data.windDir[Pidx] - 180.0f) * (PI / 180.0f)) * skewTData.data.windSpeed[Pidx];
+		// Now lerp
+		velFieldValueX = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, prevVelFieldValueX, velFieldValueX);
+		velFieldValueZ = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, prevVelFieldValueZ, velFieldValueZ);
 
 		const float psValue = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, pressuresSmall[Pi], pressuresSmall[i]);
 		const float QvValue = meteoformulas::ws(lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, 

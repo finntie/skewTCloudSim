@@ -326,3 +326,31 @@ float distance(glm::vec3 point1, glm::vec3 point2)
                 (point2.y - point1.y) * (point2.y - point1.y) +
                 (point2.z - point1.z) * (point2.z - point1.z));
 }
+
+bool intersectionPoint(glm::vec2 p1L1, glm::vec2 p2L1, glm::vec2 p1L2, glm::vec2 p2L2, glm::vec2& output)
+{
+    float dx1 = p2L1.x - p1L1.x;
+    float dx2 = p2L2.x - p1L2.x;
+    // Add a check to make sure a is not inf or nan
+    float a1 = abs(dx1) < 1e-6f ? (dx1 < 0.0f ? -1e30f : 1e30f) : (p2L1.y - p1L1.y) / dx1;
+    float b1 = p1L1.y - a1 * p1L1.x;
+    float a2 = abs(dx2) < 1e-6f ? (dx2 < 0.0f ? -1e30f : 1e30f) : (p2L2.y - p1L2.y) / dx2;
+    float b2 = p1L2.y - a2 * p1L2.x;
+
+    if (a1 == a2) return false; // No intersection point
+
+    float x = (b2 - b1) / (a1 - a2);
+    float y = a1 * x + b1;
+
+    output = glm::vec2(x, y);
+
+    // Now check if point was in between points
+    float tx = (output.x - p1L1.x) / (p2L1.x - p1L1.x);
+    float sx = (output.x - p1L2.x) / (p2L2.x - p1L2.x);
+    float ty = (output.y - p1L1.y) / (p2L1.y - p1L1.y);
+    float sy = (output.y - p1L2.y) / (p2L2.y - p1L2.y);
+    return tx >= 0.0f && tx <= 1.0f && 
+        sx >= 0.0f && sx <= 1.0f && 
+        ty >= 0.0f && ty <= 1.0f && 
+        sy >= 0.0f && sy <= 1.0f;
+}

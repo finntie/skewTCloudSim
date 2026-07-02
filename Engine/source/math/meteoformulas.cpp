@@ -283,7 +283,6 @@ void meteoformulas::getMoistTemp(const float T0, const float Pref, const float* 
     {
         const float Pnext = pressures[i];
         float dP = Pnext - P;
-
         if (dP < -1.0f)
         {
             float _P = P + 1.0f;
