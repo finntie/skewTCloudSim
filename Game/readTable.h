@@ -1,9 +1,4 @@
 #pragma once
-#include <glm/glm.hpp>
-#include <vector>
-#include <string>
-#include <map>
-#include <memory>
 
 
 struct radioSondeData
@@ -50,8 +45,6 @@ struct radioSondeData
 struct skewTInfo
 {
 	radioSondeData data = radioSondeData();
-	std::map<float, float> heightToPressure;
-	std::map<float, float> pressureToHeight;
 	std::string stationNumberName{};
 
 };
@@ -66,11 +59,7 @@ public:
 
 	void initEnvironment();
 
-
-	void heightToPressureCalculate();
-	std::pair<float,int> getPressureAtHeight(float height);
 	int getIndexAtHeight(float height);
-	float getHeightAtPressure(float pressure);
 	
 	//Converts temp and height in meters or pressure to plotting so its easily modified.
 	//Warning: Not using pressure (so height in meters) could lead up to different values due to observed not being the same as standard.

@@ -4,6 +4,17 @@
 
 #include <cuda_runtime.h> 
 
+// CUDA constants (declared in environment.cu)
+extern __constant__ int simSizeX;
+extern __constant__ int simSizeY;
+extern __constant__ int simSizeZ;
+extern __constant__ int simSize;
+extern __constant__ float voxelSize;
+extern __constant__ int simSizeGround;
+// Speed, dt and spread of blocks in depth used in kernels
+extern __constant__ float simSpeed;
+extern __constant__ float simDeltaTime;
+extern __constant__ float invBlockSpreadDepth;
 
 __host__ __device__ inline int getIdx(int x, int y, int z)
 {

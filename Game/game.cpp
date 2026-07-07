@@ -1,7 +1,8 @@
+#include "pch.h"
+
 #include "game.h"
 
 //Engine
-
 #include "readTable.h"
 #include "environment.h"
 #include "editor.h"
@@ -9,9 +10,22 @@
 #include "microPhys.h"
 #include "environment.cuh"
 #include "dataClass.cuh"
+#include "skewTMaker.h"
+#include "skewTFile.h"
 
 // Make the game a global variable on free store memory.
 game Game;
+
+// Global mutex to lock parts of code for threading 
+// Recursive mutex for possible multiple locks
+std::recursive_mutex mtx;
+
+// Thread data
+static std::thread simThread;
+static std::atomic<bool> m_running;
+static std::atomic<float> m_dt;
+static std::atomic<float> m_speed;
+constexpr float maxDeltaTimeSimulation = 1.0f / 2.5f; // set max delatime. 
 
 
 game::game()
@@ -21,6 +35,8 @@ game::game()
 game::~game()
 {
 	//Cleanup from last created to first.
+	delete m_skewTFileObj;
+	delete m_skewTMakerObj;
 	delete m_dataClassObj;
 	delete m_microPhysObj;
 	delete m_skewTerObj;
@@ -28,6 +44,16 @@ game::~game()
 	delete m_editorObj;
 	delete m_environmentObj;
 	delete m_readTableObj;
+}
+
+void game::shutdown()
+{
+	// Don't put in the destructor due to this class being a global class
+	m_running = false;
+	if (simThread.joinable())
+	{
+		simThread.join();
+	}
 }
 
 void game::Initialize()
@@ -43,25 +69,86 @@ void game::Initialize()
 	m_skewTerObj = new skewTer();
 	m_microPhysObj = new microPhys();
 	m_dataClassObj = new dataClass();
+	m_skewTMakerObj = new skewTMaker();
+	m_skewTFileObj = new skewTFile();
+
+	// Initialize the simulation thread
+	m_running = true;
+
+#if USE_GPU
+	simThread = std::thread([this]() {
+
+		// Initialize deltatime at about 1 ms or larger
+	auto time = std::chrono::high_resolution_clock::now();
+	std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	std::chrono::nanoseconds timeTaken = std::chrono::high_resolution_clock::now() - time;
+	float accumulator = 0.0f;
+	const float fixedDt = 1.0f / 30.0f; // Fps we want to target
+
+		while (m_running)
+		{
+			float speed = m_speed.load();
+			if (speed > 0.0f)
+			{
+				// Calculate deltatime based on time taken for previous update
+				auto ctime = std::chrono::high_resolution_clock::now();
+				float dt = (float)((double)std::chrono::duration_cast<std::chrono::microseconds>(timeTaken).count() / 1000000.0);
+				dt = std::min(dt, maxDeltaTimeSimulation);
+				accumulator += dt;
+
+				if (accumulator >= fixedDt)
+				{
+					while (accumulator >= fixedDt)
+					{
+						m_envGPUObj->updateGPU(fixedDt, speed);
+						accumulator -= fixedDt;
+					}
+				}
+				else
+				{
+					// Sleep to increase dt, else it will round to 0, meaning accumulator will never add up
+					std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				}
+
+				timeTaken = std::chrono::high_resolution_clock::now() - ctime;
+			}
+			else
+			{
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				accumulator = fixedDt;
+				timeTaken = std::chrono::nanoseconds(0);
+			}
+		}
+		}
+	);
+#endif
 }
 
 //Update function 
 void game::Update(float dt)
 {
+	
+	m_editorObj->update(dt);
+	m_editorObj->viewData();
+
+
+#if USE_GPU
+
+	// Set speed if valid, else set to 0.0 making the thread not run
 	float speed = 1.0f;
 	if (playSettings(speed))
 	{
-#if USE_GPU
-		//Also sets editor data afterwards
-		m_envGPUObj->updateGPU(dt, speed);
-#else
-		m_environmentObj->Update(dt, speed);
-#endif
+		m_dt.store(dt);
+		m_speed.store(speed);
 	}
-	m_editorObj->update(dt);
-	m_editorObj->viewData();
+	else
+	{
+		m_speed.store(0.0f);
+	}
+#else
+	m_environmentObj->Update(dt, speed);
+#endif
 }
-
 
 bool game::playSettings(float& speed)
 {
@@ -80,4 +167,14 @@ bool game::playSettings(float& speed)
 		else return false;
 	}
 	return true;
+}
+
+void lockGlobal()
+{
+	mtx.lock();
+}
+
+void unlockGlobal()
+{
+	mtx.unlock();
 }

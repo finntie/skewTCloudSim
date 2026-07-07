@@ -1,14 +1,6 @@
+#include "pch.h"
+
 #include "tracing.h"
-
-#include "math/geometry.hpp"
-
-#include "core/engine.hpp"
-#include "core/input.hpp"
-#include "core/transform.hpp"
-
-#include "rendering/render.hpp"
-
-#include "tools/inspector.hpp"
 
 #include "utils.cuh"
 

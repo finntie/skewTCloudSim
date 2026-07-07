@@ -1,7 +1,6 @@
 #pragma once
 
-//Do we want to use the GPU?
-#define USE_GPU 1
+
 
 class environment;
 class editor;
@@ -10,12 +9,15 @@ class skewTer;
 class microPhys;
 class environmentGPU;;
 class dataClass;
+class skewTMaker;
+class skewTFile;
 
 class game
 {
 public:
 	game();
 	~game();
+	void shutdown();
 
 	void Initialize();
 
@@ -30,6 +32,8 @@ public:
 	microPhys& mPhys() { return *m_microPhysObj; }
 	environmentGPU& EnvGPU() { return *m_envGPUObj; }
 	dataClass& DataClass() { return *m_dataClassObj; }
+	skewTMaker& SkewTMaker() { return *m_skewTMakerObj; }
+	skewTFile& SkewTFile() { return *m_skewTFileObj; }
 private:
 
 	environment* m_environmentObj = nullptr;
@@ -39,6 +43,13 @@ private:
 	microPhys* m_microPhysObj = nullptr;
 	environmentGPU* m_envGPUObj = nullptr;
 	dataClass* m_dataClassObj = nullptr;
+	skewTMaker* m_skewTMakerObj = nullptr;
+	skewTFile* m_skewTFileObj = nullptr;
+
 };
 
 extern game Game;
+
+// Lock and unlock global mutex
+void lockGlobal();
+void unlockGlobal();

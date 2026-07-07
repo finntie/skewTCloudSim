@@ -1041,20 +1041,28 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     //--------- Formulas and variables from https://research.csiro.au/ccam/wp-content/uploads/sites/520/2024/01/1377337420.pdf ---------//
     //----------------------------------------------------------------------------------------------------------------------------------//
 
-    __shared__ microPhysicsParams microPhysValuesShared[GRIDSIZESKYX];
-    const int x = threadIdx.x;
-    const int y = blockIdx.x;
-    int z = 0;
+    extern __shared__ microPhysicsParams microPhysValuesShared[];
+    int x = threadIdx.x + blockDim.x * blockIdx.x;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
+    int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
     int idx = getIdx(x, y, z);
+    int idxsData = threadIdx.x + threadIdx.y * blockDim.x;
 
-    for (z = 0; z < GRIDSIZESKYZ; z++)
+    bool valid = true;
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) // Avoid outside access
+    {
+        x = 0; y = 0; idx = 0; // Set every index to 0
+        valid = false;
+    }
+
+    for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
     {
         idx = getIdx(x, y, z);
         const int idxG = x + z * GRIDSIZESKYX;
 
         if (graphActive)
         {
-            microPhysValuesShared[x].reset();
+            if (valid) microPhysValuesShared[idxsData].reset();
             __syncthreads();
         }
 
@@ -1178,7 +1186,7 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
         if (PGDRY > PGWET) WTerm = 1.0f;
 
         //Limit by speed and add to heat latency.
-        if (tempC < 0)
+        if (tempC < 0 && valid)
         {
             if (PVCON >= 0) condens[idx] += PVCON = dt * fmin(Qv, speed * PVCON);
             else if (PVCON < 0) condens[idx] += PVCON = dt * fmax(-Qw, speed * PVCON); //Use negative numbers
@@ -1229,7 +1237,7 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
                 else if (PGACR1 < 0) freeze[idx] += PGACR1 = dt * fmax(-Qi, speed * PGACR1); //Use negative numbers
             }
         }
-        else
+        else if (valid)
         {
             if (PVCON >= 0) condens[idx] += PVCON = dt * fmin(Qv, speed * PVCON);
             else if (PVCON < 0) condens[idx] += PVCON = dt * fmax(-Qw, speed * PVCON); //Use negative numbers
@@ -1314,7 +1322,7 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
         //PGWET:  | +Qi     |         | (Is included in PGACR1)
         //PGACR1: | +Qr, Qi | -Qr, Qi | (If PGWET and depending on positive or negative)
 
-        if (tempC < 0)
+        if (tempC < 0 && valid)
         {
             _Qv[idx] += PSSUB * (1 - PTerm1) + PGSUB * (1 - PTerm1) +
                 PREVP * (1 - PTerm1) - PSDEP * (PTerm1)-
@@ -1337,7 +1345,7 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
                 PSACR * (1 - PTerm2) + PRACS * (1 - PTerm2) +
                 PRACI * (1 - PTerm3) + PIACR * (1 - PTerm3) - PGSUB * (1 - PTerm1);
         }
-        else
+        else if (valid)
         {
             _Qv[idx] += PREVP * (1 - PTerm1) -
                 PVCON - PVDEP;
@@ -1361,16 +1369,14 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
                 y >= minSelectPos.y && y <= maxSelectPos.y &&
                 z >= minSelectPos.z && z <= maxSelectPos.z);
 
-            int LIdx = x;
+            // Check if there would be any selected cell within this block
+            bool selectedCellInBlock = (0 + blockDim.x * blockIdx.x) <= maxSelectPos.x &&
+                ((blockDim.x - 1) + blockDim.x * blockIdx.x) >= minSelectPos.x &&
+                (0 + blockDim.y * blockIdx.y) <= maxSelectPos.y &&
+                ((blockDim.y - 1) + blockDim.y * blockIdx.y) >= minSelectPos.y;
 
             if (insideRegion)
             {
-                if (minSelectPos.x >= 0)
-                {
-                    //Offset the index to the left, so we can correctly grab the most left one easily.
-                    LIdx = x - minSelectPos.x;
-                }
-
                 float PVVAP = 0.0f;
                 float PVSUB = 0.0f;
                 if (PVCON < 0.0f)
@@ -1386,7 +1392,7 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
                 PGWET *= WTerm;
                 PGDRY *= (1 - WTerm);
 
-                microPhysValuesShared[LIdx].init(PVCON, PVDEP, PIMLT, PIDW, PIHOM, PIACR, PRACI, PRAUT,
+                if (valid) microPhysValuesShared[idxsData].init(PVCON, PVDEP, PIMLT, PIDW, PIHOM, PIACR, PRACI, PRAUT,
                     PRACW, PREVP, PRACS, PSACW, PSACR, PSACI, PSAUT, PSFW,
                     PSFI, PSDEP, PSSUB, PSMLT, PGAUT, PGFR, PGACW, PGACI,
                     PGACR, PGDRY, PGACS, PGSUB, PGMLT, PGWET, PGACR1, PVVAP, PVSUB);
@@ -1394,20 +1400,24 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
             }
             __syncthreads();
 
+            // We use a stride which has to be a power of 2, thus we increase just over the total threads and then decrease it
+            int stride = 1;
+            while (stride < blockDim.x * blockDim.y) stride <<= 1;
+            stride >>= 1;
 
-            //Basically, we grab half of the block, add all the values on the other side and repeat the process.
-            for (int i = GRIDSIZESKYX / 2; i > 0; i >>= 1)
+            // Basically, we grab half of the block, add all the values on the other side and repeat the process.
+            for (int i = stride; i > 0; i >>= 1)
             {
-                if (insideRegion && LIdx < i)
+                if (selectedCellInBlock && idxsData < i && idxsData + i < blockDim.x * blockDim.y && valid) // Second check is extra to make sure we don't access outside of our data
                 {
-                    microPhysValuesShared[LIdx] = microPhysValuesShared[LIdx] + microPhysValuesShared[LIdx + i];
+                    microPhysValuesShared[idxsData] = microPhysValuesShared[idxsData] + microPhysValuesShared[idxsData + i];
                 }
                 __syncthreads();
             }
 
 
             //Using atomicAdd(), we can safely add all block values to a singular value
-            if (insideRegion && LIdx == 0)
+            if (selectedCellInBlock && idxsData == 0 && valid)
             {
                 microPhysValuesShared->atomicAddValues(microPhysicsResult, microPhysValuesShared[0]);
             }
@@ -1424,10 +1434,10 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
     const int x = threadIdx.x;
     const int z = blockIdx.x;
     const int idxG = x + z * GRIDSIZESKYX;
-
     const int y = _groundHeight[idxG]; //Y to use index on environment variables
     const int idx = getIdx(x, y + 1, z);
 
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return; // Able to return due to no syncing
 
     float PGREVP{ 0.0f }; // Evaporation of (rain)water.
     //float PSDEP{ 0.0f }; // TODO: Depositional growth of snow 
@@ -1548,10 +1558,10 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
     const int x = threadIdx.x;
     const int z = blockIdx.x;
     const int idxG = x + z * GRIDSIZESKYX;
-
     const int y = _groundHeight[idxG]; //Y to use index on environment variables
     const int idx = getIdx(x, y + 1, z);
 
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return; // Able to return due to no syncing
 
     float PGRFR{ 0.0f }; // Freezing rain hitting the ground forming ice
 

@@ -7,6 +7,12 @@ namespace bee
 {
 std::pair<glm::vec3, glm::vec3> ComputeAABB(const std::vector<glm::vec3>& pts);
 glm::vec3 mouseRayDirection(glm::vec2 screenPos, const glm::quat& cameraRot, const glm::mat4& cameraProjection);
+glm::vec3 getCameraBottomLeftDir();   // Get direction from bottom left of the camera into 3D space
+glm::vec3 getCameraBottomRightDir();  // Get direction from bottom right of the camera into 3D space
+glm::vec3 getCameraTopRightDir();     // Get direction from top left of the camera into 3D space
+glm::vec3 getCameraTopLeftDir();      // Get direction from top right of the camera into 3D space
+
+
 glm::vec3 screenToGround(glm::vec2 screenPos);
 glm::vec2 PosToScreen(glm::vec3 pos3D);
 glm::vec2 rotateAroundPoint2D(glm::vec2 point, glm::vec2 centerpoint, float rotation);
@@ -26,3 +32,11 @@ void PNoise1D(const int seed, float* output, const int size, const int details =
 /// <param name="depth">Depth of the output array</param>
 /// <param name="octaves">How many detail layers do we want? more octaves could cause perlin to be slower</param>
 void PNoise2D(const int seed, float* output, const int width, const int depth, const int octaves = 12);
+
+
+float distance(glm::vec2 point1, glm::vec2 point2);
+
+float distance(glm::vec3 point1, glm::vec3 point2);
+
+// Returns only true if intersection happened between points
+bool intersectionPoint(glm::vec2 point1Line1, glm::vec2 point2Line1, glm::vec2 point1Line2, glm::vec2 point2Line2, glm::vec2& output);

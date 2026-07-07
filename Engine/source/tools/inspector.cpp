@@ -590,19 +590,19 @@ void Inspector::Panel()
     int i = 0;
     for (const auto& panel : IPanel::m_editors)
     {
-        const auto& icon = panel->GetIcon();
-        const auto& name = panel->GetName();
-        auto color = ImGui::GetColorU32(GetColor(RandomNiceColor(i)));
+            const auto& icon = panel->GetIcon();
+            const auto& name = panel->GetName();
+            auto color = ImGui::GetColorU32(GetColor(RandomNiceColor(i)));
 
-        if (i != 0) ImGui::PushStyleColor(ImGuiCol_Text, color);
-        auto p = ImGui::GetCursorScreenPos();
-        ImGui::Begin(icon.c_str());
-        if (i != 0) ImGui::PopStyleColor();
-        IPanel::m_editors[i]->OnPanel();
-        ImGui::End();
-        //bool selected = m_selectedPanel == i;
-        //if (ImGui::MenuItem(icon.c_str(), nullptr, &selected)) m_selectedPanel = i;
-        Tooltip(name.c_str());
+            if (i != 0) ImGui::PushStyleColor(ImGuiCol_Text, color);
+            auto p = ImGui::GetCursorScreenPos();
+            ImGui::Begin(icon.c_str());
+            if (i != 0) ImGui::PopStyleColor();
+            IPanel::m_editors[i]->OnPanel();
+            ImGui::End();
+            // bool selected = m_selectedPanel == i;
+            // if (ImGui::MenuItem(icon.c_str(), nullptr, &selected)) m_selectedPanel = i;
+            Tooltip(name.c_str());
         i++;
     }
     ImGui::EndMenuBar();

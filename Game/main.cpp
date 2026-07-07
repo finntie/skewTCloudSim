@@ -1,22 +1,10 @@
+#include "pch.h"
+
 #define _CRTDBG_MAP_ALLOC
-#include <cstdlib>
-#include <crtdbg.h>
-
-#include "core/ecs.hpp"
-#include "core/engine.hpp"
-
-#include "core/transform.hpp"
-#include "rendering/debug_render.hpp"
-#include "rendering/render.hpp"
-#include "Superluminal/PerformanceAPI.h"
-#include "core/input.hpp"
-#include <string>
-
 
 //Game includes
 #include "gameSystem.h"
 #include "environment.h"
-#include "kernelTest.cuh"
 
 using namespace bee;
 using namespace std;

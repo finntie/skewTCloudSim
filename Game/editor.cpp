@@ -1,33 +1,15 @@
+#include "pch.h"
+
 #include "environment.h"
 #include "editor.h"
 #include "skewTer.h"
-#include "dataClass.cuh"
-//#include "game.h" //Done in .h due to need for USE_GPU
+#include "game.h"
+#include "tracing.h"
 
 #include "math/meteoformulas.h"
 #include "math/constants.hpp"
-#include "math/geometry.hpp"
-
-#include "core/engine.hpp"
-#include "core/input.hpp"
-#include "core/transform.hpp"
-
-#include "rendering/colors.hpp"
-#include "rendering/debug_render.hpp"
-#include "rendering/render.hpp"
-
-#include "platform/opengl/render_gl.hpp"
-#include "platform/opengl/draw_image.hpp"
-
-#include "tools/inspector.hpp"
-
-#include "imgui/IconsFontAwesome.h"
-#include "imgui/imgui.h"
-#include "imgui/imgui_internal.h"
+#include "dataClass.cuh"
 #include "utils.cuh"
-
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
 
 #if USE_GPU
 #include "environment.cuh"
@@ -42,11 +24,15 @@ editor::editor(envDebugData* _envDebugData)
 {
 	m_envData = _envDebugData;
 	m_backGroundColor = { 0.35f, 0.55f, 0.9f };
+	tracerObj = new tracing();
+	setSliceMinMax(false);
+
 }
 
 editor::~editor()
 {
 	//Cleanup
+	delete tracerObj;
 	delete m_envData; //Created from environment.cpp
 }
 
@@ -80,8 +66,8 @@ void editor::setColors()
 	colorScheme.addColor("debugColor", 0.01f, bee::Colors::Red);
 	colorScheme.addColor("debugColor", 0.1f, bee::Colors::Pink + glm::vec4(0, 0.8f, 0, 0));
 
-	colorScheme.createColorScheme("realistic", 0.0f, bee::Colors::Blue, 1.0f, bee::Colors::Black);
-	colorScheme.addColor("realistic", 0.0005f, glm::vec4(0.6f, 0.9f, 1.0f, 1.0f));
+	colorScheme.createColorScheme("realistic", 0.0f, bee::Colors::Grey, 1.0f, bee::Colors::Black);
+	colorScheme.addColor("realistic", 0.0005f, glm::vec4(0.6f, 0.7f, 0.8f, 1.0f));
 	colorScheme.addColor("realistic", 0.001f, bee::Colors::White);
 	colorScheme.addColor("realistic", 0.005f, glm::vec4(0.8f, 0.8f, 0.8f, 1.0f));
 	colorScheme.addColor("realistic", 0.01f, glm::vec4(0.4f, 0.4f, 0.4f, 1.0f));
@@ -226,6 +212,9 @@ void editor::setDebugValueNum(const float* array, const int num)
 void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps)
 {
 #if USE_GPU
+
+	lockGlobal();
+
 	auto* sky = static_cast<environmentGPU::gridDataSkyGPU*>(_sky);
 	auto* ground = static_cast<environmentGPU::gridDataGroundGPU*>(_ground);
 
@@ -266,6 +255,8 @@ void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps
 	_groundHeight;
 	_ps;
 #endif
+
+	unlockGlobal();
 }
 
 void editor::editMode()
@@ -448,7 +439,7 @@ void editor::setVariables()
 	MousePos3D = bee::screenToGround(bee::Engine.Input().GetMousePosition());
 
 	//Mouse pos index
-	const int pointingAtIdx = tracerObj.getVoxelAtMouse();
+	const int pointingAtIdx = tracerObj->getVoxelAtMouse();
 	if (pointingAtIdx == -1)
 	{
 		m_selectionInGrid = false;
@@ -587,15 +578,15 @@ void editor::setView()
 	{
 		ImGui::Text("Reset one parameter:");
 #if USE_GPU
-		if (ImGui::Button("Temp")) Game.EnvGPU().resetParameterGPU(POTTEMP); ImGui::SameLine();
-		if (ImGui::Button("Wind")) Game.EnvGPU().resetParameterGPU(WIND); ImGui::SameLine();
-		if (ImGui::Button("Ps")) Game.EnvGPU().resetParameterGPU(PRESSURE);
-		if (ImGui::Button("Qv")) Game.EnvGPU().resetParameterGPU(QV); ImGui::SameLine();
-		if (ImGui::Button("Qw")) Game.EnvGPU().resetParameterGPU(QW); ImGui::SameLine();
-		if (ImGui::Button("Qc")) Game.EnvGPU().resetParameterGPU(QC);
-		if (ImGui::Button("Qr")) Game.EnvGPU().resetParameterGPU(QR); ImGui::SameLine();
-		if (ImGui::Button("Qs")) Game.EnvGPU().resetParameterGPU(QS); ImGui::SameLine();
-		if (ImGui::Button("Qi")) Game.EnvGPU().resetParameterGPU(QI);
+		if (ImGui::Button("Temp")) lockGlobal(), Game.EnvGPU().resetParameterGPU(POTTEMP), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Wind")) lockGlobal(), Game.EnvGPU().resetParameterGPU(WIND), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Ps")) lockGlobal(), Game.EnvGPU().resetParameterGPU(PRESSURE), unlockGlobal();
+		if (ImGui::Button("Qv")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QV), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Qw")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QW), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Qc")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QC), unlockGlobal();
+		if (ImGui::Button("Qr")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QR), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Qs")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QS), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Qi")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QI), unlockGlobal();
 
 #else
 		if (ImGui::Button("Temp"))
@@ -1042,7 +1033,7 @@ void editor::viewSky()
 {
 	auto& colorScheme = bee::Engine.DebugRenderer().GetColorScheme();
 
-	tracerObj.resetGrid(false);
+	tracerObj->resetGrid(false);
 
 	// Usage of min and max view to possibly use slices
 	for (int z = m_minViewZ; z < m_maxViewZ; z++)
@@ -1055,10 +1046,10 @@ void editor::viewSky()
 				const int idxG = x + z * GRIDSIZESKYX;
 				if (y <= m_envData->m_groundHeight[idxG]) 
 				{
-					tracerObj.setVoxelValue(idx, true); // Add voxel to tracer so we can select it
+					tracerObj->setVoxelValue(idx, true); // Add voxel to tracer so we can select it
 					if (y == m_envData->m_groundHeight[idxG]) continue; // Leaving 1 voxel space for ground itself
 					bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 0.999f, bee::Colors::Brown);
-					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, bee::Colors::Black);
+					//bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, bee::Colors::Black);
 					continue;
 				}
 
@@ -1093,10 +1084,12 @@ void editor::viewSky()
 					colorScheme.getColor("mixingRatio", m_envData->m_envView.Qi[idx], color);
 					break;
 				case WIND:
-					const glm::vec3 VelUV = Game.Environment().getUV(m_envData->m_envView.velField, x, y, z);
+					//const glm::vec3 VelUV = Game.Environment().getUV(m_envData->m_envView.velField, x, y, z);
 					// = m_envData->m_envView.velField[x + y * GRIDSIZESKYX];// getUV(idx);
-					colorScheme.getColor("velField", glm::length(VelUV), color);
-					bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), glm::vec3(0.0f, 0.0f, 1.0f), VelUV, 0.9f, bee::Colors::Black);
+					//colorScheme.getColor("velField", glm::length(VelUV), color);
+					colorScheme.getColor("velField", glm::length(m_envData->m_envView.velField[idx]), color);
+
+					//bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), glm::vec3(0.0f, 0.0f, 1.0f), VelUV, 0.9f, bee::Colors::Black);
 					break;
 				case PRESSURE:
 					colorScheme.getColor("pressure", m_envData->m_envView.pressure[idx], color);
@@ -1123,10 +1116,10 @@ void editor::viewSky()
 
 				//bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, 0.0f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
 				
-				tracerObj.setVoxelValue(idx, true); // Add voxel to tracer so we can select it
+				tracerObj->setVoxelValue(idx, true); // Add voxel to tracer so we can select it
 
 				bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 0.999f, { color, 1.0f });
-				bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, { 0.0f, 0.0f,0.0f, 1.0f });
+				//bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, { 0.0f, 0.0f,0.0f, 1.0f });
 			}
 		}
 	}
@@ -1164,7 +1157,7 @@ void editor::viewGround()
 			}
 
 			bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x + z * GRIDSIZESKYX] + 0.5f, z + 0.5f), 0.999f, { color, 1.0f });
-			bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x + z * GRIDSIZESKYX] + 0.5f, z + 0.5f), 0.99f, { 0.0f, 0.0f, 0.0f, 1.0f });
+			//bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x + z * GRIDSIZESKYX] + 0.5f, z + 0.5f), 0.99f, { 0.0f, 0.0f, 0.0f, 1.0f });
 
 		}
 	}
@@ -1356,8 +1349,9 @@ void editor::viewSkewT()
 void editor::applyBrush()
 {
 
-	//printf("brushing: %i, MouseWheel: %f, getMousewheel: %f, !selectedInspector: %i\n", m_brushing, MouseWheel, bee::Engine.Input().GetMouseWheel(), !bee::Engine.Inspector().IsSelected());
-	if (m_brushing && MouseWheel != bee::Engine.Input().GetMouseWheel() && !bee::Engine.Inspector().IsSelected())
+	//printf("brushing: %i, m_mouseWheel: %f, getMousewheel: %f, !selectedInspector: %i\n", m_brushing, m_mouseWheel, bee::Engine.Input().GetMouseWheel(), !bee::Engine.Inspector().IsSelected());
+
+	if (!bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::LeftControl) && m_brushing && MouseWheel != bee::Engine.Input().GetMouseWheel() && !bee::Engine.Inspector().IsSelected())
 	{
 		const float diff = bee::Engine.Input().GetMouseWheel() - MouseWheel;
 		m_brushSize = m_brushSize + diff <= 0.0f ? m_brushSize : m_brushSize + diff;
@@ -1366,8 +1360,10 @@ void editor::applyBrush()
 	if (m_brushing && bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left) && !bee::Engine.Inspector().IsSelected())
 	{
 #if USE_GPU
+		lockGlobal();
 		Game.EnvGPU().prepareBrushGPU(m_editParamSky, m_brushSize, { m_mousePointingPos.x,m_mousePointingPos.y,m_mousePointingPos.z },
 			m_brushSmoothness, m_deltatime, m_brushIntensity, m_applyValue, { m_valueDir.x, m_valueDir.y, m_valueDir.z }, m_groundErase);
+		unlockGlobal();
 
 #else
 		for (int y = int(std::floor(-m_brushSize)); y < int(std::ceil(m_brushSize)); y++)
@@ -1435,15 +1431,20 @@ void editor::applySelect()
 		int maxY = int(std::max(m_corners[0].y, m_corners[1].y));
 		int maxZ = int(std::max(m_corners[0].z, m_corners[1].z));
 
+#if USE_GPU
+
+		lockGlobal();
 		if (m_microPhysSelect)
 		{
 			Game.DataClass().confirmMicroPhysCheckRegion({ minX, minY, minZ }, { maxX, maxY, maxZ });
 			m_selecting = false;
 			m_microPhysSelect = false;
 		}
-#if USE_GPU
-		Game.EnvGPU().prepareSelectionGPU(m_editParamSky, { minX, minY, minZ }, { maxX, maxY, maxZ }, m_applyValue, { m_valueDir.x, m_valueDir.y, m_valueDir.z }, m_groundErase);
-
+		else
+		{
+			Game.EnvGPU().prepareSelectionGPU(m_editParamSky, { minX, minY, minZ }, { maxX, maxY, maxZ }, m_applyValue, { m_valueDir.x, m_valueDir.y, m_valueDir.z }, m_groundErase);
+		}
+		unlockGlobal();
 #else
 		else
 		{

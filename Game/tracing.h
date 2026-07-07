@@ -1,6 +1,5 @@
 #pragma once 
 #include "config.h"
-#include "glm/glm.hpp"
 
 class tracing
 {

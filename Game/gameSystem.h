@@ -1,10 +1,12 @@
 #pragma once
-#include <glm/glm.hpp>
-#include "core/ecs.hpp"
-#include "tools/inspectable.hpp"
 
 using namespace bee; 
 
+
+enum gameStates
+{
+	STARTMENU, CHOOSEDATE, SKEWTMAKER, SIMULATION
+};
 
 class gameSystem : public bee::System, public bee::IPanel
 {
@@ -19,9 +21,18 @@ public:
 	void OnPanel() override;
 	std::string GetName() const override;
 	std::string GetIcon() const override;
+
+	void startMenu();
 //#endif
 
 
 private:
 
+	bool loaded{ false };
+	bool makingSkewT{ false };
+	gameStates m_currentState = STARTMENU;
+	std::string m_countrySelected{};
+	std::string m_yearSelected{};
+	std::string m_monthSelected{};
+	std::string m_daySelected{};
 };

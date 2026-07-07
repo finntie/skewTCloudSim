@@ -1,110 +1,106 @@
 #pragma once
-#include <vector>
-#include "half/half.hpp"
-#include <glm/glm.hpp>
 #include "config.h"
-
-struct envDebugData;
+#include <vector> // Also in PCH, but needed for std::vector
+ 
 class environmentGPU;
+struct envDebugData;
 
 class environment
 {
 public:
 
 	//TODO: doubles are used for the temps, due to only 14 million precision between biggest and smallest number stored.
-	struct gridDataSky //28 bytes, using floats: 40
+	struct gridDataSky 
 	{
-		/*half_float::half*/float Qv[GRIDSIZESKY]{ 0.01f }; //  Mixing Ratio of Water Vapor
-		/*half_float::half*/float Qw[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of	Liquid Water
-		/*half_float::half*/float Qc[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Ice 
-		/*half_float::half*/float Qr[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Rain
-		/*half_float::half*/float Qs[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Snow
-		/*half_float::half*/float Qi[GRIDSIZESKY]{ 0.01f }; //	Mixing Ratio of Ice (precip)
-		float potTemp[GRIDSIZESKY]{ 1.0f };			 // Potential temperature
-		glm::vec3 velField[GRIDSIZESKY]{};				 // Velocity field (fluid sim)
-		float pressure[GRIDSIZESKY]{};
-
-		//float dummy{ 0.0f }; //Room for 4 bytes?		
+		float Qv[GRIDSIZESKY]; //  Mixing Ratio of Water Vapor
+		float Qw[GRIDSIZESKY]; //	Mixing Ratio of	Liquid Water
+		float Qc[GRIDSIZESKY]; //	Mixing Ratio of Ice 
+		float Qr[GRIDSIZESKY]; //	Mixing Ratio of Rain
+		float Qs[GRIDSIZESKY]; //	Mixing Ratio of Snow
+		float Qi[GRIDSIZESKY]; //	Mixing Ratio of Ice (precip)
+		float potTemp[GRIDSIZESKY];			 // Potential temperature
+		glm::vec3 velField[GRIDSIZESKY];	// Velocity field  (fluid sim)
+		float pressure[GRIDSIZESKY];
 	};
 
 	//TODO: do we want halfs or not? precision lies on about 6e-8f; 
-	struct gridDataGround //16 bytes, using floats: 32
+	struct gridDataGround 
 	{
-		/*half_float::half*/float Qrs[GRIDSIZEGROUND]{0.01f }; // Subsurface water content
-		/*half_float::half*/float Qgr[GRIDSIZEGROUND]{0.01f }; // Rain content
-		/*half_float::half*/float Qgs[GRIDSIZEGROUND]{0.01f }; // Snow content
-		/*half_float::half*/float Qgi[GRIDSIZEGROUND]{0.01f }; // Ice content
-		/*half_float::half*/float P[GRIDSIZEGROUND]{ 1000.0f }; // Ground Pressure
-		/*half_float::half*/float t[GRIDSIZEGROUND]{ 0.0f }; // Time since ground was wet
-		float T[GRIDSIZEGROUND]{ 0.0f };  // Ground temperature
+		float Qrs[GRIDSIZEGROUND]; // Subsurface water content
+		float Qgr[GRIDSIZEGROUND]; // Rain content
+		float Qgs[GRIDSIZEGROUND]; // Snow content
+		float Qgi[GRIDSIZEGROUND]; // Ice content
+		float P[GRIDSIZEGROUND];   // Ground Pressure
+		float t[GRIDSIZEGROUND];   // Time since ground was wet
+		float T[GRIDSIZEGROUND];   // Ground temperature
 	};
 
 	environment();
 	~environment();
 
-	void init(float* potTemps, glm::vec2* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures);
+	//void init(float* potTemps, glm::vec2* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures);
 
-	void EditorData();
+	//void EditorData();
 
-	void Update(float dt, float speed);
+	//void Update(float dt, float speed);
 
-	//--------------------------------Ground---------------------------------
-	float irridiance();
-	float groundCoverageFactor(const int index);
-	void updateGroundTemps(const float dt, const int index, const float Irradiance, const float cloudCoverage);
-	void advectMicroPhysicsGround(const float dt, const int index);
-	void updateMicroPhysicsGround(const float dt, const int index, const float Tair, const float irr, const float c, const float density);
-	float calculateSumPhaseHeatGround(const int i);
+	////--------------------------------Ground---------------------------------
+	//float irridiance();
+	//float groundCoverageFactor(const int index);
+	//void updateGroundTemps(const float dt, const int index, const float Irradiance, const float cloudCoverage);
+	//void advectMicroPhysicsGround(const float dt, const int index);
+	//void updateMicroPhysicsGround(const float dt, const int index, const float Tair, const float irr, const float c, const float density);
+	//float calculateSumPhaseHeatGround(const int i);
 
 
-	//----------------------------------Sky----------------------------------
-	void diffuseAndAdvectTemp(const float dt);
-	void getInterpolValueTemp(float* arrayFull, const glm::vec2 Ppos, float& output);
-	//type: rain = 1, snow = 2, ice = 3
-	void diffuseAndAdvect(const float dt, float* array, std::vector<float>& density, bool vapor = false, const int fallVelocityType = 0);
-	void interPolatePrecip(const float dt, float* array, const int fallVelocityType);
-	bool getInterpolValue(float* array,const glm::vec2 Ppos, const bool Vapor, float& output);
-	void PPMWAdvect(float* array, float* defaultVal, const int i, const float dt);
-	void PPMWAdvectLR(float* array, float* defaultVal, const int i, const float dt, const bool x);
-	float PPMWAdvectFlux(float* array, float* defaultVal, const int i, const float dt, const bool x, const bool right);
-	void updateVelocityField(const float dt);
-	float calculateBuoyancy(const int index);
-	float averageEnvironment(const int index, const int distanceFromidx, const float maxDistance, const bool temp);
-	glm::vec2 vorticityConfinement(const int index);
-	bool getInterpolVel(glm::vec2 Ppos, bool U, float& output);
-	//-----PressureProject-----
-	void pressureProjectVelField();
-	void calculatePresProj(std::vector<float>& pressureProj);
-	void calculateDivergence(std::vector<float>& output);
-	void calculatePrecon(std::vector<float>& output, std::vector<glm::ivec3>& A);
-	void applyPreconditioner(std::vector<float>& precon, std::vector<float>& r, std::vector<glm::ivec3>& A, std::vector<float>& storageQ, std::vector<float>& output);
-	void applyA(std::vector<float>& s, std::vector<glm::ivec3>& A, std::vector<float>& output);
-	/// <summary>Calculates the mass-weighted mean terminal velocity of all types of precip</summary>
-	/// <param name = "type"> 1 = rain, 2 = snow, 3 = hail, 4 = all</param>
-	/// <returns>x: rain, y: snow, z: ice</returns>
-	glm::vec3 calculateFallingVelocity(const int index, const float density, const int type);
-	void updateMicroPhysics(const float dt, const int index, const float T, const float density);
-	float calculateSumPhaseHeat(const float dt, const int index, const float Temp);
-	void computeHeatTransfer(const int index, const float sumHeat);
+	////----------------------------------Sky----------------------------------
+	//void diffuseAndAdvectTemp(const float dt);
+	//void getInterpolValueTemp(float* arrayFull, const glm::vec2 Ppos, float& output);
+	////type: rain = 1, snow = 2, ice = 3
+	//void diffuseAndAdvect(const float dt, float* array, std::vector<float>& density, bool vapor = false, const int fallVelocityType = 0);
+	//void interPolatePrecip(const float dt, float* array, const int fallVelocityType);
+	//bool getInterpolValue(float* array,const glm::vec2 Ppos, const bool Vapor, float& output);
+	//void PPMWAdvect(float* array, float* defaultVal, const int i, const float dt);
+	//void PPMWAdvectLR(float* array, float* defaultVal, const int i, const float dt, const bool x);
+	//float PPMWAdvectFlux(float* array, float* defaultVal, const int i, const float dt, const bool x, const bool right);
+	//void updateVelocityField(const float dt);
+	//float calculateBuoyancy(const int index);
+	//float averageEnvironment(const int index, const int distanceFromidx, const float maxDistance, const bool temp);
+	//glm::vec2 vorticityConfinement(const int index);
+	//bool getInterpolVel(glm::vec2 Ppos, bool U, float& output);
+	////-----PressureProject-----
+	//void pressureProjectVelField();
+	//void calculatePresProj(std::vector<float>& pressureProj);
+	//void calculateDivergence(std::vector<float>& output);
+	//void calculatePrecon(std::vector<float>& output, std::vector<glm::ivec3>& A);
+	//void applyPreconditioner(std::vector<float>& precon, std::vector<float>& r, std::vector<glm::ivec3>& A, std::vector<float>& storageQ, std::vector<float>& output);
+	//void applyA(std::vector<float>& s, std::vector<glm::ivec3>& A, std::vector<float>& output);
+	///// <summary>Calculates the mass-weighted mean terminal velocity of all types of precip</summary>
+	///// <param name = "type"> 1 = rain, 2 = snow, 3 = hail, 4 = all</param>
+	///// <returns>x: rain, y: snow, z: ice</returns>
+	//glm::vec3 calculateFallingVelocity(const int index, const float density, const int type);
+	//void updateMicroPhysics(const float dt, const int index, const float T, const float density);
+	//float calculateSumPhaseHeat(const float dt, const int index, const float Temp);
+	//void computeHeatTransfer(const int index, const float sumHeat);
 
-	/// <summary> Get UV from the velocity field which is in MAC grid</summary>
-	glm::vec2 getUV(const int index);
+	///// <summary> Get UV from the velocity field which is in MAC grid</summary>
+	//glm::vec2 getUV(const int index);
 	glm::vec3 getUV(const glm::vec3* velField, const int x, const int y, const int z);
 
-	/// <summary>Get ambient temp at height. Using avaraged lapse rate between 5 and 2 km. </summary>
-	float getIsentropicTemp(const float y);
-	float getIsentropicVapor(const float y);
-	float curl(const int index, bool raw = false);
-	float div(const int index);
-	glm::vec2 lap(const int index);
-	bool outside(const int i); //For index, does not work on x bounds
-	bool outside(const float x, const float y); //For coords
-	bool isGround(int i);
-	bool isGround(int x, int y);
-	bool isGroundLevel(int i);
-	bool isGroundLevel(int x, int y);
+	///// <summary>Get ambient temp at height. Using avaraged lapse rate between 5 and 2 km. </summary>
+	//float getIsentropicTemp(const float y);
+	//float getIsentropicVapor(const float y);
+	//float curl(const int index, bool raw = false);
+	//float div(const int index);
+	//glm::vec2 lap(const int index);
+	//bool outside(const int i); //For index, does not work on x bounds
+	//bool outside(const float x, const float y); //For coords
+	//bool isGround(int i);
+	//bool isGround(int x, int y);
+	//bool isGroundLevel(int i);
+	//bool isGroundLevel(int x, int y);
 
-	void computeNeighArray();
+	//void computeNeighArray();
 
 	Neigh m_NeighData[GRIDSIZESKY]; //Neighbour data
 	envDebugData* getDebugData();
@@ -126,18 +122,18 @@ private:
 	float m_freeze = 0.0f; //Heat from freezing
 	float m_depos = 0.0f; //Heat from deposition (gas to solid)
 
-	float m_isenTropicTemps[GRIDSIZESKYY]{ 0.0f };
-	float m_isenTropicVapor[GRIDSIZESKYY]{ 0.0f };
-	float m_pressures[GRIDSIZESKYY]{ 0.0f };
-	float m_defaultVel[GRIDSIZESKYY]{ 0.0f };
-	int m_GHeight[GRIDSIZEGROUND]{ 0 };
-	float m_dummyArray[GRIDSIZESKYY]{ 0 };
+	float m_isenTropicTemps[GRIDSIZESKYY];
+	float m_isenTropicVapor[GRIDSIZESKYY];
+	float m_pressures[GRIDSIZESKYY];
+	float m_defaultVel[GRIDSIZESKYY];
+	//int m_GHeight[GRIDSIZEGROUND];
+	float m_dummyArray[GRIDSIZESKYY];
 
 	float velocityX[GRIDSIZESKY];
 	float velocityY[GRIDSIZESKY];
 
-	float m_debugArray0[GRIDSIZESKY]{ 0.0f };
-	float m_debugArray1[GRIDSIZESKY]{ 0.0f };
-	float m_debugArray2[GRIDSIZESKY]{ 0.0f };
+	float m_debugArray0[GRIDSIZESKY];
+	float m_debugArray1[GRIDSIZESKY];
+	float m_debugArray2[GRIDSIZESKY];
 };
 

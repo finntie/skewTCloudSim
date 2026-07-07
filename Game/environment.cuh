@@ -87,6 +87,7 @@ public:
 
 	//-------------------Outside------------------
 
+	void updateOutOfSyncGround();
 	void prepareBrushGPU(parameter paramType, const float brushSize, const int3 mousePos,
 		const float brushSmoothnes, const float dt, const float brushIntensity, const float applyValue, const float3 valueDir, const bool groundErase);
 	void prepareSelectionGPU(parameter paramType, const int3 minPos, const int3 maxPos, const float applyValue, const float3 valueDir, const bool groundErase);
@@ -94,7 +95,6 @@ public:
 	//------------------------------------------
 
 	//-------------------Get/Set------------------
-
 	envDebugData* getDebugData();
 	//gridDataSkyGPU& getEnvGridGPU() { return m_envGrid; }
 	//gridDataGroundGPU& getGroundGridGPU() { return m_groundGrid; }
@@ -109,8 +109,16 @@ private:
 
 
 
-	gridDataSkyGPU m_envGrid;
-	gridDataGroundGPU m_groundGrid;
+	gridDataSkyGPU m_envGrid{};
+	gridDataGroundGPU m_groundGrid{};
+	simInfo simKernelInfo{};
+
+	// Grid and Block size based on size of simulation
+	// Set default to 16, but increase based on threads available. 
+	dim3 gridDim = { ((GRIDSIZESKYX + 15) / 16), ((GRIDSIZESKYY + 15) / 16), ((GRIDSIZESKYZ + 15) / 16) };
+	dim3 blockDim = { uint32_t(std::min(16, GRIDSIZESKYX)), uint32_t(std::min(16, GRIDSIZESKYY)) };
+	bool canFillAll{ false }; // If we can fit all threads within the simulation or not
+
 
 	float m_time = 43200.0f; //0 to 86.400 time in seconds
 	static constexpr float m_dayLightDuration = 14.0f;
@@ -132,7 +140,7 @@ private:
 	//GPU variables
 	float* m_array;
 	float* m_outputArray;
-	float* m_defaultVal;
+	float* m_storPres; // Storage for previous pressure outcome
 	float* m_density;
 
 	float* m_oldDensityAir;
@@ -172,6 +180,8 @@ private:
 	float* m_stor2;
 
 	bool m_groundChanged{ true };
+	bool m_updateGround{ true }; // Ground has changed, but has to update variables still
+	bool m_updatingSimulation{ false }; // Shared data to check if simulation is running or finished
 	float* m_precon; //Precon (pressure projection)
 	float4* m_A; //A matrix (pressure projection)
 	

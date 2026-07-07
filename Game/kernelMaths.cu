@@ -7,6 +7,9 @@
 #include <random>
 #include <stdio.h>
 
+#include "config.h"
+#include "utils.cuh"
+
 __device__ unsigned long randomState = 1;
 
 __global__ void setToValue(float* array, const float value, const int depth, const int offset)
@@ -14,6 +17,8 @@ __global__ void setToValue(float* array, const float value, const int depth, con
     const int x = threadIdx.x;
     const int y = blockIdx.x;
     int z = 0;
+
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return;
 
     for (z = 0; z < depth; z++)
     {
@@ -28,6 +33,8 @@ __global__ void multiplyValues(float* array1, const float* array2, const int dep
     const int y = blockIdx.x;
     int z = 0;
 
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return;
+
     for (z = 0; z < depth; z++)
     {
         const int idx = x + y * blockDim.x + z * blockDim.x * gridDim.x;
@@ -41,9 +48,26 @@ __global__ void divideValues(float* array1, const float* array2, const int depth
     const int y = blockIdx.x;
     int z = 0;
 
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return;
+
     for (z = 0; z < depth; z++)
     {
         const int idx = x + y * blockDim.x + z * blockDim.x * gridDim.x;
+        array1[idx] /= array2[idx];
+    }
+}
+
+__global__ void divideValuesFull(float* array1, const float* array2)
+{
+    int x = threadIdx.x + blockDim.x * blockIdx.x;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
+    int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
+
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return;
+
+    for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+    {
+        int idx = x + y * GRIDSIZESKYX + z * GRIDSIZESKYX * GRIDSIZESKYY;
         array1[idx] /= array2[idx];
     }
 }
@@ -53,6 +77,8 @@ __global__ void subtractValue(float* array, const float value, const int depth)
     const int x = threadIdx.x;
     const int y = blockIdx.x;
     int z = 0;
+
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return;
 
     for (z = 0; z < depth; z++)
     {
@@ -64,11 +90,28 @@ __global__ void subtractValue(float* array, const float value, const int depth)
     }
 }
 
+__global__ void subtractArrayFull(float* array1, const float* array2)
+{
+    int x = threadIdx.x + blockDim.x * blockIdx.x;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
+    int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
+
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return;
+
+    for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+    {
+        int idx = x + y * GRIDSIZESKYX + z * GRIDSIZESKYX * GRIDSIZESKYY;
+        array1[idx] -= array2[idx];
+    }
+}
+
 __global__ void debugPrintArray(const float* array, const int depth)
 {
     const int x = threadIdx.x;
     const int y = blockIdx.x;
     int z = 0;
+
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return;
 
     for (z = 0; z < depth; z++)
     {
@@ -82,6 +125,8 @@ __global__ void debugPrintArray(const int* array, const int depth)
     const int x = threadIdx.x;
     const int y = blockIdx.x;
     int z = 0;
+
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return;
 
     for (z = 0; z < depth; z++)
     {
@@ -102,6 +147,8 @@ __global__ void randomArray(float* array, const float min, const float max, cons
     const int x = threadIdx.x;
     const int y = blockIdx.x;
     int z = 0;
+
+    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return;
 
     if (x == 0 && y == 0 && seed != 0) randomState = seed;
 
