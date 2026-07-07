@@ -87,6 +87,7 @@ public:
 
 	//-------------------Outside------------------
 
+	void updateOutOfSyncGround();
 	void prepareBrushGPU(parameter paramType, const float brushSize, const int3 mousePos,
 		const float brushSmoothnes, const float dt, const float brushIntensity, const float applyValue, const float3 valueDir, const bool groundErase);
 	void prepareSelectionGPU(parameter paramType, const int3 minPos, const int3 maxPos, const float applyValue, const float3 valueDir, const bool groundErase);
@@ -179,6 +180,8 @@ private:
 	float* m_stor2;
 
 	bool m_groundChanged{ true };
+	bool m_updateGround{ true }; // Ground has changed, but has to update variables still
+	bool m_updatingSimulation{ false }; // Shared data to check if simulation is running or finished
 	float* m_precon; //Precon (pressure projection)
 	float4* m_A; //A matrix (pressure projection)
 	

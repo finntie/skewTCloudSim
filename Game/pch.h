@@ -12,6 +12,8 @@
 #include <cstdlib>
 #include <crtdbg.h>
 #include <random>
+#include <thread>
+#include <mutex>
 
 // Data structures
 #include <string>

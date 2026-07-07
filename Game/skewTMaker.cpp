@@ -1206,17 +1206,19 @@ void skewTMaker::confirmSkewT()
 	for (int i = 0; i < int(m_simpleDews.pressure.size()); i++) pressure.push_back(m_simpleDews.pressure[i]);
 	for (int i = 0; i < int(m_simpleWindSpeed.pressure.size()); i++) pressure.push_back(m_simpleWindSpeed.pressure[i]);
 
-	if (pressure.size() > 9999)
-	{
-		printf("Error: size of data created is too large: %i inputs registered, aborting...\n", int(pressure.size()));
-		return;
-	}
 
 	std::sort(pressure.begin(), pressure.end(), std::greater<float>()); // sort
 	// Move all doubles to end of vector and get iterator to new end
 	auto itToRemove = std::unique(pressure.begin(), pressure.end());
 	// Remove all duplicates
 	pressure.erase(itToRemove, pressure.end());
+
+	const int MAXSIZE = 9999;
+	if (pressure.size() > MAXSIZE)
+	{
+		printf("Error: size of data created is too large: %i/%i inputs registered, aborting...\n", int(pressure.size()), MAXSIZE);
+		return;
+	}
 
 	// Add values at the beginning and end
 	{

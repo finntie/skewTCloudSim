@@ -29,7 +29,10 @@ gameSystem::gameSystem()
 }
 
 
-gameSystem::~gameSystem() {}
+gameSystem::~gameSystem() 
+{
+	Game.shutdown();
+}
 
 //Update function 
 void gameSystem::Update(float dt)

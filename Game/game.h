@@ -17,6 +17,7 @@ class game
 public:
 	game();
 	~game();
+	void shutdown();
 
 	void Initialize();
 
@@ -48,3 +49,7 @@ private:
 };
 
 extern game Game;
+
+// Lock and unlock global mutex
+void lockGlobal();
+void unlockGlobal();

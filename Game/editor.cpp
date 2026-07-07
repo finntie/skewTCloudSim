@@ -212,6 +212,9 @@ void editor::setDebugValueNum(const float* array, const int num)
 void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps)
 {
 #if USE_GPU
+
+	lockGlobal();
+
 	auto* sky = static_cast<environmentGPU::gridDataSkyGPU*>(_sky);
 	auto* ground = static_cast<environmentGPU::gridDataGroundGPU*>(_ground);
 
@@ -252,6 +255,8 @@ void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps
 	_groundHeight;
 	_ps;
 #endif
+
+	unlockGlobal();
 }
 
 void editor::editMode()
@@ -573,15 +578,15 @@ void editor::setView()
 	{
 		ImGui::Text("Reset one parameter:");
 #if USE_GPU
-		if (ImGui::Button("Temp")) Game.EnvGPU().resetParameterGPU(POTTEMP); ImGui::SameLine();
-		if (ImGui::Button("Wind")) Game.EnvGPU().resetParameterGPU(WIND); ImGui::SameLine();
-		if (ImGui::Button("Ps")) Game.EnvGPU().resetParameterGPU(PRESSURE);
-		if (ImGui::Button("Qv")) Game.EnvGPU().resetParameterGPU(QV); ImGui::SameLine();
-		if (ImGui::Button("Qw")) Game.EnvGPU().resetParameterGPU(QW); ImGui::SameLine();
-		if (ImGui::Button("Qc")) Game.EnvGPU().resetParameterGPU(QC);
-		if (ImGui::Button("Qr")) Game.EnvGPU().resetParameterGPU(QR); ImGui::SameLine();
-		if (ImGui::Button("Qs")) Game.EnvGPU().resetParameterGPU(QS); ImGui::SameLine();
-		if (ImGui::Button("Qi")) Game.EnvGPU().resetParameterGPU(QI);
+		if (ImGui::Button("Temp")) lockGlobal(), Game.EnvGPU().resetParameterGPU(POTTEMP), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Wind")) lockGlobal(), Game.EnvGPU().resetParameterGPU(WIND), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Ps")) lockGlobal(), Game.EnvGPU().resetParameterGPU(PRESSURE), unlockGlobal();
+		if (ImGui::Button("Qv")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QV), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Qw")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QW), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Qc")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QC), unlockGlobal();
+		if (ImGui::Button("Qr")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QR), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Qs")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QS), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Qi")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QI), unlockGlobal();
 
 #else
 		if (ImGui::Button("Temp"))
@@ -1044,7 +1049,7 @@ void editor::viewSky()
 					tracerObj->setVoxelValue(idx, true); // Add voxel to tracer so we can select it
 					if (y == m_envData->m_groundHeight[idxG]) continue; // Leaving 1 voxel space for ground itself
 					bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 0.999f, bee::Colors::Brown);
-					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, bee::Colors::Black);
+					//bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, bee::Colors::Black);
 					continue;
 				}
 
@@ -1114,7 +1119,7 @@ void editor::viewSky()
 				tracerObj->setVoxelValue(idx, true); // Add voxel to tracer so we can select it
 
 				bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 0.999f, { color, 1.0f });
-				bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, { 0.0f, 0.0f,0.0f, 1.0f });
+				//bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, { 0.0f, 0.0f,0.0f, 1.0f });
 			}
 		}
 	}
@@ -1152,7 +1157,7 @@ void editor::viewGround()
 			}
 
 			bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x + z * GRIDSIZESKYX] + 0.5f, z + 0.5f), 0.999f, { color, 1.0f });
-			bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x + z * GRIDSIZESKYX] + 0.5f, z + 0.5f), 0.99f, { 0.0f, 0.0f, 0.0f, 1.0f });
+			//bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, m_envData->m_groundHeight[x + z * GRIDSIZESKYX] + 0.5f, z + 0.5f), 0.99f, { 0.0f, 0.0f, 0.0f, 1.0f });
 
 		}
 	}
@@ -1345,7 +1350,8 @@ void editor::applyBrush()
 {
 
 	//printf("brushing: %i, m_mouseWheel: %f, getMousewheel: %f, !selectedInspector: %i\n", m_brushing, m_mouseWheel, bee::Engine.Input().GetMouseWheel(), !bee::Engine.Inspector().IsSelected());
-	if (m_brushing && MouseWheel != bee::Engine.Input().GetMouseWheel() && !bee::Engine.Inspector().IsSelected())
+
+	if (!bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::LeftControl) && m_brushing && MouseWheel != bee::Engine.Input().GetMouseWheel() && !bee::Engine.Inspector().IsSelected())
 	{
 		const float diff = bee::Engine.Input().GetMouseWheel() - MouseWheel;
 		m_brushSize = m_brushSize + diff <= 0.0f ? m_brushSize : m_brushSize + diff;
@@ -1354,8 +1360,10 @@ void editor::applyBrush()
 	if (m_brushing && bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left) && !bee::Engine.Inspector().IsSelected())
 	{
 #if USE_GPU
+		lockGlobal();
 		Game.EnvGPU().prepareBrushGPU(m_editParamSky, m_brushSize, { m_mousePointingPos.x,m_mousePointingPos.y,m_mousePointingPos.z },
 			m_brushSmoothness, m_deltatime, m_brushIntensity, m_applyValue, { m_valueDir.x, m_valueDir.y, m_valueDir.z }, m_groundErase);
+		unlockGlobal();
 
 #else
 		for (int y = int(std::floor(-m_brushSize)); y < int(std::ceil(m_brushSize)); y++)
@@ -1424,14 +1432,19 @@ void editor::applySelect()
 		int maxZ = int(std::max(m_corners[0].z, m_corners[1].z));
 
 #if USE_GPU
+
+		lockGlobal();
 		if (m_microPhysSelect)
 		{
 			Game.DataClass().confirmMicroPhysCheckRegion({ minX, minY, minZ }, { maxX, maxY, maxZ });
 			m_selecting = false;
 			m_microPhysSelect = false;
 		}
-		else Game.EnvGPU().prepareSelectionGPU(m_editParamSky, { minX, minY, minZ }, { maxX, maxY, maxZ }, m_applyValue, { m_valueDir.x, m_valueDir.y, m_valueDir.z }, m_groundErase);
-
+		else
+		{
+			Game.EnvGPU().prepareSelectionGPU(m_editParamSky, { minX, minY, minZ }, { maxX, maxY, maxZ }, m_applyValue, { m_valueDir.x, m_valueDir.y, m_valueDir.z }, m_groundErase);
+		}
+		unlockGlobal();
 #else
 		else
 		{

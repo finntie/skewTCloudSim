@@ -12,7 +12,6 @@
 #include "meteoformulas.cuh"
 #include "editor.h"
 
-__constant__ int GHeight[GRIDSIZEGROUND];
 __constant__ float defaultVelX[GRIDSIZESKYY];
 __constant__ float defaultVelZ[GRIDSIZESKYY];
 
@@ -20,10 +19,9 @@ __constant__ float gammaR;
 __constant__ float gammaS;
 __constant__ float gammaI;
 
-void initKernelSky(const int* _GHeight, const float* _defaultVelX, const float* _defaultVelZ)
+void initKernelSky(const float* _defaultVelX, const float* _defaultVelZ)
 {
 	//Set constant data for easier access
-	cudaMemcpyToSymbol(GHeight, _GHeight, GRIDSIZEGROUND * sizeof(int));
 	cudaMemcpyToSymbol(defaultVelX, _defaultVelX, GRIDSIZESKYY * sizeof(float));
 	cudaMemcpyToSymbol(defaultVelZ, _defaultVelZ, GRIDSIZESKYY * sizeof(float));
 
@@ -159,10 +157,12 @@ __global__ void diffuseRedBlack(const float* groundT, const float* pressuresAir,
 //-------------------------------------ADVECTION-------------------------------------
 
 
-__global__ void advectGroundWaterGPU(float* Qrs, float* Qgr)
+__global__ void advectGroundWaterGPU(const int* GHeight, float* Qrs, float* Qgr)
 {
-	__shared__ float sharedBlockQrs[18 * 18];
-	__shared__ float sharedBlockQgr[18 * 18];
+	extern __shared__ float sharedBlock[];
+
+	float* sharedBlockQrs = (float*)sharedBlock;
+	float* sharedBlockQgr = (float*)&sharedBlock[(blockDim.x + 2) * (blockDim.y + 2)]; // Offset array
 
 	const int sharedBlockWidth = blockDim.x + 2;
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
@@ -307,15 +307,16 @@ __global__ void advectGroundWaterGPU(float* Qrs, float* Qgr)
 	//if (Qgr[idx] < 0.0f) printf("x %i, z %i, Qgr[idx] %e, grL %e, grC %e, grB %e\n", x, z, Qgr[idx], grL, grC, grB);
 }
 
-__global__ void setTempsAtGroundGPU(float* potTemps, const float* groundTemps, const float* pressuresAir, const float* groundPressures, const float dt)
+__global__ void setTempsAtGroundGPU(const int* GHeight, float* potTemps, const float* groundTemps, const float* pressuresAir, const float* groundPressures, const float dt)
 {
 	const int x = threadIdx.x;
 	const int z = blockIdx.x;
+	if (x >= GRIDSIZESKYX || z >= GRIDSIZESKYZ) return; // Safe to return due to no syncing
 	const int Gidx = x + z * GRIDSIZESKYX; // Ground index
 	const int y = GHeight[Gidx] + 1;
 	const int idx = getIdx(x, y, z);
 
-	if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY - 1 || z >= GRIDSIZESKYZ) return; // Safe to return due to no syncing
+	if (y >= GRIDSIZESKYY - 1) return; // Safe to return due to no syncing
 
 	const float T = potentialTempGPU(groundTemps[Gidx] - 273.15f, pressuresAir[idx], groundPressures[Gidx]) + 273.15f;
 	const float dif2 = potTemps[idx] - T;
@@ -425,6 +426,7 @@ __global__ void advectPPMX(const float* __restrict__ arrayIn,
 	const float* __restrict__ defaultVal,
 	const float* __restrict__ velfieldX,
 	const Neigh* __restrict__  neigh,
+	const int* __restrict__ GHeight,
 	const boundsEnv bounds,
 	const float* dt)
 {
@@ -459,7 +461,7 @@ __global__ void advectPPMX(const float* __restrict__ arrayIn,
 
 
 		// We do not return, we just continue and wait for the rest of the threads. 
-		if (!valid || isGroundGPU(x, y, z)) continue;
+		if (!valid || isGroundGPU(GHeight, x, y, z)) continue;
 
 		// Downwind is when velocity is coming from the back
 		// And since we are currently looking forward, downwind is moving with use thus positive
@@ -513,6 +515,7 @@ __global__ void advectPPMY(const float* __restrict__ arrayIn,
 	const float* __restrict__ defaultVal,
 	const float* __restrict__ velfieldY,
 	const Neigh* __restrict__  neigh,
+	const int* __restrict__ GHeight,
 	const boundsEnv bounds,
 	const float* dt)
 {
@@ -545,7 +548,7 @@ __global__ void advectPPMY(const float* __restrict__ arrayIn,
 		__syncthreads();
 
 		// We do not return, we just continue and wait for the rest of the threads. 
-		if (!valid || isGroundGPU(x, y, z)) continue;
+		if (!valid || isGroundGPU(GHeight, x, y, z)) continue;
 
 		// Downwind is when velocity is coming from the back
 		// And since we are currently looking forward, downwind is moving with use thus positive
@@ -597,6 +600,7 @@ __global__ void advectPPMZ(const float* __restrict__ arrayIn,
 	const float* __restrict__ defaultVal, 
 	const float* __restrict__ velfieldZ, 
 	const Neigh* __restrict__ neigh, 
+	const int* __restrict__ GHeight,
 	const boundsEnv bounds, 
 	const float* dt)
 {
@@ -614,7 +618,7 @@ __global__ void advectPPMZ(const float* __restrict__ arrayIn,
 	// Already set forward and current to the position where they can get easily swapped in the for loop
 	float forwardExtra = fillNeighbourData(curNeigh.getOutsideForward(), curNeigh.getEnvTypeForward(), bounds, arrayIn, idx, GRIDSIZESKYX * GRIDSIZESKYY, defaultValue);
 	float forward = 0.0f;
-	if (isGroundGPU(x, y, z)) fillDataBoundCon(bounds.ground, forward, arrayIn[idx], defaultValue); // Fill forward if at ground
+	if (isGroundGPU(GHeight, x, y, z)) fillDataBoundCon(bounds.ground, forward, arrayIn[idx], defaultValue); // Fill forward if at ground
 	else forward = arrayIn[idx];
 	float current = fillNeighbourData(curNeigh.getOutsideBackward(), curNeigh.getEnvTypeBackward(), bounds, arrayIn, idx, -GRIDSIZESKYX * GRIDSIZESKYY, defaultValue);
 	float backward = getValueExtraForwardBackward(neigh, bounds, arrayIn, defaultValue, x, y, z, false);
@@ -633,7 +637,7 @@ __global__ void advectPPMZ(const float* __restrict__ arrayIn,
 		forwardExtra = getValueExtraForwardBackward(neigh, bounds, arrayIn, defaultValue, x, y, z);
 
 		//if (z > 27 && y == 1 && x == 31) printf("x %i y: %i, z %i value: %f, value2 %f, final %f, FE %f, F %f, C %f, B %f, BE %f\n", x, y, z, 0.0f, 0.0f, (dt / VOXELSIZE) * (0.0f - 0.0f), forwardExtra, forward, current, backward, backwardExtra);
-		if (isGroundGPU(x, y, z)) continue;
+		if (isGroundGPU(GHeight, x, y, z)) continue;
 
 		// Downwind is when velocity is coming from the back
 		// And since we are currently looking forward, downwind is moving with use thus positive
@@ -663,7 +667,7 @@ __global__ void advectPPMZ(const float* __restrict__ arrayIn,
 	}
 }
 
-__global__ void advectPrecipGPU(float* Qj, const Neigh* neigh, const float* potTemp, const float* Qv,
+__global__ void advectPrecipGPU(const int* GHeight, float* Qj, const Neigh* neigh, const float* potTemp, const float* Qv,
 	const float* pressuresAir, const float* groundP,const int type, const float dt)
 {
 	// We swap x and y around, meaning:
@@ -686,7 +690,7 @@ __global__ void advectPrecipGPU(float* Qj, const Neigh* neigh, const float* potT
 		const float QjU = up ? Qj[idx + GRIDSIZESKYX] : 0.0f;
 
 		// Continue if ground
-		if (isGroundGPU(x, y, z)) continue;
+		if (isGroundGPU(GHeight, x, y, z)) continue;
 
 		const int idxG = x + z * GRIDSIZESKYX;
 		const int idxU = idx + GRIDSIZESKYX;
@@ -740,7 +744,7 @@ __global__ void advectPrecipGPU(float* Qj, const Neigh* neigh, const float* potT
 	}
 }
 
-__global__ void applyPreconditionerGPU(float* output, const float* precon, const float* div, float4* A)
+__global__ void applyPreconditionerGPU(const int* GHeight, float* output, const float* precon, const float* div, float4* A)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -752,13 +756,13 @@ __global__ void applyPreconditionerGPU(float* output, const float* precon, const
 	{
 		const int idx = getIdx(x, y, z);
 		output[idx] = 0.0f;
-		if (isGroundGPU(x, y, z)) continue;
+		if (isGroundGPU(GHeight, x, y, z)) continue;
 
 		output[idx] = div[idx] * precon[idx];
 	}
 }
 
-__global__ void dotProductGPU(float* result, const float* a, const float* b)
+__global__ void dotProductGPU(const int* GHeight, float* result, const float* a, const float* b)
 {
 	//To speed up dot product, we make all blocks sum up their values and then connect them together.
 	//This is faster than 1 thead doing all the work.
@@ -779,7 +783,7 @@ __global__ void dotProductGPU(float* result, const float* a, const float* b)
 	sresult[idxsData] = 0.0f;
 	for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
-		if (valid && !isGroundGPU(x, y, z))
+		if (valid && !isGroundGPU(GHeight, x, y, z))
 		{
 			const int idx = getIdx(x, y, z);
 			sresult[idxsData] += a[idx] * b[idx];
@@ -869,13 +873,21 @@ __global__ void applyAGPU(float* output, const float* input, const Neigh* neigh,
 		__syncthreads();
 
 		// We do not return, since we still need to fill data
-		if (!valid || currentNeigh.getEnvTypeCurrent() == GROUND) continue;
+		if (!valid || currentNeigh.getEnvTypeCurrent() == GROUND) 
+		{
+			if (forCheck)
+			{
+				idx = newIdx;
+				currentNeigh = nextNeigh;
+			}
+			continue;
+		}
 
 		// TODO: left and backwards 0 when not sky?
 		float4 ACur = A[idx];
-		float ALeft = (!currentNeigh.getOutsideLeft()|| currentNeigh.getEnvTypeLeft() == SKY) ? A[idx - 1].x : 0;
-		float ADown = (!currentNeigh.getOutsideDown()|| currentNeigh.getEnvTypeDown() == SKY) ? A[idx - GRIDSIZESKYX].y : 0;
-		float ABack = (!currentNeigh.getOutsideBackward()|| currentNeigh.getEnvTypeBackward() == SKY) ? A[idx - GRIDSIZESKYX * GRIDSIZESKYY].z : 0;
+		float ALeft = (!currentNeigh.getOutsideLeft() && currentNeigh.getEnvTypeLeft() == SKY) ? A[idx - 1].x : 0;
+		float ADown = (!currentNeigh.getOutsideDown() && currentNeigh.getEnvTypeDown() == SKY) ? A[idx - GRIDSIZESKYX].y : 0;
+		float ABack = (!currentNeigh.getOutsideBackward() && currentNeigh.getEnvTypeBackward() == SKY) ? A[idx - GRIDSIZESKYX * GRIDSIZESKYY].z : 0;
 
 		float l = sharedBlock[idxsData - 1];
 		float r = sharedBlock[idxsData + 1];
@@ -903,7 +915,7 @@ __global__ void applyAGPU(float* output, const float* input, const Neigh* neigh,
 	}
 }
 
-__global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, const float* velX, const float* velY, const float* velZ, 
+__global__ void calculateDivergenceGPU(const int* GHeight, float* divergence, const Neigh* neigh, const float* velX, const float* velY, const float* velZ,
 	const float* dens, const float* oldDens, const float* defaultDens)
 {
 	// Only shared block for the density, since the velocity uses different arrays.
@@ -930,7 +942,7 @@ __global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, co
 
 	float forward = 0.0f;
 	float forwardTemp = 0.0f;
-	if (isGroundGPU(x, y, z)) fillDataBoundCon(boundsDens.ground, forwardTemp, dens[idx], 1.0f); // Fill forward if at ground
+	if (isGroundGPU(GHeight, x, y, z)) fillDataBoundCon(boundsDens.ground, forwardTemp, dens[idx], 1.0f); // Fill forward if at ground
 	else forwardTemp = dens[idx];
 	forward = forwardTemp;
 	float current = fillNeighbourData(currentNeigh.getOutsideBackward(), currentNeigh.getEnvTypeBackward(), boundsDens, dens, idx, -GRIDSIZESKYX * GRIDSIZESKYY, 1.0f);
@@ -961,7 +973,7 @@ __global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, co
 		if (valid) divergence[idx] = 0.0f;
 
 		// We do not return, since we still need to fill data
-		if (!valid || isGroundGPU(x, y, z)) continue;
+		if (!valid || isGroundGPU(GHeight, x, y, z)) continue;
 
 		ur = velX[idx];// currentNeigh.getOutsideRight() ? (boundsVelXZ.sides == NEUMANN ? velX[idx - 1] : 0.0f) : velX[idx];// If outside and using NEUMANN, we use the previous, since current value is set to 0
 		ul = fillNeighbourData(currentNeigh.getOutsideLeft(), currentNeigh.getEnvTypeLeft(), boundsVelXZ, velX, idx, -1, defaultVelX[y]);
@@ -1001,7 +1013,7 @@ __global__ void calculateDivergenceGPU(float* divergence, const Neigh* neigh, co
 	}
 }
 
-__global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, float* velX, float* velY, float* velZ, const float* density,const float* pressureEnv, const float dt, float* m_stor0)
+__global__ void applyPresProjGPU(const int* GHeight, const float* pressure, const Neigh* neigh, float* velX, float* velY, float* velZ, const float* density,const float* pressureEnv, const float dt, float* m_stor0)
 {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -1017,7 +1029,7 @@ __global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, floa
 
 	for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
-		if (isGroundGPU(x, y, z)) continue;
+		if (isGroundGPU(GHeight, x, y, z)) continue;
 		const int idx = getIdx(x, y, z);
 
 		Neigh currentNeigh = neigh[idx];
@@ -1046,17 +1058,26 @@ __global__ void applyPresProjGPU(const float* pressure, const Neigh* neigh, floa
 
 		//Using dt to match dt used in divergence calculation
 		//Dividing by density at cell faces gives for pressure effects
-		velX[idx] += (pr - currentP) / dr;
-		velY[idx] += (pu - currentP) / du;
-		velZ[idx] += (pf - currentP) / df;
-
-		m_stor0[idx] = pf - currentP;
+		// Due to boundary cases, we dont update the + directions, also the reason why we reset them at the first place just before pressure projection loop
+		if (!currentNeigh.getOutsideRight() && currentNeigh.getEnvTypeRight() == SKY)
+		{
+			velX[idx] += (pr - currentP) / dr;
+		}
+		if (!currentNeigh.getOutsideUp() && currentNeigh.getEnvTypeUp() == SKY)
+		{
+			velY[idx] += (pu - currentP) / du;
+		}
+		if (!currentNeigh.getOutsideForward() && currentNeigh.getEnvTypeForward() == SKY)
+		{
+			velZ[idx] += (pf - currentP) / df;
+			m_stor0[idx] = (pf - currentP) / df;
+		}
 
 		//if (x == 31 && z == 16) printf("x %i, y %i, z %i, pressure[%i] = %e, pr %e, pu %e, pf %e, currentP %e, outside: %i\n", x, y, z, idx, pressure[idx], pr, pu, pf, currentP, neigh.getOutsideUp());
 	}
 }
 
-__global__ void getMaxDivergence(float* output, const float* div)
+__global__ void getMaxDivergence(const int* GHeight, float* output, const float* div)
 {
 	//To speed up getting the max divergence, we make all blocks sum up their values and then connect them together.
 	//This is faster than 1 thead doing all the work.
@@ -1077,7 +1098,7 @@ __global__ void getMaxDivergence(float* output, const float* div)
 	sresult[idxsData] = 0.0f;
 	for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
-		if (valid && !isGroundGPU(x, y, z))
+		if (valid && !isGroundGPU(GHeight, x, y, z))
 		{
 			sresult[idxsData] = fmaxf(sresult[idxsData], div[getIdx(x, y, z)]);
 		}
@@ -1110,7 +1131,7 @@ __global__ void getMaxDivergence(float* output, const float* div)
 	}
 }
 
-__global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* divergence, const float* s, const float* valZ)
+__global__ void updatePandDiv(const int* GHeight, float* S1, float* S2, float* pressure, float* divergence, const float* s, const float* valZ)
 {
 	__shared__ float sresult;
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
@@ -1136,7 +1157,7 @@ __global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* dive
 	for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
 		//Adding up pressure value and reducing residual value
-		if (!isGroundGPU(x, y, z))
+		if (!isGroundGPU(GHeight, x, y, z))
 		{
 			const int idx = getIdx(x, y, z);
 			pressure[idx] += sresult * s[idx];
@@ -1145,7 +1166,7 @@ __global__ void updatePandDiv(float* S1, float* S2, float* pressure, float* dive
 	}
 }
 
-__global__ void endIteration(float* S1, float* S2, float* s, const float* valZ)
+__global__ void endIteration(const int* GHeight, float* S1, float* S2, float* s, const float* valZ)
 {
 	__shared__ float sresult;
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
@@ -1168,7 +1189,7 @@ __global__ void endIteration(float* S1, float* S2, float* s, const float* valZ)
 
 	for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
 	{
-		if (!isGroundGPU(x, y, z))
+		if (!isGroundGPU(GHeight, x, y, z))
 		{
 			const int idx = getIdx(x, y, z);
 			//Setting search vector s
@@ -1182,7 +1203,7 @@ __global__ void endIteration(float* S1, float* S2, float* s, const float* valZ)
 	}
 }
 
-__global__ void updatePressure(float* envPressure, const float* presProj)
+__global__ void updatePressure(const int* GHeight, float* envPressure, const float* presProj)
 {
 	const int x = threadIdx.x;
 	const int y = blockIdx.x;
@@ -1192,7 +1213,7 @@ __global__ void updatePressure(float* envPressure, const float* presProj)
 
 	for (z = 0; z < GRIDSIZESKYZ; z++)
 	{
-		if (!isGroundGPU(x, y, z))
+		if (!isGroundGPU(GHeight, x, y, z))
 		{
 			const int idx = getIdx(x, y, z);
 			envPressure[idx] -= presProj[idx] / 100.0f; //Pa to Pha
@@ -1233,7 +1254,7 @@ __global__ void calculateGroundTempGPU(float* groundT, const float dtSpeed, cons
 	groundT[idxG] += dtSpeed * ((1 - LC[idxG]) * (((1 - absorbedRadiationAlbedo) * irridiance - ConstantsGPU::ge * ConstantsGPU::oo * T4) / (groundThickness * densityGround * ConstantsGPU::Cpds)));
 }
 
-__global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTemp, const float* Qv, const float* Qr, const float* Qs, const float* Qi,
+__global__ void buoyancyGPU(const int* GHeight, float* velY, const Neigh* neigh, const float* potTemp, const float* Qv, const float* Qr, const float* Qs, const float* Qi,
 	const float* defTemp, const float* defQv, const float* pressures, const float* groundP, float* buoyancyStor)
 {
 	extern __shared__ float sharedBlock[];
@@ -1264,12 +1285,12 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 
 	float forwardQv = 0.0f;
 	float tempQv = forwardQv;
-	if (isGroundGPU(x, y, z)) fillDataBoundCon(boundsBuoyancy.ground, tempQv, Qv[idx], defaultValueQv); // Fill forward if at ground
+	if (isGroundGPU(GHeight, x, y, z)) fillDataBoundCon(boundsBuoyancy.ground, tempQv, Qv[idx], defaultValueQv); // Fill forward if at ground
 	else tempQv = Qv[idx];
 	forwardQv = tempQv;
 	float forwardT = 0.0f;
 	float tempT = forwardT;
-	if (isGroundGPU(x, y, z)) fillDataBoundCon(boundsBuoyancy.ground, tempT, potTemp[idx], defaultValueTemp); // Fill forward if at ground
+	if (isGroundGPU(GHeight, x, y, z)) fillDataBoundCon(boundsBuoyancy.ground, tempT, potTemp[idx], defaultValueTemp); // Fill forward if at ground
 	else tempT = potTemp[idx];
 	forwardT = tempT;
 	float currentQv = fillNeighbourData(currentNeigh.getOutsideBackward(), currentNeigh.getEnvTypeBackward(), boundsBuoyancy, Qv, idx, -GRIDSIZESKYX * GRIDSIZESKYY, defaultValueQv);
@@ -1308,7 +1329,7 @@ __global__ void buoyancyGPU(float* velY, const Neigh* neigh, const float* potTem
 		__syncthreads();
 
 		// We do not return, we just continue 
-		if (!valid || isGroundGPU(x, y, z)) continue;
+		if (!valid || isGroundGPU(GHeight, x, y, z)) continue;
 
 		// If the type is a solid, we do not want to account for it
 		const bool l = !(boundsBuoyancy.sides == DIRICHLET && currentNeigh.getOutsideLeft()) && currentNeigh.getEnvTypeLeft() == SKY;
@@ -1479,7 +1500,7 @@ __global__ void addHeatGPU(const float* _Qv, float* potTemp, float* condens, flo
 	}
 }
 
-__global__ void computeNeighbourGPU(Neigh* Neigh)
+__global__ void computeNeighbourGPU(const int* GHeight, Neigh* Neigh)
 {
 	int x = threadIdx.x;
 	int y = blockIdx.x;
@@ -1489,31 +1510,31 @@ __global__ void computeNeighbourGPU(Neigh* Neigh)
 	for (z = 0; z < GRIDSIZESKYZ; z++)
 	{
 		int idx = getIdx(x, y, z);
-		const bool currentG = isGroundGPU(x, y, z);
+		const bool currentG = isGroundGPU(GHeight, x, y, z);
 
 		// Set all outside bools
 		// And set types to be GROUND if they are ground OR with all but up, when current is ground
 
 		Neigh[idx].setCurrent(false, 
-			isGroundGPU(x, y, z) ? GROUND : SKY);
+			isGroundGPU(GHeight, x, y, z) ? GROUND : SKY);
 		Neigh[idx].setLeft(x == 0,
-			(Neigh[idx].getOutsideLeft() && currentG) || (!Neigh[idx].getOutsideLeft() && isGroundGPU(x - 1, y, z)) ? GROUND : SKY);
+			(Neigh[idx].getOutsideLeft() && currentG) || (!Neigh[idx].getOutsideLeft() && isGroundGPU(GHeight, x - 1, y, z)) ? GROUND : SKY);
 		Neigh[idx].setRight(x == GRIDSIZESKYX - 1, 
-			(Neigh[idx].getOutsideRight() && currentG) || (!Neigh[idx].getOutsideRight() && isGroundGPU(x + 1, y, z)) ? GROUND : SKY);
+			(Neigh[idx].getOutsideRight() && currentG) || (!Neigh[idx].getOutsideRight() && isGroundGPU(GHeight, x + 1, y, z)) ? GROUND : SKY);
 		Neigh[idx].setDown(y == 0, 
-			(Neigh[idx].getOutsideDown() && currentG) || (!Neigh[idx].getOutsideDown() && isGroundGPU(x, y - 1, z)) ? GROUND : SKY);
+			(Neigh[idx].getOutsideDown() && currentG) || (!Neigh[idx].getOutsideDown() && isGroundGPU(GHeight, x, y - 1, z)) ? GROUND : SKY);
 		Neigh[idx].setUp(y == GRIDSIZESKYY - 1, 
-			(Neigh[idx].getOutsideUp() && currentG) || (!Neigh[idx].getOutsideUp() && isGroundGPU(x, y + 1, z)) ? GROUND : SKY);
+			(Neigh[idx].getOutsideUp() && currentG) || (!Neigh[idx].getOutsideUp() && isGroundGPU(GHeight, x, y + 1, z)) ? GROUND : SKY);
 		Neigh[idx].setBackward(z == 0, 
-			(Neigh[idx].getOutsideBackward() && currentG) || (!Neigh[idx].getOutsideBackward() && isGroundGPU(x, y, z - 1)) ? GROUND : SKY);
+			(Neigh[idx].getOutsideBackward() && currentG) || (!Neigh[idx].getOutsideBackward() && isGroundGPU(GHeight, x, y, z - 1)) ? GROUND : SKY);
 		Neigh[idx].setForward(z == GRIDSIZESKYZ - 1, 
-			(Neigh[idx].getOutsideForward() && currentG) || (!Neigh[idx].getOutsideForward() && isGroundGPU(x, y, z + 1)) ? GROUND : SKY);
+			(Neigh[idx].getOutsideForward() && currentG) || (!Neigh[idx].getOutsideForward() && isGroundGPU(GHeight, x, y, z + 1)) ? GROUND : SKY);
 	}
 }
 
 
 
-__global__ void initAMatrix(float4* A, const Neigh* neigh, const float* density, const float* defDens)
+__global__ void initAMatrix(const int* GHeight, float4* A, const Neigh* neigh, const float* density, const float* defDens)
 {
 	extern __shared__ float sharedBlock[];
 	const int sharedBlockWidth = blockDim.x + 2;
@@ -1536,7 +1557,7 @@ __global__ void initAMatrix(float4* A, const Neigh* neigh, const float* density,
 	// Already set forward and current to the position where they can get easily swapped in the for loop
 	float forward = 0.0f;
 	float forwardTemp = 0.0f;
-	if (isGroundGPU(x, y, z)) fillDataBoundCon(bounds.ground, forwardTemp, density[idx], 1.0f); // Fill forward if at ground
+	if (isGroundGPU(GHeight, x, y, z)) fillDataBoundCon(bounds.ground, forwardTemp, density[idx], 1.0f); // Fill forward if at ground
 	else forwardTemp = density[idx];
 	forward = forwardTemp;
 	float current = fillNeighbourData(currentNeigh.getOutsideBackward(), currentNeigh.getEnvTypeBackward(), bounds, density, idx, -GRIDSIZESKYX * GRIDSIZESKYY, 1.0f);
@@ -1558,15 +1579,15 @@ __global__ void initAMatrix(float4* A, const Neigh* neigh, const float* density,
 
 		float l = 0.0f, r = 0.0f, d = 0.0f, u = 0.0f, f = 0.0f, b = 0.0f;
 
-		// We do not return, since we still need to fill data
-		if (!valid || isGroundGPU(x, y, z)) continue;
-
-
 		//Fill matrix A	
 		if (valid) A[idx].x = 0;
 		if (valid) A[idx].y = 0;
 		if (valid) A[idx].z = 0;
 		if (valid) A[idx].w = 0;
+		// We do not return, since we still need to fill data
+		if (!valid || isGroundGPU(GHeight, x, y, z)) continue;
+
+
 
 		r = sharedBlock[idxsData + 1];
 		l = sharedBlock[idxsData - 1];
@@ -1585,6 +1606,14 @@ __global__ void initAMatrix(float4* A, const Neigh* neigh, const float* density,
 		f = f == 0.0f ? 0.0f : -fmaxf(1.0f, 1.225f / (2.0f / (1.0f / current + 1.0f / f)));
 		b = b == 0.0f ? 0.0f : -fmaxf(1.0f, 1.225f / (2.0f / (1.0f / current + 1.0f / b)));
 		
+		//if (((!currentNeigh.getOutsideLeft() && currentNeigh.getEnvTypeLeft() == SKY))) l = -1.0f;
+		//if (((!currentNeigh.getOutsideDown() && currentNeigh.getEnvTypeDown() == SKY))) d = -1.0f;
+		//if (((!currentNeigh.getOutsideBackward() && currentNeigh.getEnvTypeBackward() == SKY))) b = -1.0f;
+		//if (((!currentNeigh.getOutsideRight() && currentNeigh.getEnvTypeRight() == SKY))) r = -1.0f;
+		//if (((!currentNeigh.getOutsideUp() && currentNeigh.getEnvTypeUp() == SKY))) u = -1.0f;
+		//if (((!currentNeigh.getOutsideForward() && currentNeigh.getEnvTypeForward() == SKY))) f = -1.0f;
+
+
 		//Set positive directions for A matrix
 		if (valid) A[idx].x = r;
 		if (valid) A[idx].y = u;
@@ -1601,7 +1630,7 @@ __global__ void initAMatrix(float4* A, const Neigh* neigh, const float* density,
 	}
 }
 
-__global__ void initPrecon(float* precon, const float4* A)
+__global__ void initPrecon(const int* GHeight, float* precon, const float4* A)
 {
 	int x = threadIdx.x;
 	int y = blockIdx.x;
@@ -1613,9 +1642,9 @@ __global__ void initPrecon(float* precon, const float4* A)
 	{
 		int idx = getIdx(x, y, z);
 
-		precon[idx] = 1.0f;
+		precon[idx] = 0.0f;
 
-		if (isGroundGPU(x, y, z)) continue;
+		if (isGroundGPU(GHeight, x, y, z)) continue;
 
 		precon[idx] = A[idx].w == 0.0f ? 1.0f : 1.0f / A[idx].w;
 	}
@@ -1640,7 +1669,7 @@ __global__ void initPrecon(float* precon, const float4* A)
 	//precon[idx] = (1 / sqrtf(e + 1e-30f)); //Prevent division by 0 using small number;
 }
 
-__global__ void initDensity(float* densityAir, const float* potTemp, const float* pressures, const float* Qv, const float* groundP)
+__global__ void initDensity(const int* GHeight, float* densityAir, const float* potTemp, const float* pressures, const float* Qv, const float* groundP)
 {
 	int x = threadIdx.x;
 	int y = blockIdx.x;
@@ -1650,7 +1679,7 @@ __global__ void initDensity(float* densityAir, const float* potTemp, const float
 
 	for (z = 0; z < GRIDSIZESKYZ; z++)
 	{
-		if (!isGroundGPU(x, y, z))
+		if (!isGroundGPU(GHeight, x, y, z))
 		{
 			int idx = getIdx(x, y, z);
 			const int idxG = x + z * GRIDSIZESKYX;
@@ -1664,7 +1693,7 @@ __global__ void initDensity(float* densityAir, const float* potTemp, const float
 	}
 }
 
-__global__ void calculateNewPressure(float* pressureEnv, const float* densityAir, const float* potTemp, const float* Qv, const float* GPressure)
+__global__ void calculateNewPressure(const int* GHeight, float* pressureEnv, const float* densityAir, const float* potTemp, const float* Qv, const float* GPressure)
 {
 	const int x = threadIdx.x;
 	const int y = blockIdx.x;
@@ -1675,7 +1704,7 @@ __global__ void calculateNewPressure(float* pressureEnv, const float* densityAir
 	for (z = 0; z < GRIDSIZESKYZ; z++)
 	{
 		int idx = getIdx(x, y, z);
-		if (!isGroundGPU(x, y, z))
+		if (!isGroundGPU(GHeight, x, y, z))
 		{
 			const int idxG = x + z * GRIDSIZESKYX;
 
@@ -1688,7 +1717,7 @@ __global__ void calculateNewPressure(float* pressureEnv, const float* densityAir
 
 }
 
-__global__ void applyBrushGPU(float* array, float* array2, float* array3, int* groundGridStor, bool* changedGround, parameter paramType, const float brushSize, const int3 position, 
+__global__ void applyBrushGPU(const int* GHeight, float* array, float* array2, float* array3, int* groundGridStor, bool* changedGround, parameter paramType, const float brushSize, const int3 position,
 	const float brushSmoothness, const float brushIntensity, const float applyValue, const float3 valueDir, const bool groundErase, const float dt)
 {
 	//Thread
@@ -1748,7 +1777,7 @@ __global__ void applyBrushGPU(float* array, float* array2, float* array3, int* g
 			//Apply
 			if (paramType == PGROUND) //For ground
 			{
-				const bool groundChanged = setGround(groundGridStor, mX, mY, mZ, groundErase);
+				const bool groundChanged = setGround(GHeight, groundGridStor, mX, mY, mZ, groundErase);
 				if (groundChanged) *changedGround = groundChanged; //We don;t want to set back to false, if ever set, it is that.
 			}
 			else if (paramType == WIND) //For wind
@@ -1765,7 +1794,7 @@ __global__ void applyBrushGPU(float* array, float* array2, float* array3, int* g
 	}
 }
 
-__global__ void applySelectionGPU(float* array, float* array2, float* array3, int* groundGridStor, bool* changedGround, parameter paramType, const int3 minPos, const int3 maxPos, const float applyValue, const float3 valueDir, const bool groundErase)
+__global__ void applySelectionGPU(const int* GHeight, float* array, float* array2, float* array3, int* groundGridStor, bool* changedGround, parameter paramType, const int3 minPos, const int3 maxPos, const float applyValue, const float3 valueDir, const bool groundErase)
 {
 	const int x = threadIdx.x;
 	const int y = blockIdx.x;
@@ -1798,7 +1827,7 @@ __global__ void applySelectionGPU(float* array, float* array2, float* array3, in
 		//Apply
 		if (paramType == PGROUND) //For ground
 		{
-			const bool groundChanged = setGround(groundGridStor, mX, mY, mZ, groundErase);
+			const bool groundChanged = setGround(GHeight, groundGridStor, mX, mY, mZ, groundErase);
 			if (groundChanged) *changedGround = groundChanged; //We don;t want to set back to false, if ever set, it is that.
 		}
 		else if (paramType == WIND) //For wind
@@ -1814,7 +1843,7 @@ __global__ void applySelectionGPU(float* array, float* array2, float* array3, in
 	}
 }
 
-__device__ bool setGround(int* groundHeight, const int x, const int y, const int z, const bool eraseGround)
+__device__ bool setGround(const int* GHeight, int* groundHeight, const int x, const int y, const int z, const bool eraseGround)
 {
 	if (isOutside(x, y, z)) return false;
 
@@ -1866,7 +1895,7 @@ __global__ void compareAndResetValuesOutGround(const int* oldGroundHeight, const
 //-------------------------------------HELPER-------------------------------------
 
 
-__global__ void resetVelPressProj(const Neigh* neigh, float* velX, float* velY, float* velZ)
+__global__ void resetVelPressProj(const int* GHeight, const Neigh* neigh, float* velX, float* velY, float* velZ)
 {
 	int x = threadIdx.x;
 	int y = blockIdx.x;
@@ -1877,7 +1906,7 @@ __global__ void resetVelPressProj(const Neigh* neigh, float* velX, float* velY, 
 
 	for (z = 0; z < GRIDSIZESKYZ; z++)
 	{
-		if (isGroundGPU(x, y, z)) return;
+		if (isGroundGPU(GHeight, x, y, z)) return;
 		idx = getIdx(x, y, z);
 		Neigh currentNeigh = neigh[idx];
 
@@ -1905,7 +1934,7 @@ __global__ void resetVelPressProj(const Neigh* neigh, float* velX, float* velY, 
 	}
 }
 
-__device__ bool isGroundLevel(const int z)
+__forceinline__ __device__ bool isGroundLevel(const int* GHeight, const int z)
 {
 	int x = threadIdx.x;
 	int y = blockIdx.x;
@@ -1919,7 +1948,7 @@ __device__ bool isGroundLevel(const int z)
 }
 
 //Usage of threads
-__device__ bool isGroundGPU(const int z)
+__forceinline__ __device__ bool isGroundGPU(const int* GHeight, const int z)
 {
 	int x = threadIdx.x;
 	int y = blockIdx.x;
@@ -1931,12 +1960,12 @@ __device__ bool isGroundGPU(const int z)
 	return y <= GHeight[x + z * GRIDSIZESKYX];
 }
 
-__device__ bool isGroundGPU(const int x, const int y, const int z)
+__forceinline__ __device__ bool isGroundGPU(const int* GHeight, const int x, const int y, const int z)
 {
 	return y <= GHeight[x + z * GRIDSIZESKYX];
 }
 
-__global__ void setToDefault(float* array, const float* defaultValue)
+__global__ void setToDefault(const int* GHeight, float* array, const float* defaultValue)
 {
 	int x = threadIdx.x;
 	int y = blockIdx.x;
@@ -1947,7 +1976,7 @@ __global__ void setToDefault(float* array, const float* defaultValue)
 
 	for (z = 0; z < GRIDSIZESKYZ; z++)
 	{
-		if (isGroundGPU(x, y, z)) return;
+		if (isGroundGPU(GHeight, x, y, z)) return;
 		idx = getIdx(x, y, z);
 
 		array[idx] = defaultValue[y];

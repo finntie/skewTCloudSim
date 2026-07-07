@@ -122,18 +122,18 @@ private:
 	float m_freeze = 0.0f; //Heat from freezing
 	float m_depos = 0.0f; //Heat from deposition (gas to solid)
 
-	float m_isenTropicTemps[GRIDSIZESKYY]{ 0.0f };
-	float m_isenTropicVapor[GRIDSIZESKYY]{ 0.0f };
-	float m_pressures[GRIDSIZESKYY]{ 0.0f };
-	float m_defaultVel[GRIDSIZESKYY]{ 0.0f };
-	int m_GHeight[GRIDSIZEGROUND]{ 0 };
-	float m_dummyArray[GRIDSIZESKYY]{ 0 };
+	float m_isenTropicTemps[GRIDSIZESKYY];
+	float m_isenTropicVapor[GRIDSIZESKYY];
+	float m_pressures[GRIDSIZESKYY];
+	float m_defaultVel[GRIDSIZESKYY];
+	//int m_GHeight[GRIDSIZEGROUND];
+	float m_dummyArray[GRIDSIZESKYY];
 
 	float velocityX[GRIDSIZESKY];
 	float velocityY[GRIDSIZESKY];
 
-	float m_debugArray0[GRIDSIZESKY]{ 0.0f };
-	float m_debugArray1[GRIDSIZESKY]{ 0.0f };
-	float m_debugArray2[GRIDSIZESKY]{ 0.0f };
+	float m_debugArray0[GRIDSIZESKY];
+	float m_debugArray1[GRIDSIZESKY];
+	float m_debugArray2[GRIDSIZESKY];
 };
 
