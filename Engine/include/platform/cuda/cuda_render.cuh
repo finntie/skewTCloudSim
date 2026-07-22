@@ -12,6 +12,7 @@ void initConstants(const float* invViewMatrix = nullptr, size_t sizeViewMat = 0,
 
 void fillSDF(glm::ivec3 gridSize,
              float* parameter,
+             float densityTreshold,
              void* textureStorage,
              float* SDFClosestDist,
              int* SDFClosestTarget,
@@ -21,12 +22,19 @@ void fillSDF(glm::ivec3 gridSize,
 
 __global__ void initJFASeeds(int3 size,
                              float* density,
+                             float densityTreshold,
                              float* SDFClosestDist,
                              int* SDFClosestTarget,
                              const float invBlockSpread);
 
 // Jump Flood Algorithm, fills SDFClosestDist with distances towards targets
-__global__ void JFA(int3 size, float* density, float* SDFClosestDist, int* SDFClosestTarget, const int3 offset, const float invBlockSpread);
+__global__ void JFA(int3 size,
+                    float* density,
+                    float densityTreshold,
+                    float* SDFClosestDist,
+                    int* SDFClosestTarget,
+                    const int3 offset,
+                    const float invBlockSpread);
 
 /// <summary> Fill output with 4 layers of noise </summary>
 /// <param name="output">Texture array that will be filled</param>
@@ -58,6 +66,8 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
 __device__ float intersectGrid(float3 dir, float3 origin, float3 recDir);
 
 __device__ float calculateCloudCoverage(float3& pos, environmentData& data);
+
+__device__ float calculateRainCoverage(float3& pos, environmentData& data);
 
 __device__ float calculateDensity(float3& pos, environmentData& data, const float cloudCoverage);
 

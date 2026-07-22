@@ -10,7 +10,8 @@ struct environmentData
     //float* Qw;  //	Mixing Ratio of	Liquid Water
     unsigned long long QwTexture; 
     float* Qc;       //	Mixing Ratio of Ice
-    float* Qr;       //	Mixing Ratio of Rain
+    //float* Qr;       //	Mixing Ratio of Rain
+    unsigned long long QrTexture;
     float* Qs;       //	Mixing Ratio of Snow
     float* Qi;       //	Mixing Ratio of Ice (precip)
     //float* velfieldX;
@@ -21,6 +22,7 @@ struct environmentData
     unsigned long long velZTexture;
 
     unsigned long long SDFTextureQw;
+    unsigned long long SDFTextureQr;
 
     float* tempArray; // Malloced inside the creation function
     unsigned long long noiseTexture; 
@@ -38,6 +40,8 @@ struct environmentData
     float noiseCutoffValue = 0.01f;
     float noisePlateauValue = 0.32f;
     float sunStrength = 1.0f;
+    float sunDirection[3] = {1, 1, 1};
+    float sunColor[3] = {1, 1, 1};
 
     float rayRandomOffset = 0.05f;
     float multipleScatteringDepthPower = 1.0f;
@@ -73,7 +77,9 @@ public:
                             float noiseCutoffValue,
                             float multipleScattering,
                             float rayRandomOffset,
-                            float sunStrength);
+                            float sunStrength,
+                            float* sunDir,
+                            float* sunColor);
 
 
 private:
@@ -90,13 +96,15 @@ private:
     environmentData m_envData{};
     void* m_noiseTextureStorage; //In which we store the texture data
     void* m_QWTextureStorage; 
+    void* m_QRTextureStorage; 
 
     float* m_SDFDistanceNeigh;
     int* m_SDFClosestTarget;
     void* m_SDFTextureStorageQw;
-    void* m_SDFTextureStorageVelX;
-    void* m_SDFTextureStorageVelY;
-    void* m_SDFTextureStorageVelZ;
+    void* m_SDFTextureStorageQr;
+    void* m_velXTextureStorage;
+    void* m_velYTextureStorage;
+    void* m_velZTextureStorage;
 
     bool m_envInitialized{false};
     bool m_setData{false};

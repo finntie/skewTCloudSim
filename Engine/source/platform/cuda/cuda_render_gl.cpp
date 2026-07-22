@@ -40,7 +40,7 @@ CudaRender::~CudaRender()
     cudaFree(m_SDFDistanceNeigh);
     cudaDestroyTextureObject(m_envData.QwTexture);
     cudaFree(m_envData.Qc);
-    cudaFree(m_envData.Qr);
+    cudaDestroyTextureObject(m_envData.QrTexture);
     cudaFree(m_envData.Qs);
     cudaFree(m_envData.Qi);
     cudaDestroyTextureObject(m_envData.velXTexture);
@@ -48,11 +48,12 @@ CudaRender::~CudaRender()
     cudaDestroyTextureObject(m_envData.velZTexture);
     //cudaFree(m_envData.noiseTexture); Already done
     cudaDestroyTextureObject(m_envData.noiseTexture);
-    cudaFreeArray(static_cast<cudaArray_t>(m_SDFTextureStorageVelZ));
-    cudaFreeArray(static_cast<cudaArray_t>(m_SDFTextureStorageVelY));
-    cudaFreeArray(static_cast<cudaArray_t>(m_SDFTextureStorageVelX));
+    cudaFreeArray(static_cast<cudaArray_t>(m_velZTextureStorage));
+    cudaFreeArray(static_cast<cudaArray_t>(m_velYTextureStorage));
+    cudaFreeArray(static_cast<cudaArray_t>(m_velXTextureStorage));
     cudaFreeArray(static_cast<cudaArray_t>(m_SDFTextureStorageQw));
     cudaFreeArray(static_cast<cudaArray_t>(m_noiseTextureStorage));
+    cudaFreeArray(static_cast<cudaArray_t>(m_QRTextureStorage));
     cudaFreeArray(static_cast<cudaArray_t>(m_QWTextureStorage));
     cudaFree(m_envData.tempArray);
 }
@@ -344,7 +345,6 @@ void CudaRender::initEnvironmentData(const int _sizeX,
     // Malloc data
     //cudaMalloc((void**)&m_envData.Qw, m_envData.fullSize * sizeof(float));
     cudaMalloc((void**)&m_envData.Qc, m_envData.fullSize * sizeof(float));
-    cudaMalloc((void**)&m_envData.Qr, m_envData.fullSize * sizeof(float));
     cudaMalloc((void**)&m_envData.Qs, m_envData.fullSize * sizeof(float));
     cudaMalloc((void**)&m_envData.Qi, m_envData.fullSize * sizeof(float));
 
@@ -372,9 +372,11 @@ void CudaRender::initEnvironmentData(const int _sizeX,
     // initialize environment data
     initTextureObj(m_QWTextureStorage, m_envData.QwTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ));
     initTextureObj(m_SDFTextureStorageQw, m_envData.SDFTextureQw, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ));
-    initTextureObj(m_SDFTextureStorageVelX, m_envData.velXTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ));
-    initTextureObj(m_SDFTextureStorageVelY, m_envData.velYTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ));
-    initTextureObj(m_SDFTextureStorageVelZ, m_envData.velZTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ));
+    initTextureObj(m_QRTextureStorage, m_envData.QrTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ));
+    initTextureObj(m_SDFTextureStorageQr, m_envData.SDFTextureQr, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ));
+    initTextureObj(m_velXTextureStorage, m_envData.velXTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ));
+    initTextureObj(m_velYTextureStorage, m_envData.velYTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ));
+    initTextureObj(m_velZTextureStorage, m_envData.velZTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ));
     
     m_envInitialized = true;
 }
@@ -393,7 +395,7 @@ void CudaRender::setNoiseTexture(int octaves, int gridSize, float lacunarity)
     }
 }
 
-void CudaRender::setExtraRenderInfo(float noiseReduction, float noiseCutoffValue, float multipleScattering, float rayRandomOffset, float sunStrength)
+void CudaRender::setExtraRenderInfo(float noiseReduction, float noiseCutoffValue, float multipleScattering, float rayRandomOffset, float sunStrength, float* sunDir, float* sunColor)
 {
 
     m_envData.noiseReduction = noiseReduction;
@@ -401,6 +403,8 @@ void CudaRender::setExtraRenderInfo(float noiseReduction, float noiseCutoffValue
     m_envData.multipleScatteringDepthPower = multipleScattering;
     m_envData.rayRandomOffset = rayRandomOffset;
     m_envData.sunStrength = sunStrength;
+    memcpy(m_envData.sunDirection, sunDir, 3 * sizeof(float));
+    memcpy(m_envData.sunColor, sunColor, 3 * sizeof(float));
 }
 
 
@@ -440,28 +444,32 @@ void CudaRender::copyDataToTexture(float* data, void*& storageArray, const glm::
 }
 
 void CudaRender::setDataEnvironment(float* Qw,
-                                    float* ,
-                                    float* ,
-                                    float* ,
-                                    float* ,
-                                    float* ,
-                                    float* ,
-                                    float* ,
+                                    float*,
+                                    float* Qr,
+                                    float*,
+                                    float*,
+                                    float* velX,
+                                    float* velY,
+                                    float* velZ,
                                     void* stream)
 {
-
     if (m_envData.fullSize == 0)
     {
         printf(
             "Warning: environment renderer fullsize is 0 when trying to set environmnent render data, call "
             "initEnvironmentData() beforehand\n");
     }
-    //cudaMemcpy(m_envData.Qw, Qw, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    // cudaMemcpy(m_envData.Qw, Qw, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
 
     copyDataToTexture(Qw, m_QWTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
+    copyDataToTexture(Qr, m_QRTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
+    copyDataToTexture(velX, m_velXTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
+    copyDataToTexture(velY, m_velYTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
+    copyDataToTexture(velZ, m_velZTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
 
     fillSDF(glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ),
             Qw,
+            0.00005f,
             m_SDFTextureStorageQw,
             m_SDFDistanceNeigh,
             m_SDFClosestTarget,
@@ -469,15 +477,24 @@ void CudaRender::setDataEnvironment(float* Qw,
             *m_blockDim,
             stream);
 
-    //cudaMemcpy(m_envData.Qc, Qc, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    //cudaMemcpy(m_envData.Qr, Qr, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    //cudaMemcpy(m_envData.Qs, Qs, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    //cudaMemcpy(m_envData.Qi, Qi, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    //cudaMemcpy(m_envData.velfieldX, velX, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    //cudaMemcpy(m_envData.velfieldY, VelY, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    //cudaMemcpy(m_envData.velfieldZ, velZ, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    fillSDF(glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ),
+            Qr,
+            0.00001f,
+            m_SDFTextureStorageQr,
+            m_SDFDistanceNeigh,
+            m_SDFClosestTarget,
+            *m_gridDim,
+            *m_blockDim,
+            stream);
+    // cudaMemcpy(m_envData.Qc, Qc, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    // cudaMemcpy(m_envData.Qr, Qr, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    // cudaMemcpy(m_envData.Qs, Qs, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    // cudaMemcpy(m_envData.Qi, Qi, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    // cudaMemcpy(m_envData.velfieldX, velX, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    // cudaMemcpy(m_envData.velfieldY, VelY, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    // cudaMemcpy(m_envData.velfieldZ, velZ, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
 
-    //switchActiveTexture();
+    // switchActiveTexture();
 
     m_setData = true;
 }

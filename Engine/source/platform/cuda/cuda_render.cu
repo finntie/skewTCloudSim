@@ -17,6 +17,12 @@ __constant__ float3x4 invView;
 __constant__ float3 gridMin;
 __constant__ float3 gridMax;
 
+__constant__ float QWMIN = 0.0001f;
+__constant__ float QWMAX = 0.005f;
+__constant__ float QRMIN = 0.0001f;
+__constant__ float QRMAX = 0.005f;
+
+
 // Stream
 cudaStream_t renderStream;
 
@@ -54,7 +60,7 @@ void initConstants(const float* invViewMatrix, size_t sizeViewMat, float3 _gridM
     cudaMemcpyToSymbol(gridMax, &_gridMax, sizeof(float3));
 }
 
-void fillSDF(glm::ivec3 gridSize, float* parameter, void* textureStorage, float* SDFClosestDist, int* SDFClosestTarget, dim3 gridDim, dim3 blockDim, void* stream)
+void fillSDF(glm::ivec3 gridSize, float* parameter, float densityTreshold, void* textureStorage, float* SDFClosestDist, int* SDFClosestTarget, dim3 gridDim, dim3 blockDim, void* stream)
 {
     // Fill Signed Distance Field using Jump Flood Algorithm
     const float invBlockSpreadDepth = 1.0f / (float(gridDim.z) / float(gridSize.z));
@@ -63,6 +69,7 @@ void fillSDF(glm::ivec3 gridSize, float* parameter, void* textureStorage, float*
     // Initialize the seeds (current indices) making sure that at a target the index is correctly set.
     initJFASeeds<<<gridDim, blockDim, 0, static_cast<cudaStream_t>(stream)>>>(size,
                                                                               parameter,
+                                                                              densityTreshold,
                                                                               SDFClosestDist,
                                                                               SDFClosestTarget,
                                                                               invBlockSpreadDepth);
@@ -82,6 +89,7 @@ void fillSDF(glm::ivec3 gridSize, float* parameter, void* textureStorage, float*
 
         JFA<<<gridDim, blockDim, 0, static_cast<cudaStream_t>(stream)>>>(size,
                                                                          parameter,
+                                                                         densityTreshold,
                                                                          SDFClosestDist,
                                                                          SDFClosestTarget,
                                                                          offset,
@@ -100,6 +108,7 @@ void fillSDF(glm::ivec3 gridSize, float* parameter, void* textureStorage, float*
 
 __global__ void initJFASeeds(int3 size,
                              float* density,
+                             float densityTreshold,
                              float* SDFClosestDist,
                              int* SDFClosestTarget,
                              const float invBlockSpread)
@@ -109,7 +118,6 @@ __global__ void initJFASeeds(int3 size,
     int z = int(float(blockIdx.z) * invBlockSpread);  // Get z index from spread and block index on z dimension.
 
     if (x >= size.x || y >= size.y || z >= size.z) return;
-    const float DENSITYTHRESHOLD = 0.0001f;
 
 
 
@@ -120,7 +128,7 @@ __global__ void initJFASeeds(int3 size,
         SDFClosestDist[idx] = 1e6f;
         SDFClosestTarget[idx] = -1;
 
-        if (density[idx] > DENSITYTHRESHOLD)
+        if (density[idx] > densityTreshold)
         {
             SDFClosestDist[idx] = 0.0f;
             SDFClosestTarget[idx] = idx;
@@ -128,15 +136,19 @@ __global__ void initJFASeeds(int3 size,
     }
 }
 
-__global__ void JFA(int3 size, float* density, float* SDFClosestDist, int* SDFClosestTarget, const int3 offset, const float invBlockSpread)
+__global__ void JFA(int3 size,
+                    float* density,
+                    float densityTreshold,
+                    float* SDFClosestDist,
+                    int* SDFClosestTarget,
+                    const int3 offset,
+                    const float invBlockSpread)
 { 
     const int x = threadIdx.x + blockDim.x * blockIdx.x;
     const int y = threadIdx.y + blockDim.y * blockIdx.y;
     int z = int(float(blockIdx.z) * invBlockSpread);  // Get z index from spread and block index on z dimension.
 
     if (x >= size.x || y >= size.y || z >= size.z) return;
-
-    const float DENSITYTHRESHOLD = 0.0001f;
 
     // We just grab the Z for the next block index and loop until there
     for (; z < fminf(size.z, ceilf(float(blockIdx.z + 1) * invBlockSpread)); z++)
@@ -164,7 +176,7 @@ __global__ void JFA(int3 size, float* density, float* SDFClosestDist, int* SDFCl
                     const int nTarget = SDFClosestTarget[nIdx];
                     
                     // Check if its a target
-                    if (density[nIdx] > DENSITYTHRESHOLD)
+                    if (density[nIdx] > densityTreshold)
                     {
                         // Calculate distance to target and save data if its closest
                         const float dist = distanceSquared(make_float3(x, y, z), make_float3(xi, yi, zi));
@@ -303,9 +315,10 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     float v = ((float(y) / float(height)) * 2.0f - 1.0f);
 
     // Add a nice light direction
-    const float3 lightDir = normalize(make_float3(0.2f, 0.6f, 0.4f));
+    const float3 lightDir =
+        normalize(make_float3(data.sunDirection[0] + 1e-6f, data.sunDirection[1] + 1e-6f, data.sunDirection[2] + 1e-6f));
     // Color the light
-    const float4 lightColor = make_float4(1.0f, 0.8f, 0.8f, 1.0f);
+    const float4 lightColor = make_float4(data.sunColor[0], data.sunColor[1], data.sunColor[2], 1.0f);
     const float sunStrength = data.sunStrength;
 
     // Create ray and set origin + direction
@@ -324,7 +337,6 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                                      1.0f);
     float4 cloudColor{};
     float accumulatedDensity = 0.0f;
-    float accumulatedCoverage = 0.0f;
     float lightAbsorption = 0.0f;
 
 
@@ -360,6 +372,9 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
         float3 tDelta = step * mainR.rD;
         float3 tMax = (gridPlanes - mainR.O) * mainR.rD;  // Max distance to cross boundary of each axis
 
+        // Forward and backward scattering
+        const float primScattering = henyenGreenstein(dot(mainR.D, lightDir), 0.7f);
+        const float secScattering = henyenGreenstein(dot(mainR.D, lightDir), -0.3f);
 
         // Start tracing through the grid
         const float3 invGridMax = make_float3(1.0f / gridMax.x, 1.0f / gridMax.y, 1.0f / gridMax.z);
@@ -367,7 +382,7 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
         float density = 0.0f;
 
         float lightIntensity = 0.0f;
-
+        float accumulatedRainDensity = 0.0f;
 
         const float nearStepSize = 0.1f;
         const float farStepSize = 0.25f;
@@ -379,81 +394,76 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
         {
             if (isOutside(pos.x, pos.y, pos.z)) break;
 
-
             // Base stepsize on distance from camera
             float stepSize = nearStepSize + ((farStepSize * (t - startT)) / stepAdjustmentDistance);
 
             // Already compute distance to closest cloud
             float distanceFieldValueQw = tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z);
+            float distanceFieldValueQr = tex3D<float>(data.SDFTextureQr, normPos.x, normPos.y, normPos.z);
 
             // Randomize stepsize
             rSeed = randomHash(unsigned(pos.x), unsigned(pos.y), unsigned(pos.z), rSeed);
             const float uniformRand = (rSeed & 0xFFFF) / 65535.0f;
             stepSize += (uniformRand - 0.5f) * data.rayRandomOffset * stepSize * 0.5f;
-
+            // Increase stepsize for less important mixing ratios
+            stepSize += distanceFieldValueQw > 1.0f ? 0.25f : 0.0f;
 
             // Start of Marching
-            float cloudCoverage = calculateCloudCoverage(pos, data);
+            float cloudCoverage = distanceFieldValueQw < 1.0f ? calculateCloudCoverage(pos, data) : 0.0f;
+            float rainCoverage = distanceFieldValueQr < 1.0f ? calculateRainCoverage(pos, data) : 0.0f;
 
-            if (cloudCoverage > 0.0f)
+            // if (x == 0 && y == 0)
+            //{
+            //     printf("x %i y %i, t %f, cloudCoverage %f\n", x, y, t, cloudCoverage);
+            // }
+
+            // Add noise reduction if cloud coverage is present
+            const float cloudDensity = cloudCoverage > 0.0f ? calculateDensity(pos, data, cloudCoverage) : 0.0f;
+
+            // Only when there is something to trace continue
+            if (cloudDensity > 0.0f || rainCoverage > 0.0f)
             {
+                lightAbsorption = 1 - exp(-accumulatedDensity);
+
+                // Beer lambert function
+                const float lightDirMarchDensity = lightMarch(pos, lightDir, data, stepSize);
+                const float transmittance = exp(-lightDirMarchDensity);
+
+                // Multiple scattering phase
+                float msVolume = remap(cloudCoverage, 0.0f, 0.5f, 0.0f, 1.0f) * pow(transmittance, 0.5f);
+
+                // Add all scattering together
+                const float directScattering = (transmittance * primScattering) + (msVolume * secScattering);
+
+                // const float ambientScattering = data.multipleScatteringDepthPower * powf(1.0f - cloudDensity, 0.5f);
+
+                const float totalLight = directScattering;
+
+                accumulatedDensity += (cloudDensity + rainCoverage)*stepSize * data.voxelSize;
+                lightIntensity +=
+                    totalLight * (cloudDensity + rainCoverage) * (1.0f - lightAbsorption) * sunStrength * stepSize * data.voxelSize;
+
                 // if (x == 0 && y == 0)
                 //{
-                //     printf("x %i y %i, t %f, cloudCoverage %f\n", x, y, t, cloudCoverage);
+                //     printf(
+                //         "x %i y %i, t %f, cloudDensity %f, rainCoverage %f msVolume %f, inCloudRelax %f, "
+                //         "lightIntensity % f acumdDens % f lightDensity % f,directScat : % f, lightAbsorption: %f\n ",
+                //         x,
+                //         y,
+                //         t,
+                //         cloudDensity,
+                //         rainCoverage,
+                //         msVolume,
+                //         1,//innerCloudRelaxion,
+                //         lightIntensity,
+                //         accumulatedDensity,
+                //         lightDirMarchDensity,
+                //         directScattering,
+                //         lightAbsorption);
                 // }
-
-                // Add noise reduction
-                const float cloudDensity = calculateDensity(pos, data, cloudCoverage);
-
-                if (cloudDensity > 0.0f)
+                if (lightAbsorption >= 1 - 0.01f)
                 {
-                    lightAbsorption = 1 - exp(-accumulatedDensity);
-
-                    // Beer lambert function
-                    const float lightDirMarchDensity = lightMarch(pos, lightDir, data, stepSize);
-                    const float transmittance = exp(-lightDirMarchDensity);
-
-                    // Multiple scattering phase
-                    float msVolume = remap(cloudCoverage, 0.0f, 0.5f, 0.0f, 1.0f) * pow(transmittance, 0.5f); 
-
-                    // Forward and backward scattering
-                    const float primScattering = henyenGreenstein(dot(mainR.D, lightDir), 0.7f);
-                    const float secScattering = henyenGreenstein(dot(mainR.D, lightDir), -0.3f);
-
-                    // Add all scattering together
-                    const float directScattering = (transmittance * primScattering) + (msVolume * secScattering);
-
-                    //const float ambientScattering = data.multipleScatteringDepthPower * powf(1.0f - cloudDensity, 0.5f);
-
-                    const float totalLight = directScattering;
-
-                    accumulatedDensity += cloudDensity * stepSize * data.voxelSize;
-                    lightIntensity +=
-                        totalLight * cloudDensity * (1.0f - lightAbsorption) * sunStrength * stepSize * data.voxelSize; 
-
-                    accumulatedCoverage += cloudCoverage;
-                    //if (x == 0 && y == 0)
-                    //{
-                    //    printf(
-                    //        "x %i y %i, t %f, cloudDensity %f, cosSun %f msVolume %f, inCloudRelax %f, "
-                    //        "lightIntensity % f acumdDens % f lightDensity % f,directScat : % f, lightAbsorption: %f\n ",
-                    //        x,
-                    //        y,
-                    //        t,
-                    //        cloudDensity,
-                    //        1,//cosSunAngleRelaxed,
-                    //        msVolume,
-                    //        1,//innerCloudRelaxion,
-                    //        lightIntensity,
-                    //        accumulatedDensity,
-                    //        lightDirMarchDensity,
-                    //        directScattering,
-                    //        lightAbsorption);
-                    //}
-                    if (lightAbsorption >= 1 - 0.01f)
-                    {
-                        break;  // TODO: test out when cloud is full
-                    }
+                    break;  // TODO: test out when cloud is full
                 }
             }
 
@@ -463,14 +473,18 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
 
             // Get value on distance field creating for faster lookup, skipping empty air
             // We loop until distance to nearest cloud becomes too small and start normal stepping again
-            while (!isOutside(pos.x, pos.y, pos.z) &&
-                   (distanceFieldValueQw = tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z)) > 1.0f)
+            while (!isOutside(pos.x, pos.y, pos.z))
             {
-                t += fmaxf(distanceFieldValueQw - 1.0f, stepSize);
-                pos = pos + mainR.D * fmaxf(distanceFieldValueQw - 0.5f, stepSize);
+                distanceFieldValueQw = tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z);
+                distanceFieldValueQr = tex3D<float>(data.SDFTextureQr, normPos.x, normPos.y, normPos.z);
+                const float closest = fminf(distanceFieldValueQw, distanceFieldValueQr);
+
+                if (closest <= 1.0f) break;
+
+                t += fmaxf(closest - 1.0f, stepSize);
+                pos = pos + mainR.D * fmaxf(closest - 0.5f, stepSize);
                 normPos = make_float3(pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
             }
-
 
             // if (tMax.x < tMax.y && tMax.x < tMax.z)  // If closest to x boundary
             //{
@@ -578,31 +592,22 @@ __device__ float intersectGrid(float3 dir, float3 origin, float3 recDir)
 
 __device__ float calculateCloudCoverage(float3& pos, environmentData& data)
 {
-    // const int ix = clampf(floorf(pos.x - gridMin.x), 0, data.sizeX - 1);
-    // const int iy = clampf(floorf(pos.y - gridMin.y), 0, data.sizeY - 1);
-    // const int iz = clampf(floorf(pos.z - gridMin.z), 0, data.sizeZ - 1);
-
-    // const int idx = ix + iy * data.sizeX + iz * data.sizeX * data.sizeY;
-
     float output = 0.0f;
 
     const float QW = tex3D<float>(data.QwTexture, pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
 
     //
 
-    if (QW > 0.00001f)
+    if (QW > QWMIN)
     {
         // Min and Max in terms of scud, values above will be more obvious densities
-        const float minQW = 0.0001f;
-        const float maxQW = 0.005f; 
-        const float scudValue = 0.25f;
 
 
         //output = clampf(powf(((log(QW * 100.0f) + 3) / 3.0f), 0.2f), 0.0f, 1.0f);
         
         //output = clampf((log10f(QW) + data.noiseCutoffValue) * data.noisePlateauValue, scudValue, 0.99f);
         //// Values between 0.00001 and 0.001 will be mapped 0 to 1
-        output = clampf((logf(QW) - logf(minQW)) / (logf(maxQW) - logf(minQW)), 0.0f, 0.999f);
+        output = clampf((logf(QW) - logf(QWMIN)) / (logf(QWMAX) - logf(QWMIN)), 0.0f, 0.999f);
 
         //output = clampf(3.825f + 0.39f * log(QW), 0.0f, 0.99f);
 
@@ -624,6 +629,20 @@ __device__ float calculateCloudCoverage(float3& pos, environmentData& data)
     return output;
 }
 
+__device__ float calculateRainCoverage(float3& pos, environmentData& data) 
+{ 
+    float output = 0.0f;
+
+    const float QR = tex3D<float>(data.QrTexture, pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
+    if (QR > QRMIN)
+    {
+        // Min and Max, values above will be more obvious densities
+        output = clampf((logf(QR) - logf(QRMIN)) / (logf(QRMAX) - logf(QRMIN)), 0.0f, 0.999f);
+    }
+
+    return output * 0.0025f;
+}
+
 __device__ float calculateDensity(float3& pos,
                                   environmentData& data,
                                   const float cloudCoverage)
@@ -633,13 +652,20 @@ __device__ float calculateDensity(float3& pos,
     // Expensive texture lookup (higher resolution = more expensive)
     // This resolution increase increases our coordinate and since our texture repeats, we essentially increase the amount
     // of textures
-    const int maxGrid = fmaxf(gridMax.x, fmaxf(gridMax.y, gridMax.z));
+    const float maxGrid = 1.0f / fmaxf(gridMax.x, fmaxf(gridMax.y, gridMax.z));
+    float3 normPos = pos * maxGrid;
+
+    // Offset from velocity
+    const float velX = tex3D<float>(data.velXTexture, normPos.x, normPos.y, normPos.z) / data.voxelSize;
+    const float velY = tex3D<float>(data.velYTexture, normPos.x, normPos.y, normPos.z) / data.voxelSize;
+    const float velZ = tex3D<float>(data.velZTexture, normPos.x, normPos.y, normPos.z) / data.voxelSize;
+
 
     const float resolutionIncrease = 64.0f;
     noise = tex3D<float>(data.noiseTexture,
-                         pos.x / maxGrid * resolutionIncrease,
-                         pos.y / maxGrid * resolutionIncrease,
-                         pos.z / maxGrid * resolutionIncrease);
+                         pos.x * maxGrid * resolutionIncrease + velX,
+                         pos.y * maxGrid * resolutionIncrease + velY,
+                         pos.z * maxGrid * resolutionIncrease + velZ);
 
 
     float edgeFactor = 1.0f - cloudCoverage;
@@ -660,7 +686,12 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
     float lightStepSize = 0.0f;
     float3 normPos = make_float3(pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
     float distanceFieldValueQw = 0.0f;
+    //float distanceFieldValueQr = 0.0f;
+
     float t = 0.0f;
+
+    
+
 
     while (1)
     {
@@ -669,38 +700,44 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
         const float uniformRand = (rSeed & 0xFFFF) / 65535.0f;
         lightStepSize += (uniformRand - 0.5f) * data.rayRandomOffset * lightStepSize * 0.5f;
 
-
         const float cloudCoverage = calculateCloudCoverage(pos, data);
+        //float rainCoverage = calculateRainCoverage(pos, data); Ignoring rain for now since it does not add much and is much slower
 
-        if (cloudCoverage > 0.0001f)
-        {
-            // Maybe if we want to erode, but that seems not needed and unnecessary expensive
-            const float cloudDens = calculateDensity(pos, data, cloudCoverage);
+        // Maybe if we want to erode, but that seems not needed and unnecessary expensive
+        const float cloudDens = cloudCoverage > 0.0001f ? calculateDensity(pos, data, cloudCoverage) : 0.0f;
 
-            density += cloudDens * lightStepSize * data.voxelSize;
-            if (density >= 4.0f) break;  // Full opacity, dont need to trace anymore
+        density += (cloudDens) * lightStepSize * data.voxelSize;
+        if (density >= 4.0f) break;  // Full opacity, dont need to trace anymore
 
-            //if (blockIdx.x * blockDim.x + threadIdx.x == 0 && blockIdx.y * blockDim.y + threadIdx.y == 0)
-            //{
-            //    printf("t %f, cloudCoverage %f, cloudDens %f, density %f, distanceFieldValueQw %f\n ",
-            //           t,
-            //           cloudCoverage,
-            //           cloudDens,
-            //           density,
-            //           distanceFieldValueQw);
-            //}
-        }
-        
 
         pos = pos + lightDir * lightStepSize;
         normPos = make_float3(pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
         t += lightStepSize;
 
+        //if (blockIdx.x * blockDim.x + threadIdx.x == 0 && blockIdx.y * blockDim.y + threadIdx.y == 0)
+        //{
+        //    printf("x %f y %f z %f, t %f, cloudCoverage %f, cloudDens %f, density %f, DFQw %f, DFQr %f\n ",
+        //           pos.x,
+        //           pos.y,
+        //           pos.z,
+        //           t,
+        //           cloudCoverage,
+        //           cloudDens,
+        //           density,
+        //           distanceFieldValueQw,
+        //           0.0f);
+        //}
+
         // Get value on distance field creating for faster lookup, skipping empty air
         // We loop until distance to nearest cloud becomes too small and start normal stepping again
-        while (!isOutside(pos.x, pos.y, pos.z) &&
-               (distanceFieldValueQw = tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z)) > 1)
+        while (!isOutside(pos.x, pos.y, pos.z))
         {
+            distanceFieldValueQw = tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z);
+            //distanceFieldValueQr = tex3D<float>(data.SDFTextureQr, normPos.x, normPos.y, normPos.z);
+            //const float closest = fminf(distanceFieldValueQw, distanceFieldValueQr);
+
+            if (distanceFieldValueQw <= lightStepSize) break;
+
             float distance = fmaxf(distanceFieldValueQw, lightStepSize);
             t += distance;
             pos = pos + lightDir * distance;
@@ -708,7 +745,6 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
         }
 
         if (isOutside(pos.x, pos.y, pos.z)) break;
-
     }
 
     return density;

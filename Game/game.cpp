@@ -84,11 +84,11 @@ void game::Initialize()
 	simThread = std::thread([this]() {
 
 		// Initialize deltatime at about 1 ms or larger
-	auto time = std::chrono::high_resolution_clock::now();
-	std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	std::chrono::nanoseconds timeTaken = std::chrono::high_resolution_clock::now() - time;
-	float accumulator = 0.0f;
-	const float fixedDt = 1.0f / 30.0f; // Fps we want to target
+		auto time = std::chrono::high_resolution_clock::now();
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		float accumulator = 0.0f;
+		const float fixedDt = 1.0f / 15.0f; // Fps we want to target
+		auto prevTime = std::chrono::high_resolution_clock::now();
 
 		while (m_running)
 		{
@@ -97,32 +97,30 @@ void game::Initialize()
 			{
 				// Calculate deltatime based on time taken for previous update
 				auto ctime = std::chrono::high_resolution_clock::now();
-				float dt = (float)((double)std::chrono::duration_cast<std::chrono::microseconds>(timeTaken).count() / 1000000.0);
+				float dt = std::chrono::duration<float>(ctime - prevTime).count();
+				prevTime = ctime;
 				dt = std::min(dt, maxDeltaTimeSimulation);
+
 				accumulator += dt;
 
-				if (accumulator >= fixedDt)
-				{
-					while (accumulator >= fixedDt)
-					{
-						m_envGPUObj->updateGPU(fixedDt, speed);
-						accumulator -= fixedDt;
-					}
-				}
-				else
-				{
-					// Sleep to increase dt, else it will round to 0, meaning accumulator will never add up
-					std::this_thread::sleep_for(std::chrono::milliseconds(1));
-				}
+				accumulator = std::min(accumulator, fixedDt * 5.0f); // Make sure accumulator does not stack up higher and higher
 
-				timeTaken = std::chrono::high_resolution_clock::now() - ctime;
+				// Make sure the simulation does not run faster than it needs to be
+				while (accumulator >= fixedDt)
+				{
+					// If slow, pass the current dt to speed up the simulation to real time. 
+					const float passedDt = std::min(fixedDt, dt);
+					m_envGPUObj->updateGPU(passedDt, speed);
+					accumulator -= passedDt;
+				}
 			}
 			else
 			{
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
-				accumulator = fixedDt;
-				timeTaken = std::chrono::nanoseconds(0);
+				accumulator = 0.0f;
 			}
+
+			// Sleep to increase dt, else it will round to 0, meaning accumulator will never add up
+			std::this_thread::sleep_for(std::chrono::microseconds(100));
 		}
 		}
 	);

@@ -689,33 +689,41 @@ void editor::editModeParams()
 			static float multipleScattering = 1.0f;
 			static float rayRandomOffset = 0.05f;
 			static float sunStrength = 40.0f;
+			static float sunDir[3] = { 1,1,1 };
+			static float sunColor[3] = { 1, 1, 1 };
 
 			static int octaves = 6;
 			static int gridSize = 2;
 			static float lacunarity = 2.0f;
 
+			ImGui::Text("Texture settings");
 			ImGui::SliderInt("octaves", &octaves, 1, 10);
 			ImGui::SliderInt("gridSize", &gridSize, 1, 100);
 			ImGui::SliderFloat("lacunarity", &lacunarity, 1.0f, 32.0f);
-
-
-			if (ImGui::SliderFloat("NoiseReduction", &noiseReduction, 0.0f, 5.0f)) changed = true;
-			if (ImGui::SliderFloat("noiseCutoff", &noiseCutoff, 0.0f, 1.0f)) changed = true;
-			if (ImGui::SliderFloat("multipleScattering", &multipleScattering, 0.0f, 1.0f)) changed = true;
-			if (ImGui::SliderFloat("rayRandomOffset", &rayRandomOffset, 0.0f, 1.0f)) changed = true;
-			if (ImGui::SliderFloat("Sun Strength", &sunStrength, 1.0f, 255.0f)) changed = true;
-
-
-			if (changed)
-			{
-				Game.cudaRenderer().setExtraRenderInfo(noiseReduction, noiseCutoff, multipleScattering, rayRandomOffset, sunStrength);
-			}
-
 
 			if (ImGui::Button("Generate Noise"))
 			{
 				Game.cudaRenderer().setNoiseTexture(octaves, gridSize, lacunarity);
 			}
+
+			ImGui::Separator();
+
+			ImGui::Text("Visual Settings");
+			if (ImGui::SliderFloat("NoiseReduction", &noiseReduction, 0.0f, 5.0f)) changed = true;
+			if (ImGui::SliderFloat("noiseCutoff", &noiseCutoff, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("multipleScattering", &multipleScattering, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("rayRandomOffset", &rayRandomOffset, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("Sun Strength", &sunStrength, 1.0f, 255.0f)) changed = true;
+			if (ImGui::SliderFloat3("Sun Direction", sunDir, 0.0f, 1.0f)) changed = true;
+			if (ImGui::ColorEdit3("Sun Color", sunColor)) changed = true;
+
+
+			if (changed)
+			{
+				Game.cudaRenderer().setExtraRenderInfo(noiseReduction, noiseCutoff, multipleScattering, rayRandomOffset, sunStrength, sunDir, sunColor);
+			}
+
+
 
 			ImGui::TreePop();
 		}
