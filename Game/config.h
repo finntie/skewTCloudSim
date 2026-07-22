@@ -4,9 +4,9 @@
 //Do we want to use the GPU? (CPU is very unstable if not working at all atm)
 #define USE_GPU 1
 
-#define GRIDSIZESKYX 200
+#define GRIDSIZESKYX 64
 #define GRIDSIZESKYY 64
-#define GRIDSIZESKYZ 200
+#define GRIDSIZESKYZ 64
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY * GRIDSIZESKYZ)
 #define GRIDSIZEGROUND (GRIDSIZESKYX * GRIDSIZESKYZ)

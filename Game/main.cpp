@@ -17,7 +17,7 @@ int main(int, char**)
     Engine.Initialize();
      
     //Create systems
-    Engine.ECS().CreateSystem<Renderer>();
+    //Engine.ECS().CreateSystem<Renderer>(); <-- bee renderer
     Engine.ECS().CreateSystem<gameSystem>();
    
     //Quick setup of camera and light

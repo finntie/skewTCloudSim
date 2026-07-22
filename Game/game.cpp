@@ -3,6 +3,7 @@
 #include "game.h"
 
 //Engine
+#include "platform/cuda/cuda_render_gl.h"
 #include "readTable.h"
 #include "environment.h"
 #include "editor.h"
@@ -44,6 +45,7 @@ game::~game()
 	delete m_editorObj;
 	delete m_environmentObj;
 	delete m_readTableObj;
+	delete m_cudaRenderObj;
 }
 
 void game::shutdown()
@@ -54,10 +56,13 @@ void game::shutdown()
 	{
 		simThread.join();
 	}
+
+	m_cudaRenderObj->cleanUp();
 }
 
 void game::Initialize()
 {
+	m_cudaRenderObj = new CudaRender();
 	m_readTableObj = new readTable();
 #if USE_GPU
 	m_envGPUObj = new environmentGPU();
@@ -149,6 +154,13 @@ void game::Update(float dt)
 	m_environmentObj->Update(dt, speed);
 #endif
 }
+
+
+void game::Render()
+{
+	if (m_cudaRenderObj) m_cudaRenderObj->display();
+}
+
 
 bool game::playSettings(float& speed)
 {

@@ -1,7 +1,7 @@
 #pragma once
 
 
-
+class CudaRender;
 class environment;
 class editor;
 class readTable;
@@ -23,8 +23,11 @@ public:
 
 	void Update(float dt);
 
+	void Render();
+
 	bool playSettings(float& speed);
 
+	CudaRender& cudaRenderer() { return *m_cudaRenderObj; }
 	environment& Environment() { return *m_environmentObj; }
 	readTable& ReadTable() { return *m_readTableObj; }
 	editor& Editor() { return *m_editorObj; }
@@ -36,6 +39,7 @@ public:
 	skewTFile& SkewTFile() { return *m_skewTFileObj; }
 private:
 
+	CudaRender* m_cudaRenderObj = nullptr;
 	environment* m_environmentObj = nullptr;
 	readTable* m_readTableObj = nullptr;
 	editor* m_editorObj = nullptr;

@@ -1316,6 +1316,22 @@ void skewTMaker::confirmSkewT()
 
 	Game.ReadTable().initEnvironment();
 
+	// Reset camera angle
+	for (const auto& [entity, camera, transform] : bee::Engine.ECS().Registry.view<bee::Camera, bee::Transform>().each())
+	{
+		//Quats for roll and pitch to 45 and -45
+		glm::quat qRoll = glm::angleAxis(glm::radians(45.0f), glm::vec3(0, 1, 0));
+		glm::quat qPitch = glm::angleAxis(glm::radians(-45.0f), glm::vec3(1, 0, 0));
+		//Combine them
+		glm::quat InputRotation = qRoll * qPitch;
+		//Set camera rotation
+		transform.SetRotation(InputRotation);
+		// Offset location based on size
+		glm::vec3 middle = glm::vec3(float(GRIDSIZESKYX) * 0.5f, float(GRIDSIZESKYY) * 0.5f, float(GRIDSIZESKYZ) * 0.5f);
+		glm::vec3 dir = InputRotation * glm::vec3(0, 0, -1) * -1.0f;
+		transform.SetTranslation(middle + dir * float(GRIDSIZESKYX) * 2.0f); // Offset by distance of 2x gridsizeX towards negative direction
+	}
+
 	m_skewTConfirmed = true;
 	doneMakingSkewT = true;
 }
@@ -1461,7 +1477,7 @@ void skewTMaker::drawDryAndMoist()
 			glm::vec2 coords = convertToPlottingCoordinates(temps[j], pressureCanvas[j], true);
 			glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], pressureCanvas[j - 1], true);
 
-			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, 0, -coords.y), glm::vec3(coordsPrev.x, 0, -coordsPrev.y), bee::Colors::Black);
+			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, 0, -coords.y), glm::vec3(coordsPrev.x, 0, -coordsPrev.y), bee::Colors::Grey);
 		}
 
 		//Moist adiabatic at LCL
@@ -1477,7 +1493,7 @@ void skewTMaker::drawDryAndMoist()
 				glm::vec2 coords = convertToPlottingCoordinates(temps[j], pressureCanvas[j], true);
 				glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], pressureCanvas[j - 1], true);
 
-				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, 0, -coords.y), glm::vec3(coordsPrev.x, 0, -coordsPrev.y), bee::Colors::Black);
+				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, 0, -coords.y), glm::vec3(coordsPrev.x, 0, -coordsPrev.y), bee::Colors::Grey);
 			}
 		}
 	}

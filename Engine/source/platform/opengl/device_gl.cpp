@@ -15,6 +15,7 @@ static void ErrorCallback(int, const char* description) { fputs(description, std
 static void ResizeCallBack(GLFWwindow*, int width, int height) 
 {
     bee::Engine.Device().setSize(width, height); 
+
     Engine.ECS().GetSystem<Renderer>().setRenderSize(width, height);
 }
 
@@ -67,8 +68,8 @@ Device::Device()
     }
     else
     {
-        m_width = 1280;
-        m_height = 720;
+        m_width = 1920;
+        m_height = 1080;
         m_window = glfwCreateWindow(m_width, m_height, "BEE", nullptr, nullptr);
     }
 

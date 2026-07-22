@@ -53,9 +53,11 @@
   </ImportGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <CudaCompile>
-      <GenerateRelocatableDeviceCode>false</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
       <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120
 </CodeGeneration>
+      <GenerateLineInfo>true</GenerateLineInfo>
+      <FastMath>true</FastMath>
     </CudaCompile>
     <CudaLink>
       <AdditionalLibraryDirectories>$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
@@ -90,6 +92,9 @@
   </ItemDefinitionGroup>
   <!-- Shared -->
   <ItemGroup>
+    <ClInclude Include="include\math\cudaMath.cuh" />
+    <ClInclude Include="include\platform\cuda\cuda_render.cuh" />
+    <ClInclude Include="include\platform\cuda\cuda_render_gl.h" />
     <ClInclude Include="external\clipper\include\clipper2\clipper.core.h" />
     <ClInclude Include="external\clipper\include\clipper2\clipper.engine.h" />
     <ClInclude Include="external\clipper\include\clipper2\clipper.export.h" />
@@ -97,6 +102,7 @@
     <ClInclude Include="external\clipper\include\clipper2\clipper.minkowski.h" />
     <ClInclude Include="external\clipper\include\clipper2\clipper.offset.h" />
     <ClInclude Include="external\clipper\include\clipper2\clipper.rectclip.h" />
+    <ClCompile Include="source\platform\cuda\cuda_render_gl.cpp" />
     <ClCompile Include="external\clipper\src\clipper.engine.cpp" />
     <ClCompile Include="external\clipper\src\clipper.offset.cpp" />
     <ClCompile Include="external\clipper\src\clipper.rectclip.cpp" />
@@ -156,6 +162,7 @@
     <ClInclude Include="include\physics\jolt_physics_system.hpp" />
     <ClInclude Include="include\physics\physics_components.hpp" />
     <ClInclude Include="include\physics\world.hpp" />
+    <ClInclude Include="include\platform\cuda\texture_noise.cuh" />
     <ClInclude Include="include\platform\opengl\draw_image.hpp" />
     <ClInclude Include="include\rendering\colors.hpp" />
     <ClInclude Include="include\rendering\debug_render.hpp" />
@@ -203,6 +210,7 @@
     <ClCompile Include="source\tools\profiler.cpp" />
     <ClCompile Include="source\tools\thread_pool.cpp" />
     <ClCompile Include="source\tools\tools.cpp" />
+    <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="external\entt\natvis\entt\config.natvis" />
@@ -256,6 +264,12 @@
     <None Include="properties\bee_release.props" />
     <None Include="properties\game.props" />
     <None Include="properties\game_pc.props" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="bee.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="source\platform\cuda\cuda_render.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

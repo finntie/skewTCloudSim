@@ -11,6 +11,9 @@
 #include "dataClass.cuh"
 #include "utils.cuh"
 
+#include "platform/cuda/cuda_render_gl.h"
+
+
 #if USE_GPU
 #include "environment.cuh"
 #include "kernelMaths.cuh"
@@ -97,7 +100,7 @@ void editor::setColors()
 	colorScheme.addColor("density", 1.225f, bee::Colors::Pink + glm::vec4(0, 0.8f, 0, 0));
 }
 
-void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressures)
+void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressures, void* stream)
 {
 	//Init skewTer
 	{
@@ -106,7 +109,7 @@ void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, floa
 		float* ps = new float[GRIDSIZESKYY];
 
 #if USE_GPU
-		cudaMemcpy(ps, pressures, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpyAsync(ps, pressures, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 #else
 		memcpy(ps, pressures, GRIDSIZESKYY * sizeof(float));
 #endif
@@ -124,9 +127,9 @@ void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, floa
 	}
 
 #if USE_GPU
-	cudaMemcpy(m_envData->m_envTemp, isentropicTemps, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_envVapor, isentropicVapor, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_envPressure, pressures, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(m_envData->m_envTemp, isentropicTemps, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_envVapor, isentropicVapor, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_envPressure, pressures, GRIDSIZESKYY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 
 #else
 	memcpy(m_envData->m_envTemp, isentropicTemps, GRIDSIZESKYY * sizeof(float));
@@ -173,19 +176,19 @@ void editor::viewData()
 	resetValues();
 }
 
-void editor::setDebugValueNum(const float* array, const int num)
+void editor::setDebugValueNum(const float* array, const int num, void* stream)
 {
 #if USE_GPU
 	switch (num)
 	{
 	case 0:
-		cudaMemcpy(m_envData->m_debugArray0, array, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpyAsync(m_envData->m_debugArray0, array, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 		break;
 	case 1:
-		cudaMemcpy(m_envData->m_debugArray1, array, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpyAsync(m_envData->m_debugArray1, array, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 		break;
 	case 2:
-		cudaMemcpy(m_envData->m_debugArray2, array, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpyAsync(m_envData->m_debugArray2, array, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 		break;
 	default:
 		break;
@@ -209,7 +212,7 @@ void editor::setDebugValueNum(const float* array, const int num)
 #endif
 }
 
-void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps)
+void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps, void* stream)
 {
 #if USE_GPU
 
@@ -219,36 +222,36 @@ void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps
 	auto* ground = static_cast<environmentGPU::gridDataGroundGPU*>(_ground);
 
 	//Set sky values.
-	cudaMemcpy(m_envData->m_envView.potTemp, sky->potTemp, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_envView.Qv, sky->Qv, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_envView.Qw, sky->Qw, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_envView.Qc, sky->Qc, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_envView.Qr, sky->Qr, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_envView.Qs, sky->Qs, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_envView.Qi, sky->Qi, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(m_envData->m_envView.potTemp, sky->potTemp, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_envView.Qv, sky->Qv, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_envView.Qw, sky->Qw, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_envView.Qc, sky->Qc, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_envView.Qr, sky->Qr, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_envView.Qs, sky->Qs, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_envView.Qi, sky->Qi, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 	
 	static float velX[GRIDSIZESKY];
 	static float velY[GRIDSIZESKY];
 	static float velZ[GRIDSIZESKY];
-	cudaMemcpy(velX, sky->velfieldX, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(velY, sky->velfieldY, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(velZ, sky->velfieldZ, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(velX, sky->velfieldX, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(velY, sky->velfieldY, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(velZ, sky->velfieldZ, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 	for (int i = 0; i < GRIDSIZESKY; i++)
 	{
 		m_envData->m_envView.velField[i] = { velX[i], velY[i], velZ[i]};
 	}
 	//Set pressure
-	cudaMemcpy(m_envData->m_envView.pressure, _ps, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(m_envData->m_envView.pressure, _ps, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 
 	//Set Ground values	
-	cudaMemcpy(m_envData->m_groundView.T, ground->T, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_groundView.Qrs, ground->Qrs, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_groundView.Qgr, ground->Qgr, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_groundView.Qgs, ground->Qgs, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_groundView.Qgi, ground->Qgi, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_groundView.P, ground->P, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_groundView.t, ground->t, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(m_envData->m_groundHeight, _groundHeight, GRIDSIZEGROUND * sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(m_envData->m_groundView.T, ground->T, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_groundView.Qrs, ground->Qrs, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_groundView.Qgr, ground->Qgr, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_groundView.Qgs, ground->Qgs, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_groundView.Qgi, ground->Qgi, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_groundView.P, ground->P, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_groundView.t, ground->t, GRIDSIZEGROUND * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_groundHeight, _groundHeight, GRIDSIZEGROUND * sizeof(int), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 #else
 	_sky;
 	_ground;
@@ -323,6 +326,7 @@ void editor::cameraControl()
 
 			glm::vec3 forward = transform.GetRotation() * glm::vec3(0, 0, -1) * cameraSpeed;
 			glm::vec3 right = transform.GetRotation() * glm::vec3(1, 0, 0) * cameraSpeed;
+			glm::vec3 up = transform.GetRotation() * glm::vec3(0, 1, 0) * cameraSpeed;
 
 			//Using keys
 			if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::W))
@@ -340,6 +344,14 @@ void editor::cameraControl()
 			if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::D))
 			{
 				transform.SetTranslation(transform.GetTranslation() + right * m_deltatime);
+			}
+			if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::Q))
+			{
+				transform.SetTranslation(transform.GetTranslation() - up * m_deltatime);
+			}
+			if (bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::E))
+			{
+				transform.SetTranslation(transform.GetTranslation() + up * m_deltatime);
 			}
 
 			//Using mouse
@@ -383,6 +395,7 @@ void editor::cameraControl()
 				//Apply previous roll and pitch
 				SaveRoll = SaveRoll + roll;
 				SavePitch = SavePitch + pitch;
+
 
 				if (SavePitch > 89.9f) SavePitch = 89.9f;
 				if (SavePitch < -89.9f) SavePitch = -89.9f;
@@ -667,6 +680,45 @@ void editor::editModeParams()
 
 		ImGui::SliderFloat("Simulation Speed", &m_simulationSpeed, 0.1f, 100.0f);
 		if (ImGui::Button("Reset Speed")) m_simulationSpeed = 1.0f;
+
+		if (ImGui::TreeNode("Render Info"))
+		{
+			bool changed = false;
+			static float noiseReduction = 0.45f;
+			static float noiseCutoff = 0.05f;
+			static float multipleScattering = 1.0f;
+			static float rayRandomOffset = 0.05f;
+			static float sunStrength = 40.0f;
+
+			static int octaves = 6;
+			static int gridSize = 2;
+			static float lacunarity = 2.0f;
+
+			ImGui::SliderInt("octaves", &octaves, 1, 10);
+			ImGui::SliderInt("gridSize", &gridSize, 1, 100);
+			ImGui::SliderFloat("lacunarity", &lacunarity, 1.0f, 32.0f);
+
+
+			if (ImGui::SliderFloat("NoiseReduction", &noiseReduction, 0.0f, 5.0f)) changed = true;
+			if (ImGui::SliderFloat("noiseCutoff", &noiseCutoff, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("multipleScattering", &multipleScattering, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("rayRandomOffset", &rayRandomOffset, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("Sun Strength", &sunStrength, 1.0f, 255.0f)) changed = true;
+
+
+			if (changed)
+			{
+				Game.cudaRenderer().setExtraRenderInfo(noiseReduction, noiseCutoff, multipleScattering, rayRandomOffset, sunStrength);
+			}
+
+
+			if (ImGui::Button("Generate Noise"))
+			{
+				Game.cudaRenderer().setNoiseTexture(octaves, gridSize, lacunarity);
+			}
+
+			ImGui::TreePop();
+		}
 
 		if (ImGui::TreeNode("Diurnal Cycle"))
 		{
@@ -1021,12 +1073,12 @@ void editor::dataClassView()
 void editor::viewBackground()
 {
 	//Set background color based on time;
-	const float relativeTime = std::clamp((m_time / 3600 - m_hourOfSunrise) / m_dayLightDuration, 0.0f, 1.0f);
-	const float multiplier = std::sin(Constants::PI * relativeTime) + 0.2f;
-	bee::Engine.ECS().GetSystem<bee::Renderer>().setBackGroundColor(
-		m_backGroundColor[0] * multiplier,
-		m_backGroundColor[1] * multiplier,
-		m_backGroundColor[2] * multiplier);
+	//const float relativeTime = std::clamp((m_time / 3600 - m_hourOfSunrise) / m_dayLightDuration, 0.0f, 1.0f);
+	//const float multiplier = std::sin(Constants::PI * relativeTime) + 0.2f;
+	//bee::Engine.ECS().GetSystem<bee::Renderer>().setBackGroundColor(
+	//	m_backGroundColor[0] * multiplier,
+	//	m_backGroundColor[1] * multiplier,
+	//	m_backGroundColor[2] * multiplier);
 }
 
 void editor::viewSky()

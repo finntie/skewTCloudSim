@@ -1,0 +1,723 @@
+#include "platform/cuda/cuda_render.cuh"
+#include "platform/cuda/cuda_render_gl.h"
+#include "platform/cuda/texture_noise.cuh"
+
+
+#include <cuda_runtime.h>
+#include <cuda_texture_types.h>
+#include <curand_kernel.h>
+#include "math/cudaMath.cuh"
+
+#include <atomic>
+
+
+
+// view Matrix
+__constant__ float3x4 invView; 
+__constant__ float3 gridMin;
+__constant__ float3 gridMax;
+
+// Stream
+cudaStream_t renderStream;
+
+struct Ray
+{
+    float3 O{};
+    float3 D{};
+    float3 rD{};
+};
+
+
+__inline__ __device__ bool isOutside(float x, float y, float z)
+{
+    return (x + 1 > gridMax.x) | (x < gridMin.x) | 
+            (y + 1 > gridMax.y) | (y < gridMin.y) | 
+            (z + 1 > gridMax.z) |(z < gridMin.z);
+}
+
+void initStream() 
+{ 
+    int leastPriority, greatestPriority;
+    cudaDeviceGetStreamPriorityRange(&leastPriority, &greatestPriority);
+    cudaStreamCreateWithPriority(&renderStream, cudaStreamNonBlocking, leastPriority); 
+}
+
+cudaStream_t getStream() 
+{ 
+    return renderStream; 
+}
+
+void initConstants(const float* invViewMatrix, size_t sizeViewMat, float3 _gridMin, float3 _gridMax)
+{
+    if (invViewMatrix) cudaMemcpyToSymbol(invView, invViewMatrix, sizeViewMat);
+    cudaMemcpyToSymbol(gridMin, &_gridMin, sizeof(float3));
+    cudaMemcpyToSymbol(gridMax, &_gridMax, sizeof(float3));
+}
+
+void fillSDF(glm::ivec3 gridSize, float* parameter, void* textureStorage, float* SDFClosestDist, int* SDFClosestTarget, dim3 gridDim, dim3 blockDim, void* stream)
+{
+    // Fill Signed Distance Field using Jump Flood Algorithm
+    const float invBlockSpreadDepth = 1.0f / (float(gridDim.z) / float(gridSize.z));
+    int3 size = make_int3(gridSize.x, gridSize.y, gridSize.z);
+
+    // Initialize the seeds (current indices) making sure that at a target the index is correctly set.
+    initJFASeeds<<<gridDim, blockDim, 0, static_cast<cudaStream_t>(stream)>>>(size,
+                                                                              parameter,
+                                                                              SDFClosestDist,
+                                                                              SDFClosestTarget,
+                                                                              invBlockSpreadDepth);
+
+    int3 offset = make_int3(gridSize.x, gridSize.y, gridSize.z);
+
+    // Update signed distance field by reducing offset by half
+    // We will check each neighbour on all axis with this offset
+    // If this is a target, we check distance to it and update closest distance
+    // We also check the data of this neighbour to see if they have a closer target to us
+    while (true)
+    {
+        // Half offset
+        offset.x = int(ceilf(float(offset.x) / 2.0f));
+        offset.y = int(ceilf(float(offset.y) / 2.0f));
+        offset.z = int(ceilf(float(offset.z) / 2.0f));
+
+        JFA<<<gridDim, blockDim, 0, static_cast<cudaStream_t>(stream)>>>(size,
+                                                                         parameter,
+                                                                         SDFClosestDist,
+                                                                         SDFClosestTarget,
+                                                                         offset,
+                                                                         invBlockSpreadDepth);
+
+        if (offset.x <= 1 && offset.y <= 1 && offset.z <= 1) break;
+    }
+
+    cudaMemcpy3DParms cpyParams{};
+    cpyParams.srcPtr = make_cudaPitchedPtr(SDFClosestDist, size.x * sizeof(float), size.x, size.y);
+    cpyParams.dstArray = static_cast<cudaArray_t>(textureStorage);
+    cpyParams.extent = make_cudaExtent(size.x, size.y, size.z);
+    cpyParams.kind = cudaMemcpyDeviceToDevice;
+    cudaMemcpy3DAsync(&cpyParams, static_cast<cudaStream_t>(stream));
+}
+
+__global__ void initJFASeeds(int3 size,
+                             float* density,
+                             float* SDFClosestDist,
+                             int* SDFClosestTarget,
+                             const float invBlockSpread)
+{
+    const int x = threadIdx.x + blockDim.x * blockIdx.x;
+    const int y = threadIdx.y + blockDim.y * blockIdx.y;
+    int z = int(float(blockIdx.z) * invBlockSpread);  // Get z index from spread and block index on z dimension.
+
+    if (x >= size.x || y >= size.y || z >= size.z) return;
+    const float DENSITYTHRESHOLD = 0.0001f;
+
+
+
+    for (; z < fminf(size.z, ceilf(float(blockIdx.z + 1) * invBlockSpread)); z++)
+    {
+        const int idx = x + y * size.x + z * size.x * size.y;
+
+        SDFClosestDist[idx] = 1e6f;
+        SDFClosestTarget[idx] = -1;
+
+        if (density[idx] > DENSITYTHRESHOLD)
+        {
+            SDFClosestDist[idx] = 0.0f;
+            SDFClosestTarget[idx] = idx;
+        }
+    }
+}
+
+__global__ void JFA(int3 size, float* density, float* SDFClosestDist, int* SDFClosestTarget, const int3 offset, const float invBlockSpread)
+{ 
+    const int x = threadIdx.x + blockDim.x * blockIdx.x;
+    const int y = threadIdx.y + blockDim.y * blockIdx.y;
+    int z = int(float(blockIdx.z) * invBlockSpread);  // Get z index from spread and block index on z dimension.
+
+    if (x >= size.x || y >= size.y || z >= size.z) return;
+
+    const float DENSITYTHRESHOLD = 0.0001f;
+
+    // We just grab the Z for the next block index and loop until there
+    for (; z < fminf(size.z, ceilf(float(blockIdx.z + 1) * invBlockSpread)); z++)
+    {
+        const int idx = x + y * size.x + z * size.x * size.y;
+
+        float currentClosestDist = SDFClosestDist[idx] /** (float(fmaxf(size.x, fmaxf(size.y, size.z))))*/;
+        currentClosestDist *= currentClosestDist; // Square distance, making it faster to check
+        int closestTarget = -1;
+
+
+        // Loop over all neighbours
+        for (int zi = -offset.z + z; zi <= offset.z + z; zi += offset.z)
+        {
+            for (int yi = -offset.y + y; yi <= offset.y + y; yi += offset.y)
+            {
+                for (int xi = -offset.x + x; xi <= offset.x + x; xi += offset.x)
+                {
+                    if (xi < 0 || yi < 0 || zi < 0 || xi >= size.x || yi >= size.y || zi >= size.z) 
+                    {
+                        continue;
+                    }
+
+                    int nIdx = xi + yi * size.x + zi * size.x * size.y;
+                    const int nTarget = SDFClosestTarget[nIdx];
+                    
+                    // Check if its a target
+                    if (density[nIdx] > DENSITYTHRESHOLD)
+                    {
+                        // Calculate distance to target and save data if its closest
+                        const float dist = distanceSquared(make_float3(x, y, z), make_float3(xi, yi, zi));
+                        if (dist < currentClosestDist)
+                        {
+                            currentClosestDist = dist;
+                            closestTarget = nIdx;
+                        }
+                    }
+                    
+
+                    // If neighbour has a valid target already
+                    if (nTarget >= 0) 
+                    {
+                        const int xy = nTarget % (size.x * size.y);
+                        const float tx = xy % size.x;
+                        const float ty = (xy - tx) / size.x;
+                        const float tz = (nTarget - xy) / (size.x * size.y);
+
+                        // Compare against neighbour target
+                        float dist = distanceSquared(make_float3(x, y, z), make_float3(tx, ty, tz));
+                        if (dist < currentClosestDist)
+                        {
+                            currentClosestDist = dist;
+                            closestTarget = nTarget;
+                        }
+                    }
+
+                    //if (x == size.x / 2 && y == size.y / 2 && z == size.z / 2)
+                    //{
+                    //    printf("x %i y %i z %i, xi %i yi %i zi %i, nTarget %i, currentClosestDist %f, closestTarget, %i\n",
+                    //           x,
+                    //           y,
+                    //           z,
+                    //           xi,
+                    //           zi,
+                    //           yi,
+                    //           nTarget,
+                    //           currentClosestDist,
+                    //           closestTarget);
+                    //}
+                }
+            }
+        }
+
+        if (closestTarget != -1)
+        {
+            SDFClosestDist[idx] = sqrt(currentClosestDist)/* / (float(fmaxf(size.x, fmaxf(size.y, size.z))))*/; // We still have to root the distance
+            SDFClosestTarget[idx] = closestTarget;
+        }
+    }
+}
+
+
+void fillNoiseTexture(float* output,
+                      int resolution,
+                      int octaves,
+                      int _gridSize,
+                      float lacunarity, 
+                      unsigned long long seed)
+{
+    dim3 blockSize(8, 8, 4);
+    dim3 gridSize =
+        dim3(DivideUp(resolution, blockSize.x), DivideUp(resolution, blockSize.y), DivideUp(resolution, blockSize.z));
+
+
+    alligatorNoise<<<gridSize, blockSize, 0, renderStream>>>(output, resolution, _gridSize, seed, octaves, lacunarity, 0.5f);
+
+
+    //int increasingSamplePoints = samplePoints;
+    //float contribution = 1.0f;
+
+    //for (int i = 0; i < layers; i++)
+    //{
+
+    //    generateWorley<<<gridSize, blockSize, 0, renderStream>>>(output,
+    //                                                             resolution,
+    //                                                             increasingSamplePoints,
+    //                                                             contribution,
+    //                                                             seed);
+
+    //    // Increase amount of sample points per layer, creating for more texture, early return if sample points become too large
+    //    increasingSamplePoints = int(float(increasingSamplePoints) * increaseSamplePointsWithLayer);
+    //    contribution *= 0.5f;
+    //    if (increasingSamplePoints >= resolution) break;
+    //}
+    //combineWithPerlin<<<gridSize, blockSize, 0, renderStream>>>(output, resolution, seed);
+
+}
+
+void renderEnvironmentCUDA(dim3 gridSize,
+                           dim3 blockSize,
+                           unsigned int* dOutput,
+                           environmentData data,
+                           unsigned int width,
+                           unsigned int height)
+{
+    // Split up work
+    int pixelsPer = 64;
+    for (int i = 0; i < height; i += pixelsPer)
+    {
+        int h = std::min(pixelsPer, int(height) - i);
+        dim3 newGrid(DivideUp(width, blockSize.x), DivideUp(h, blockSize.y));
+        renderEnvironmentCUDAGPU<<<newGrid, blockSize, 0, renderStream>>>(dOutput, data, width, height, i);
+        cudaStreamSynchronize(renderStream); // Synchronize to give simulation time to also do their part
+    }
+
+}
+
+__global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
+                                         environmentData data,
+                                         unsigned int width,
+                                         unsigned int height,
+                                         float heightOffset)
+{
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y + heightOffset;
+
+    // Make sure its valid and within
+    if (x >= width || y >= height) return;
+
+    // Randomizer
+    curandState state;
+    curand_init(100, 0, 0, &state);
+    unsigned int rSeed = x + y * gridDim.x;
+
+    // Calculation of fov and how this would effect the focalLength
+    // With focalLength being the distance from the camera origin to the virtual image plane
+    // The further away the focalLenght is, the more zoomed in the image
+    float aspectRatio = float(width) / float(height);
+    float fov = 60.0f;
+    float focalLength = 1.0f / tanf(fov * 0.5f * 3.14159f / 180.0f);
+
+    // Set UV, ranging between -1 and 1
+    float u = ((float(x) / float(width)) * 2.0f - 1.0f) * aspectRatio;
+    float v = ((float(y) / float(height)) * 2.0f - 1.0f);
+
+    // Add a nice light direction
+    const float3 lightDir = normalize(make_float3(0.2f, 0.6f, 0.4f));
+    // Color the light
+    const float4 lightColor = make_float4(1.0f, 0.8f, 0.8f, 1.0f);
+    const float sunStrength = data.sunStrength;
+
+    // Create ray and set origin + direction
+    Ray mainR;
+    float4 Otemp = mul(invView, make_float4(0.0f, 0.0f, 0.0f, 1.0f));
+    mainR.O = make_float3(Otemp.x, Otemp.y, Otemp.z);
+    mainR.D = mul(invView, normalize(make_float3(u, v, -focalLength)));
+    mainR.rD = make_float3(mainR.D.x == 0.0f ? 0.0f : 1.0f / mainR.D.x,
+                           mainR.D.y == 0.0f ? 0.0f : 1.0f / mainR.D.y,
+                           mainR.D.z == 0.0f ? 0.0f : 1.0f / mainR.D.z);
+
+    float t = 0.0f;
+    float4 outputColor = make_float4(0.3f,//(float(x) / float(width)),
+                                     0.4f,//(float(y) / float(height)),
+                                     0.95f,//(float(x) / float(width)) * (float(y) / float(height)),
+                                     1.0f);
+    float4 cloudColor{};
+    float accumulatedDensity = 0.0f;
+    float accumulatedCoverage = 0.0f;
+    float lightAbsorption = 0.0f;
+
+
+    // -------------------------------------------------------------------------------------
+    // Code highly inspired from template IGAD version 3, IGAD/NHTV/UU - Jacco Bikker - 2006-2022
+    // -------------------------------------------------------------------------------------
+
+    // If ray is NOT in the grid
+    if (!(mainR.O.x >= gridMin.x && mainR.O.x <= gridMax.x && mainR.O.y >= gridMin.y && mainR.O.y <= gridMax.y &&
+          mainR.O.z >= gridMin.z && mainR.O.z <= gridMax.z))
+    {
+        t = intersectGrid(mainR.D, mainR.O, mainR.rD);
+        //if (t > 1e33f);  // Did not intersect grid at all
+    }
+
+    if (t < 1e33f)
+    {
+        // Convert reversed direction into 0 or 1
+        float3 stepSign =
+            (make_float3(-copysign(1.0f, mainR.D.x), -copysign(1.0f, mainR.D.y), -copysign(1.0f, mainR.D.z)) + 1.0f) * 0.5f;
+        // Step for direction with -1 meaning backwards and 1 forwards per axis.
+        float3 step = 1.0f - float3(stepSign) * 2.0f;
+        const float3 posInGrid = (mainR.O + (t + 0.00005f) * mainR.D);  // Position in grid
+        const float3 gridPlanes = (ceil3f(posInGrid) - stepSign);  // Next boundary intersection we will intersect using ceil
+        // Set starting position, making sure to clamp within grid
+        float3 pos = make_float3(clampf(posInGrid.x, gridMin.x, gridMax.x - 1),
+                                 clampf(posInGrid.y, gridMin.y, gridMax.y - 1),
+                                 clampf(posInGrid.z, gridMin.z, gridMax.z - 1));
+        // Normalized position
+        float3 normPos = make_float3(pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
+
+        // How much to step to cross 1 full cell
+        float3 tDelta = step * mainR.rD;
+        float3 tMax = (gridPlanes - mainR.O) * mainR.rD;  // Max distance to cross boundary of each axis
+
+
+        // Start tracing through the grid
+        const float3 invGridMax = make_float3(1.0f / gridMax.x, 1.0f / gridMax.y, 1.0f / gridMax.z);
+
+        float density = 0.0f;
+
+        float lightIntensity = 0.0f;
+
+
+        const float nearStepSize = 0.1f;
+        const float farStepSize = 0.25f;
+        const float stepAdjustmentDistance = distance(make_float3(0, 0, 0), make_float3(data.sizeX, data.sizeY, data.sizeZ));
+        const float startT = t;
+
+
+        while (1)
+        {
+            if (isOutside(pos.x, pos.y, pos.z)) break;
+
+
+            // Base stepsize on distance from camera
+            float stepSize = nearStepSize + ((farStepSize * (t - startT)) / stepAdjustmentDistance);
+
+            // Already compute distance to closest cloud
+            float distanceFieldValueQw = tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z);
+
+            // Randomize stepsize
+            rSeed = randomHash(unsigned(pos.x), unsigned(pos.y), unsigned(pos.z), rSeed);
+            const float uniformRand = (rSeed & 0xFFFF) / 65535.0f;
+            stepSize += (uniformRand - 0.5f) * data.rayRandomOffset * stepSize * 0.5f;
+
+
+            // Start of Marching
+            float cloudCoverage = calculateCloudCoverage(pos, data);
+
+            if (cloudCoverage > 0.0f)
+            {
+                // if (x == 0 && y == 0)
+                //{
+                //     printf("x %i y %i, t %f, cloudCoverage %f\n", x, y, t, cloudCoverage);
+                // }
+
+                // Add noise reduction
+                const float cloudDensity = calculateDensity(pos, data, cloudCoverage);
+
+                if (cloudDensity > 0.0f)
+                {
+                    lightAbsorption = 1 - exp(-accumulatedDensity);
+
+                    // Beer lambert function
+                    const float lightDirMarchDensity = lightMarch(pos, lightDir, data, stepSize);
+                    const float transmittance = exp(-lightDirMarchDensity);
+
+                    // Multiple scattering phase
+                    float msVolume = remap(cloudCoverage, 0.0f, 0.5f, 0.0f, 1.0f) * pow(transmittance, 0.5f); 
+
+                    // Forward and backward scattering
+                    const float primScattering = henyenGreenstein(dot(mainR.D, lightDir), 0.7f);
+                    const float secScattering = henyenGreenstein(dot(mainR.D, lightDir), -0.3f);
+
+                    // Add all scattering together
+                    const float directScattering = (transmittance * primScattering) + (msVolume * secScattering);
+
+                    //const float ambientScattering = data.multipleScatteringDepthPower * powf(1.0f - cloudDensity, 0.5f);
+
+                    const float totalLight = directScattering;
+
+                    accumulatedDensity += cloudDensity * stepSize * data.voxelSize;
+                    lightIntensity +=
+                        totalLight * cloudDensity * (1.0f - lightAbsorption) * sunStrength * stepSize * data.voxelSize; 
+
+                    accumulatedCoverage += cloudCoverage;
+                    //if (x == 0 && y == 0)
+                    //{
+                    //    printf(
+                    //        "x %i y %i, t %f, cloudDensity %f, cosSun %f msVolume %f, inCloudRelax %f, "
+                    //        "lightIntensity % f acumdDens % f lightDensity % f,directScat : % f, lightAbsorption: %f\n ",
+                    //        x,
+                    //        y,
+                    //        t,
+                    //        cloudDensity,
+                    //        1,//cosSunAngleRelaxed,
+                    //        msVolume,
+                    //        1,//innerCloudRelaxion,
+                    //        lightIntensity,
+                    //        accumulatedDensity,
+                    //        lightDirMarchDensity,
+                    //        directScattering,
+                    //        lightAbsorption);
+                    //}
+                    if (lightAbsorption >= 1 - 0.01f)
+                    {
+                        break;  // TODO: test out when cloud is full
+                    }
+                }
+            }
+
+            t += stepSize;
+            pos = pos + mainR.D * stepSize;
+            normPos = make_float3(pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
+
+            // Get value on distance field creating for faster lookup, skipping empty air
+            // We loop until distance to nearest cloud becomes too small and start normal stepping again
+            while (!isOutside(pos.x, pos.y, pos.z) &&
+                   (distanceFieldValueQw = tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z)) > 1.0f)
+            {
+                t += fmaxf(distanceFieldValueQw - 1.0f, stepSize);
+                pos = pos + mainR.D * fmaxf(distanceFieldValueQw - 0.5f, stepSize);
+                normPos = make_float3(pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
+            }
+
+
+            // if (tMax.x < tMax.y && tMax.x < tMax.z)  // If closest to x boundary
+            //{
+            //     t = tMax.x;
+            //     pos.x += step.x;
+            //     if (pos.x >= gridMax.x || pos.x < gridMin.x) break;
+            //     tMax.x += tDelta.x;
+            // }
+            // else if (tMax.y < tMax.z)  // y is closer than z
+            //{
+            //     t = tMax.y;
+            //     pos.y += step.y;
+            //     if (pos.y >= gridMax.y || pos.y < gridMin.y) break;
+            //     tMax.y += tDelta.y;
+            // }
+            // else  // z is closest
+            //{
+            //     t = tMax.z;
+            //     pos.z += step.z;
+            //     if (pos.z >= gridMax.z || pos.z < gridMin.z) break;
+            //     tMax.z += tDelta.z;
+            // }
+        }
+
+
+        cloudColor = make_float4(lightIntensity *  lightColor.x,
+                                 lightIntensity *  lightColor.y,
+                                 lightIntensity *  lightColor.z,
+                                 1.0f);
+
+        // toneMap
+
+        cloudColor.x = cloudColor.x / (cloudColor.x + 1.0f);
+        cloudColor.y = cloudColor.y / (cloudColor.y + 1.0f);
+        cloudColor.z = cloudColor.z / (cloudColor.z + 1.0f);
+
+
+        //cloudColor = make_float4(cloudDensity, cloudDensity, cloudDensity, 1.0f);
+
+
+    }
+
+
+    //float output = tex3D<float>(data.SDFTextureQw, float(x) / float(width), float(y) / float(height), 0.5f);
+    //output = clampf(output, 0.0f, 0.95f);
+    //outputColor = make_float4(output, output, output, 1.0f);
+
+    // Map density to opacity between 0 and 1
+    //const float opacity = 1.0f - expf(-accumulatedDensity);
+
+    outputColor = outputColor * (1.0f - lightAbsorption) + cloudColor * lightAbsorption;
+    outputColor = clamp4f(outputColor, 0.0f, 1.0f);
+
+
+    //if (x == 0 && y == 0)
+    //{
+    //    printf(
+    //        "x %i y %i, t %f, cloudColor x %f y %f z %f, outputColor  x %f y %f z %f, lightColor: x %f y %f z %f opacity %f "
+    //        "\n ",
+    //        x,
+    //        y,
+    //        t,
+    //        cloudColor.x,
+    //        cloudColor.y,
+    //        cloudColor.z,
+    //        outputColor.x,
+    //        outputColor.y,
+    //        outputColor.z,
+    //        lightColor.x,
+    //        lightColor.y,
+    //        lightColor.z,
+    //        opacity);
+    //}
+
+    unsigned int outputColorI = rgbaFloatToInt(outputColor);
+
+    dOutput[x + y * width] = outputColorI;
+}
+
+__device__ float intersectGrid(float3 dir, float3 origin, float3 recDir)
+{
+    // test if the ray intersects the cube
+
+    float3 gridBounds[2] = {gridMin, gridMax};
+
+    // Code from template IGAD version 3, IGAD/NHTV/UU - Jacco Bikker - 2006-2022
+    const int signx = dir.x < 0, signy = dir.y < 0, signz = dir.z < 0;
+    float tmin = (gridBounds[signx].x - origin.x) * recDir.x;
+    float tmax = (gridBounds[1 - signx].x - origin.x) * recDir.x;
+    const float tymin = (gridBounds[signy].y - origin.y) * recDir.y;
+    const float tymax = (gridBounds[1 - signy].y - origin.y) * recDir.y;
+    if (tmin > tymax || tymin > tmax) return 1e34f;
+    tmin = fmaxf(tmin, tymin), tmax = fminf(tmax, tymax);
+    const float tzmin = (gridBounds[signz].z - origin.z) * recDir.z;
+    const float tzmax = (gridBounds[1 - signz].z - origin.z) * recDir.z;
+    if (tmin > tzmax || tzmin > tmax) return 1e34f;
+    if ((tmin = fmaxf(tmin, tzmin)) > 0) return tmin;
+
+    return 1e34f;
+}
+
+
+
+
+
+__device__ float calculateCloudCoverage(float3& pos, environmentData& data)
+{
+    // const int ix = clampf(floorf(pos.x - gridMin.x), 0, data.sizeX - 1);
+    // const int iy = clampf(floorf(pos.y - gridMin.y), 0, data.sizeY - 1);
+    // const int iz = clampf(floorf(pos.z - gridMin.z), 0, data.sizeZ - 1);
+
+    // const int idx = ix + iy * data.sizeX + iz * data.sizeX * data.sizeY;
+
+    float output = 0.0f;
+
+    const float QW = tex3D<float>(data.QwTexture, pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
+
+    //
+
+    if (QW > 0.00001f)
+    {
+        // Min and Max in terms of scud, values above will be more obvious densities
+        const float minQW = 0.0001f;
+        const float maxQW = 0.005f; 
+        const float scudValue = 0.25f;
+
+
+        //output = clampf(powf(((log(QW * 100.0f) + 3) / 3.0f), 0.2f), 0.0f, 1.0f);
+        
+        //output = clampf((log10f(QW) + data.noiseCutoffValue) * data.noisePlateauValue, scudValue, 0.99f);
+        //// Values between 0.00001 and 0.001 will be mapped 0 to 1
+        output = clampf((logf(QW) - logf(minQW)) / (logf(maxQW) - logf(minQW)), 0.0f, 0.999f);
+
+        //output = clampf(3.825f + 0.39f * log(QW), 0.0f, 0.99f);
+
+
+
+        //if (blockIdx.x * blockDim.x + threadIdx.x == 0 && blockIdx.y * blockDim.y + threadIdx.y == 0)
+        //{
+        //    printf("pos: x %f, y %f, z %f, sizeX %i, sizeY %i, sizeZ %i, Cloud found: %f\n",
+        //           pos.x,
+        //           pos.y,
+        //           pos.z,
+        //           data.sizeX,
+        //           data.sizeY,
+        //           data.sizeZ,
+        //           QW);
+        //}
+    }
+
+    return output;
+}
+
+__device__ float calculateDensity(float3& pos,
+                                  environmentData& data,
+                                  const float cloudCoverage)
+{
+    float noise = 0.0f;
+
+    // Expensive texture lookup (higher resolution = more expensive)
+    // This resolution increase increases our coordinate and since our texture repeats, we essentially increase the amount
+    // of textures
+    const int maxGrid = fmaxf(gridMax.x, fmaxf(gridMax.y, gridMax.z));
+
+    const float resolutionIncrease = 64.0f;
+    noise = tex3D<float>(data.noiseTexture,
+                         pos.x / maxGrid * resolutionIncrease,
+                         pos.y / maxGrid * resolutionIncrease,
+                         pos.z / maxGrid * resolutionIncrease);
+
+
+    float edgeFactor = 1.0f - cloudCoverage;
+    float eroded = cloudCoverage - noise * edgeFactor * data.noiseReduction;
+    eroded = clampf(eroded, 0.0f, 1.0f);
+    //float value = clampf(pow(noise - (1.0f - cloudCoverage), data.noiseReduction), 0.0f, 1.0f);
+    //eroded = eroded >= data.noiseCutoffValue ? 1.0f : 0.0f; // Cut off at value and set remaining to 1
+    return eroded;
+}
+
+__device__ float lightMarch(float3 pos, const float3& lightDir, environmentData& data, float stepSize)
+{
+    // TODO: This can be precomputed every simulation update and put in texture
+
+    // Trace from position until we are out of the grid
+    unsigned int rSeed = 128;
+    float density = 0.0f;
+    float lightStepSize = 0.0f;
+    float3 normPos = make_float3(pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
+    float distanceFieldValueQw = 0.0f;
+    float t = 0.0f;
+
+    while (1)
+    {
+        lightStepSize = stepSize;
+        rSeed = randomHash(unsigned(pos.x), unsigned(pos.y), unsigned(pos.z), rSeed);
+        const float uniformRand = (rSeed & 0xFFFF) / 65535.0f;
+        lightStepSize += (uniformRand - 0.5f) * data.rayRandomOffset * lightStepSize * 0.5f;
+
+
+        const float cloudCoverage = calculateCloudCoverage(pos, data);
+
+        if (cloudCoverage > 0.0001f)
+        {
+            // Maybe if we want to erode, but that seems not needed and unnecessary expensive
+            const float cloudDens = calculateDensity(pos, data, cloudCoverage);
+
+            density += cloudDens * lightStepSize * data.voxelSize;
+            if (density >= 4.0f) break;  // Full opacity, dont need to trace anymore
+
+            //if (blockIdx.x * blockDim.x + threadIdx.x == 0 && blockIdx.y * blockDim.y + threadIdx.y == 0)
+            //{
+            //    printf("t %f, cloudCoverage %f, cloudDens %f, density %f, distanceFieldValueQw %f\n ",
+            //           t,
+            //           cloudCoverage,
+            //           cloudDens,
+            //           density,
+            //           distanceFieldValueQw);
+            //}
+        }
+        
+
+        pos = pos + lightDir * lightStepSize;
+        normPos = make_float3(pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
+        t += lightStepSize;
+
+        // Get value on distance field creating for faster lookup, skipping empty air
+        // We loop until distance to nearest cloud becomes too small and start normal stepping again
+        while (!isOutside(pos.x, pos.y, pos.z) &&
+               (distanceFieldValueQw = tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z)) > 1)
+        {
+            float distance = fmaxf(distanceFieldValueQw, lightStepSize);
+            t += distance;
+            pos = pos + lightDir * distance;
+            normPos = make_float3(pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
+        }
+
+        if (isOutside(pos.x, pos.y, pos.z)) break;
+
+    }
+
+    return density;
+}
+
+__device__ float henyenGreenstein(float inCosAngle, float inG) 
+{ 
+    float num = 1.0f - inG * inG;
+    float denom = 1.0f + inG * inG - 2.0f * inG * inCosAngle;
+    float rsqrtDenom = 1.0f / sqrt(denom);
+    return num * rsqrtDenom * rsqrtDenom * rsqrtDenom * (1.0f / (4.0f * 3.14159265359));
+}

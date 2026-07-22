@@ -18,7 +18,7 @@ public:
 	~editor();
 	void setColors();
 	//We also include m_pressures
-	void setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressure);
+	void setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressure, void* stream);
 
 	void update(float dt);
 	void panel();
@@ -32,8 +32,8 @@ public:
 	float getSpeed() { return m_simulationSpeed; }
 	bool changedGround() { return m_changedGround; }
 
-	void setDebugValueNum(const float* array, const int num);
-	void GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* ps);
+	void setDebugValueNum(const float* array, const int num, void* stream);
+	void GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* ps, void* stream);
 	void setTime(float sec) { m_time = sec; }
 	void setLongitude(float longitude) { m_longitude = longitude; }
 	void setDay(int day) { m_day = day; }
@@ -165,7 +165,7 @@ private:
 	glm::vec3 SaveMousePos{ 0.0f };
 	glm::vec2 Save2DPos{ 0.0f };
 	float roll = 0.0f, pitch = 0.0f;
-	float SaveRoll = 0.0f, SavePitch = 0.0f;
+	float SaveRoll = 45.0f, SavePitch = -45.0f;
 	float MouseWheel = 0;
 
 	//Diurnal cycle variables

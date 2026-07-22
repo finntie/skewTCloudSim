@@ -52,7 +52,10 @@ void gameSystem::Update(float dt)
 	//Game.ReadTable().debugDrawData();
 }
 
-void gameSystem::Render() {}
+void gameSystem::Render() 
+{
+	Game.Render();
+}
 
 // ImGui integration.
 std::string gameSystem::GetName() const { return Title; }
