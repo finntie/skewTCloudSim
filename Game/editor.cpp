@@ -685,7 +685,8 @@ void editor::editModeParams()
 		{
 			bool changed = false;
 			static float noiseReduction = 0.45f;
-			static float noiseCutoff = 0.05f;
+			static float maxQW = 0.005f;
+			static float minQW = 0.0001f;
 			static float multipleScattering = 1.0f;
 			static float rayRandomOffset = 0.05f;
 			static float sunStrength = 40.0f;
@@ -696,31 +697,40 @@ void editor::editModeParams()
 			static int gridSize = 2;
 			static float lacunarity = 2.0f;
 
-			ImGui::Text("Texture settings");
-			ImGui::SliderInt("octaves", &octaves, 1, 10);
-			ImGui::SliderInt("gridSize", &gridSize, 1, 100);
-			ImGui::SliderFloat("lacunarity", &lacunarity, 1.0f, 32.0f);
-
-			if (ImGui::Button("Generate Noise"))
+			if (ImGui::TreeNode("Noise Texture settings"))
 			{
-				Game.cudaRenderer().setNoiseTexture(octaves, gridSize, lacunarity);
+				ImGui::SliderInt("octaves", &octaves, 1, 10);
+				ImGui::SliderInt("gridSize", &gridSize, 1, 100);
+				ImGui::SliderFloat("lacunarity", &lacunarity, 1.0f, 32.0f);
+
+				if (ImGui::Button("Generate Noise"))
+				{
+					Game.cudaRenderer().setNoiseTexture(octaves, gridSize, lacunarity);
+				}
+				ImGui::TreePop();
 			}
 
 			ImGui::Separator();
 
-			ImGui::Text("Visual Settings");
-			if (ImGui::SliderFloat("NoiseReduction", &noiseReduction, 0.0f, 5.0f)) changed = true;
-			if (ImGui::SliderFloat("noiseCutoff", &noiseCutoff, 0.0f, 1.0f)) changed = true;
-			if (ImGui::SliderFloat("multipleScattering", &multipleScattering, 0.0f, 1.0f)) changed = true;
-			if (ImGui::SliderFloat("rayRandomOffset", &rayRandomOffset, 0.0f, 1.0f)) changed = true;
-			if (ImGui::SliderFloat("Sun Strength", &sunStrength, 1.0f, 255.0f)) changed = true;
-			if (ImGui::SliderFloat3("Sun Direction", sunDir, 0.0f, 1.0f)) changed = true;
-			if (ImGui::ColorEdit3("Sun Color", sunColor)) changed = true;
+			if (ImGui::TreeNode("Visual settings"))
+			{
+				if (ImGui::SliderFloat("NoiseReduction", &noiseReduction, 0.0f, 5.0f)) changed = true;
+				if (ImGui::SliderFloat("MinQw", &minQW, 0.0f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic)) changed = true;
+				if (ImGui::SliderFloat("MaxQw", &maxQW, 0.0f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic)) changed = true;
+				ImGui::Separator();
+				if (ImGui::SliderFloat("multipleScattering", &multipleScattering, 0.0f, 10.0f)) changed = true;
+				if (ImGui::SliderFloat("rayRandomOffset", &rayRandomOffset, 0.0f, 1.0f)) changed = true;
+				ImGui::Separator();
+				if (ImGui::SliderFloat("Sun Strength", &sunStrength, 1.0f, 255.0f)) changed = true;
+				if (ImGui::SliderFloat3("Sun Direction", sunDir, 0.0f, 1.0f)) changed = true;
+				if (ImGui::ColorEdit3("Sun Color", sunColor)) changed = true;
 
+				ImGui::TreePop();
+			}
 
 			if (changed)
 			{
-				Game.cudaRenderer().setExtraRenderInfo(noiseReduction, noiseCutoff, multipleScattering, rayRandomOffset, sunStrength, sunDir, sunColor);
+				Game.cudaRenderer().setExtraRenderInfo(noiseReduction, minQW, maxQW, multipleScattering, rayRandomOffset, sunStrength, sunDir, sunColor);
 			}
 
 

@@ -28,7 +28,7 @@ __constant__ float m_gammaQi; //Ice falling; 4.0f + d
 
 
 /// <summary> Initializes all the gammas</summary>
-void initGammasMicroPhysics()
+void initGammasMicroPhysics(void* stream)
 {
     float GammaR, GammaER, GammaS, GammaRC, GammaSS, GammaI, GammaRI;
     float GammaQr, GammaQs, gammaQi; //For falling vel
@@ -48,16 +48,16 @@ void initGammasMicroPhysics()
     GammaQs = tgammaf(4.0f + d);
     gammaQi = GammaQs;
 
-    cudaMemcpyToSymbol(m_gammaR,  &GammaR, sizeof(float));
-    cudaMemcpyToSymbol(m_gammaER, &GammaER, sizeof(float));
-    cudaMemcpyToSymbol(m_gammaS,  &GammaS, sizeof(float));
-    cudaMemcpyToSymbol(m_gammaRC, &GammaRC, sizeof(float));
-    cudaMemcpyToSymbol(m_gammaSS, &GammaSS, sizeof(float));
-    cudaMemcpyToSymbol(m_gammaI,  &GammaI, sizeof(float));
-    cudaMemcpyToSymbol(m_gammaRI, &GammaRI, sizeof(float));
-    cudaMemcpyToSymbol(m_gammaQr, &GammaQr, sizeof(float));
-    cudaMemcpyToSymbol(m_gammaQs, &GammaQs, sizeof(float));
-    cudaMemcpyToSymbol(m_gammaQi, &gammaQi, sizeof(float));
+    cudaMemcpyToSymbolAsync(m_gammaR,  &GammaR, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
+    cudaMemcpyToSymbolAsync(m_gammaER, &GammaER, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
+    cudaMemcpyToSymbolAsync(m_gammaS,  &GammaS, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
+    cudaMemcpyToSymbolAsync(m_gammaRC, &GammaRC, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
+    cudaMemcpyToSymbolAsync(m_gammaSS, &GammaSS, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
+    cudaMemcpyToSymbolAsync(m_gammaI,  &GammaI, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
+    cudaMemcpyToSymbolAsync(m_gammaRI, &GammaRI, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
+    cudaMemcpyToSymbolAsync(m_gammaQr, &GammaQr, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
+    cudaMemcpyToSymbolAsync(m_gammaQs, &GammaQs, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
+    cudaMemcpyToSymbolAsync(m_gammaQi, &gammaQi, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
 }
 
 

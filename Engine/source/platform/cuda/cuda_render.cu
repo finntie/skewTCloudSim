@@ -4,10 +4,10 @@
 
 
 #include <cuda_runtime.h>
-#include <cuda_texture_types.h>
 #include <curand_kernel.h>
 #include "math/cudaMath.cuh"
 
+#include <iostream>
 #include <atomic>
 
 
@@ -281,7 +281,14 @@ void renderEnvironmentCUDA(dim3 gridSize,
         int h = std::min(pixelsPer, int(height) - i);
         dim3 newGrid(DivideUp(width, blockSize.x), DivideUp(h, blockSize.y));
         renderEnvironmentCUDAGPU<<<newGrid, blockSize, 0, renderStream>>>(dOutput, data, width, height, i);
-        cudaStreamSynchronize(renderStream); // Synchronize to give simulation time to also do their part
+    cudaStreamSynchronize(renderStream); // Synchronize to give simulation time to also do their part
+
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+            __debugbreak();
+        }
     }
 
 }
@@ -356,7 +363,9 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     {
         // Convert reversed direction into 0 or 1
         float3 stepSign =
-            (make_float3(-copysign(1.0f, mainR.D.x), -copysign(1.0f, mainR.D.y), -copysign(1.0f, mainR.D.z)) + 1.0f) * 0.5f;
+            make_float3((mainR.D.x < 0.0f) ? 0.0f : 0.5f, (mainR.D.y < 0.0f) ? 0.0f : 0.5f, (mainR.D.z < 0.0f) ? 0.0f : 0.5f);
+        //float3 stepSign =
+        //    (make_float3(-copysign(1.0f, mainR.D.x), -copysign(1.0f, mainR.D.y), -copysign(1.0f, mainR.D.z)) + 1.0f) * 0.5f;
         // Step for direction with -1 meaning backwards and 1 forwards per axis.
         float3 step = 1.0f - float3(stepSign) * 2.0f;
         const float3 posInGrid = (mainR.O + (t + 0.00005f) * mainR.D);  // Position in grid
@@ -443,24 +452,24 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                 lightIntensity +=
                     totalLight * (cloudDensity + rainCoverage) * (1.0f - lightAbsorption) * sunStrength * stepSize * data.voxelSize;
 
-                // if (x == 0 && y == 0)
-                //{
-                //     printf(
-                //         "x %i y %i, t %f, cloudDensity %f, rainCoverage %f msVolume %f, inCloudRelax %f, "
-                //         "lightIntensity % f acumdDens % f lightDensity % f,directScat : % f, lightAbsorption: %f\n ",
-                //         x,
-                //         y,
-                //         t,
-                //         cloudDensity,
-                //         rainCoverage,
-                //         msVolume,
-                //         1,//innerCloudRelaxion,
-                //         lightIntensity,
-                //         accumulatedDensity,
-                //         lightDirMarchDensity,
-                //         directScattering,
-                //         lightAbsorption);
-                // }
+                 if (x == 0 && y == 0)
+                {
+                     printf(
+                         "x %i y %i, t %f, cloudDensity %f, rainCoverage %f msVolume %f, transmittance %f, "
+                         "lightIntensity % f acumdDens % f lightDensity % f,directScat : % f, lightAbsorption: %f\n ",
+                         x,
+                         y,
+                         t,
+                         cloudDensity,
+                         rainCoverage,
+                         msVolume,
+                         transmittance,
+                         lightIntensity,
+                         accumulatedDensity,
+                         lightDirMarchDensity,
+                         directScattering,
+                         lightAbsorption);
+                 }
                 if (lightAbsorption >= 1 - 0.01f)
                 {
                     break;  // TODO: test out when cloud is full
@@ -598,7 +607,7 @@ __device__ float calculateCloudCoverage(float3& pos, environmentData& data)
 
     //
 
-    if (QW > QWMIN)
+    if (QW > data.minQw)
     {
         // Min and Max in terms of scud, values above will be more obvious densities
 
@@ -607,7 +616,7 @@ __device__ float calculateCloudCoverage(float3& pos, environmentData& data)
         
         //output = clampf((log10f(QW) + data.noiseCutoffValue) * data.noisePlateauValue, scudValue, 0.99f);
         //// Values between 0.00001 and 0.001 will be mapped 0 to 1
-        output = clampf((logf(QW) - logf(QWMIN)) / (logf(QWMAX) - logf(QWMIN)), 0.0f, 0.999f);
+        output = clampf((logf(QW) - logf(data.minQw)) / (logf(data.maxQw) - logf(data.minQw)), 0.0f, 0.9f);
 
         //output = clampf(3.825f + 0.39f * log(QW), 0.0f, 0.99f);
 
@@ -661,7 +670,7 @@ __device__ float calculateDensity(float3& pos,
     const float velZ = tex3D<float>(data.velZTexture, normPos.x, normPos.y, normPos.z) / data.voxelSize;
 
 
-    const float resolutionIncrease = 64.0f;
+    const float resolutionIncrease = 16.0f;
     noise = tex3D<float>(data.noiseTexture,
                          pos.x * maxGrid * resolutionIncrease + velX,
                          pos.y * maxGrid * resolutionIncrease + velY,
@@ -707,7 +716,7 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
         const float cloudDens = cloudCoverage > 0.0001f ? calculateDensity(pos, data, cloudCoverage) : 0.0f;
 
         density += (cloudDens) * lightStepSize * data.voxelSize;
-        if (density >= 4.0f) break;  // Full opacity, dont need to trace anymore
+        if (density >= data.multipleScatteringDepthPower) break;  // Full opacity, dont need to trace anymore
 
 
         pos = pos + lightDir * lightStepSize;

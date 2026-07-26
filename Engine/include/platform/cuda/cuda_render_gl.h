@@ -37,9 +37,10 @@ struct environmentData
 
     // Extra Render info
     float noiseReduction = 0.45f;
-    float noiseCutoffValue = 0.01f;
+    float minQw = 0.0001f;
+    float maxQw = 0.005f;
     float noisePlateauValue = 0.32f;
-    float sunStrength = 1.0f;
+    float sunStrength = 40.0f;
     float sunDirection[3] = {1, 1, 1};
     float sunColor[3] = {1, 1, 1};
 
@@ -74,7 +75,8 @@ public:
 
     void setNoiseTexture(int octaves, int gridSize, float lacunarity);
     void setExtraRenderInfo(float noiseReduction,
-                            float noiseCutoffValue,
+                            float minQW,
+                            float maxQw,
                             float multipleScattering,
                             float rayRandomOffset,
                             float sunStrength,

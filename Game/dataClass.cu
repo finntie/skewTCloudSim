@@ -39,10 +39,10 @@ void dataClass::cancelMicroPhysCheckRegion()
 	microPhysEnvDataResult.reset();
 }
 
-void dataClass::setMicroPhysicsData(const microPhysicsParams* params)
+void dataClass::setMicroPhysicsData(const microPhysicsParams* params, void* stream)
 {
 	microPhysicsParams paramsCPU;
-	cudaMemcpy(&paramsCPU, params, sizeof(microPhysicsParams), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(&paramsCPU, params, sizeof(microPhysicsParams), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 
 	microPhysEnvDataResult.PVCON[microPhysEnvDataResult.atIndex] = paramsCPU.PVCON;
 	microPhysEnvDataResult.PVDEP[microPhysEnvDataResult.atIndex] = paramsCPU.PVDEP;

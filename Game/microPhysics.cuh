@@ -2,7 +2,7 @@
 
 #include <cuda_runtime.h> 
 
-void initGammasMicroPhysics();
+void initGammasMicroPhysics(void* stream);
 
 struct microPhysicsParams
 {

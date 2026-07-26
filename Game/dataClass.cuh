@@ -76,7 +76,7 @@ public:
 
 	void confirmMicroPhysCheckRegion(const int3 minCorner, const int3 maxCorner);
 	void cancelMicroPhysCheckRegion();
-	void setMicroPhysicsData(const microPhysicsParams* params);
+	void setMicroPhysicsData(const microPhysicsParams* params, void* stream);
 
 	void drawMicroPhysGraph();
 	void addValueToGraph(const char* name, const float* value);

@@ -4,7 +4,7 @@
 #include "config.h"
 
 
-void initKernelSky(const float* _defaultVelX, const float* _defaultVelZ);
+void initKernelSky(const float* _defaultVelX, const float* _defaultVelZ, void* stream);
 
 //-----------------Diffusing----------------
 
@@ -103,7 +103,7 @@ __forceinline__ __device__ bool isGroundGPU(const int* GHeight, const int x, con
 __global__ void setToDefault(const int* GHeight, float* array, const float* defaultValue);
 
 // Get avarage velocity at index due to use of MAC grid, direction telling if we want X, Y or Z velocity
-__device__ __noinline__ float getVelAtIdx(const Neigh neigh, const boundsEnv& boundaryCondition, direction XYZ, const float* velocityField, const float customData, const int idx);
+__device__ float getVelAtIdx(const Neigh neigh, const boundsEnv& boundaryCondition, direction XYZ, const float* velocityField, const float customData, const int idx);
 
 __device__ __forceinline__ void fillSharedNeigh(const Neigh neigh, float* sharedData, const float* data, const float customData, const int z, const boundsEnv& boundaryConditions);
 

@@ -42,21 +42,21 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
     <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.9.props" />
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.3.props" />
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
@@ -157,16 +157,15 @@
     </Link>
     <CudaCompile>
       <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
-      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" -arch=native %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" %(AdditionalOptions)</AdditionalOptions>
       <Warning>InheritFromHost</Warning>
-      <CudaRuntime>Static</CudaRuntime>
-      <CodeGeneration>
-      </CodeGeneration>
+      <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120;%(CodeGeneration)</CodeGeneration>
       <GenerateLineInfo>true</GenerateLineInfo>
       <FastMath>true</FastMath>
     </CudaCompile>
     <CudaLink>
       <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
+      <AdditionalDependencies>cudagl.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
       <UseHostLibraryDirectories>false</UseHostLibraryDirectories>
       <UseHostLibraryDependencies>false</UseHostLibraryDependencies>
@@ -208,6 +207,7 @@
     </CudaCompile>
     <CudaLink>
       <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
+      <AdditionalDependencies>cudagl.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
       <UseHostLibraryDirectories>false</UseHostLibraryDirectories>
       <UseHostLibraryDependencies>false</UseHostLibraryDependencies>
@@ -271,6 +271,6 @@
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.9.targets" />
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.3.targets" />
   </ImportGroup>
 </Project>

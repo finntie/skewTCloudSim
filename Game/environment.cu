@@ -81,9 +81,15 @@ namespace ConstantsGPU
 environmentGPU::environmentGPU()
 {
 	// Initialize stream, give it the highest priority
+	cudaError_t err = cudaGetLastError();
+	if (err != cudaSuccess) {
+		std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+		__debugbreak();
+	}
 	int leastPriority, greatestPriority;
 	cudaDeviceGetStreamPriorityRange(&leastPriority, &greatestPriority);
 	cudaStreamCreateWithPriority(&simStream, cudaStreamNonBlocking, greatestPriority);
+
 
 	// Set block and grid dimension based on GPU specs.
 	cudaDeviceProp prop;
@@ -210,7 +216,7 @@ environmentGPU::environmentGPU()
 	cudaMalloc((void**)&m_firstValid, sizeof(int));
 	cudaMalloc((void**)&m_storBool, sizeof(bool));
 
-	cudaError_t err = cudaGetLastError();
+	err = cudaGetLastError();
 	if (err != cudaSuccess) {
 		std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
 		__debugbreak();
@@ -445,14 +451,19 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 	computeNeighbourGPU << <GRIDSIZESKYY, GRIDSIZESKYX, 0, simStream >> > (m_GHeight, m_neighbourData);
 	computeIsenTempGroundGPU << <GRIDSIZESKYZ, GRIDSIZESKYX, 0, simStream >> > (m_groundGrid.T, m_isentropicTemp, m_groundGrid.P, m_envGrid.pressure, m_GHeight);
 	cudaStreamSynchronize(simStream);
-
+	err = cudaGetLastError();
+	if (err != cudaSuccess) {
+		std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
+		__debugbreak();
+	}
 
 	//Init other classes
-	initKernelSky(m_defaultVelX, m_defaultVelZ);
-	initGammasMicroPhysics();
+	initKernelSky(m_defaultVelX, m_defaultVelZ, simStream);
+	initGammasMicroPhysics(simStream);
 	//Set editor data
 	Game.Editor().GPUSetEnv(&m_envGrid, &m_groundGrid, m_GHeight, m_envGrid.pressure, simStream);
-
+	
+	cudaStreamSynchronize(simStream);
 	err = cudaGetLastError();
 	if (err != cudaSuccess) {
 		std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
@@ -466,6 +477,7 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 	cudaError_t err = cudaGetLastError();
 
 	m_updatingSimulation = true;
+
 
 	// Set values info
 	cudaMemcpyToSymbolAsync(simDeltaTime, &dt, sizeof(float), 0, cudaMemcpyHostToDevice, simStream);
@@ -673,7 +685,7 @@ void environmentGPU::microPhysicsSkyGPU(const float dt, const float speed)
 	//Add data to the data class
 	if (Game.DataClass().microPhysCheckActive)
 	{
-		Game.DataClass().setMicroPhysicsData(m_microPhysRes);
+		Game.DataClass().setMicroPhysicsData(m_microPhysRes, simStream);
 	}
 
 
@@ -1397,7 +1409,7 @@ void environmentGPU::updateOutOfSyncGround()
 	//Then set the groundheight correct
 	cudaMemcpyAsync(m_GHeight, m_dummyGHeight, GRIDSIZEGROUND * sizeof(int), cudaMemcpyDeviceToDevice, simStream);
 
-	initKernelSky(m_defaultVelX, m_defaultVelZ);
+	initKernelSky(m_defaultVelX, m_defaultVelZ, simStream);
 	m_groundChanged = true;
 
 	//Update GPU values

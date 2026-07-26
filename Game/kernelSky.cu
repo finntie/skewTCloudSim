@@ -19,20 +19,20 @@ __constant__ float gammaR;
 __constant__ float gammaS;
 __constant__ float gammaI;
 
-void initKernelSky(const float* _defaultVelX, const float* _defaultVelZ)
+void initKernelSky(const float* _defaultVelX, const float* _defaultVelZ, void* stream)
 {
 	//Set constant data for easier access
-	cudaMemcpyToSymbol(defaultVelX, _defaultVelX, GRIDSIZESKYY * sizeof(float));
-	cudaMemcpyToSymbol(defaultVelZ, _defaultVelZ, GRIDSIZESKYY * sizeof(float));
+	cudaMemcpyToSymbolAsync(defaultVelX, _defaultVelX, GRIDSIZESKYY * sizeof(float), 0, cudaMemcpyDeviceToDevice, static_cast<cudaStream_t>(stream));
+	cudaMemcpyToSymbolAsync(defaultVelZ, _defaultVelZ, GRIDSIZESKYY * sizeof(float), 0, cudaMemcpyDeviceToDevice, static_cast<cudaStream_t>(stream));
 
 	const float b = 0.8f;
 	const float d = 0.25f;
 	float GammaR = tgammaf(4.0f + b);
 	float GammaS = tgammaf(4.0f + d);
 	float GammaI = GammaS;
-	cudaMemcpyToSymbol(gammaR, &GammaR, sizeof(float));
-	cudaMemcpyToSymbol(gammaS, &GammaS, sizeof(float));
-	cudaMemcpyToSymbol(gammaI, &GammaI, sizeof(float));
+	cudaMemcpyToSymbolAsync(gammaR, &GammaR, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
+	cudaMemcpyToSymbolAsync(gammaS, &GammaS, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
+	cudaMemcpyToSymbolAsync(gammaI, &GammaI, sizeof(float), 0, cudaMemcpyHostToDevice, static_cast<cudaStream_t>(stream));
 }
 
 //-------------------------------------DIFFUSION-------------------------------------
@@ -191,25 +191,25 @@ __global__ void advectGroundWaterGPU(const int* GHeight, float* Qrs, float* Qgr)
 		sharedBlockQrs[idxsData] = rsC;
 		sharedBlockQgr[idxsData] = grC;
 
-		if (x == 0)
+		if (threadIdx.x == 0)
 		{
 			sharedBlockQrs[idxsData - 1] = rsC;
 			sharedBlockQgr[idxsData - 1] = grC;
 			idxL = idx;
 		}
-		if (z == 0)
+		if (threadIdx.y == 0)
 		{
 			sharedBlockQrs[idxsData - sharedBlockWidth] = rsC;
 			sharedBlockQgr[idxsData - sharedBlockWidth] = grC;
 			idxB = idx;
 		}
-		if (x == GRIDSIZESKYX - 1)
+		if (threadIdx.x == blockDim.x - 1)
 		{
 			sharedBlockQrs[idxsData + 1] = rsC;
 			sharedBlockQgr[idxsData + 1] = grC;
 			idxR = idx;
 		}
-		if (z == GRIDSIZESKYZ - 1)
+		if (threadIdx.y == blockDim.y - 1)
 		{
 			sharedBlockQrs[idxsData + sharedBlockWidth] = rsC;
 			sharedBlockQgr[idxsData + sharedBlockWidth] = grC;
@@ -301,8 +301,8 @@ __global__ void advectGroundWaterGPU(const int* GHeight, float* Qrs, float* Qgr)
 	flowSlope(float(GHeight[idxB]), heightC, grB, grC, rsB, rsC, finalGr, finalRs);
 	flowSlope(float(GHeight[idxF]), heightC, grF, grC, rsF, rsC, finalGr, finalRs);
 
-	if (valid) Qgr[idx] = finalGr;
-	if (valid) Qrs[idx] = finalRs;
+	Qgr[idx] = finalGr;
+	Qrs[idx] = finalRs;
 
 	//if (Qgr[idx] < 0.0f) printf("x %i, z %i, Qgr[idx] %e, grL %e, grC %e, grB %e\n", x, z, Qgr[idx], grL, grC, grB);
 }

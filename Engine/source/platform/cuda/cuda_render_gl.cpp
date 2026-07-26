@@ -19,6 +19,7 @@
 #include "core/engine.hpp"
 #include "core/transform.hpp"
 //#include "core/resource.hpp"
+#include <iostream>
 
 #include "platform/cuda/cuda_render.cuh"
 
@@ -72,6 +73,10 @@ void CudaRender::initGL()
         glDeleteTextures(1, &m_texture);
     }
 
+
+
+
+
     // Create Pixel buffer object
     glGenBuffers(1, &PBO);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, PBO);
@@ -79,8 +84,22 @@ void CudaRender::initGL()
                  bee::Engine.Device().GetWidth() * bee::Engine.Device().GetHeight() * sizeof(GLbyte) * 4, 0, GL_STREAM_DRAW);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
+
+        // Check if the PBO is valid
+    if (PBO == 0)
+    {
+        printf("PBO not initialized!\n");
+        return;
+    }
     // Register with CUDA
     cudaGraphicsGLRegisterBuffer(&cudaPBOResource, PBO, cudaGraphicsMapFlagsWriteDiscard);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+        __debugbreak();
+    }
 
     // Create texture
     glGenTextures(1, &m_texture);
@@ -97,6 +116,13 @@ void CudaRender::initGL()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glBindTexture(GL_TEXTURE_2D, 0);
+
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+        __debugbreak();
+    }
 }
 
 void CudaRender::initQuad() 
@@ -281,6 +307,7 @@ void CudaRender::render()
                               bee::Engine.Device().GetWidth(),
                               bee::Engine.Device().GetHeight());
 
+
         cudaGraphicsUnmapResources(1, &cudaPBOResource, stream);
 
         err = cudaGetLastError();
@@ -395,11 +422,19 @@ void CudaRender::setNoiseTexture(int octaves, int gridSize, float lacunarity)
     }
 }
 
-void CudaRender::setExtraRenderInfo(float noiseReduction, float noiseCutoffValue, float multipleScattering, float rayRandomOffset, float sunStrength, float* sunDir, float* sunColor)
+void CudaRender::setExtraRenderInfo(float noiseReduction,
+                                    float minQW,
+                                    float maxQW,
+                                    float multipleScattering,
+                                    float rayRandomOffset,
+                                    float sunStrength,
+                                    float* sunDir,
+                                    float* sunColor)
 {
 
     m_envData.noiseReduction = noiseReduction;
-    m_envData.noiseCutoffValue = noiseCutoffValue;
+    m_envData.minQw = minQW;
+    m_envData.maxQw = maxQW;
     m_envData.multipleScatteringDepthPower = multipleScattering;
     m_envData.rayRandomOffset = rayRandomOffset;
     m_envData.sunStrength = sunStrength;
