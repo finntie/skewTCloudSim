@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 
 struct dim3;
+struct float4;
 
 struct environmentData
 {
@@ -12,7 +13,8 @@ struct environmentData
     float* Qc;       //	Mixing Ratio of Ice
     //float* Qr;       //	Mixing Ratio of Rain
     unsigned long long QrTexture;
-    float* Qs;       //	Mixing Ratio of Snow
+    unsigned long long QsTexture;
+    //float* Qs;       //	Mixing Ratio of Snow
     float* Qi;       //	Mixing Ratio of Ice (precip)
     //float* velfieldX;
     //float* velfieldY;
@@ -23,8 +25,14 @@ struct environmentData
 
     unsigned long long SDFTextureQw;
     unsigned long long SDFTextureQr;
+    unsigned long long SDFTextureQs;
 
-    float* tempArray; // Malloced inside the creation function
+    unsigned long long envTransmittanceTexture;
+    unsigned long long envScatteringTexture;
+    unsigned long long envSkyViewTexture;
+    unsigned long long envAerialViewTexture;
+
+
     unsigned long long noiseTexture; 
     int resolution;
 
@@ -43,9 +51,13 @@ struct environmentData
     float sunStrength = 40.0f;
     float sunDirection[3] = {1, 1, 1};
     float sunColor[3] = {1, 1, 1};
-
+    float exposure = 1.0f;
+    float attenuation = 0.8f;
+    float contribution = 0.5f;
+    float eccentricAttenuation = 0.5f;
     float rayRandomOffset = 0.05f;
     float multipleScatteringDepthPower = 1.0f;
+    float ambientLightStrength = 0.1f;
 };
 
 class CudaRender
@@ -69,8 +81,7 @@ public:
 
     // Environment Simulation
     void initEnvironmentData(const int _sizeX, const int _sizeY, const int _sizeZ, const int _voxelSize, dim3& gridDim, dim3& blockDim);
-    void initTextureObj(void*& storageArray, unsigned long long& texture, const glm::ivec3 size);
-    void copyDataToTexture(float* data, void*& storageArray, const glm::ivec3 size, void* stream);
+    
     void setDataEnvironment(float* Qw, float* Qc, float* Qr, float* Qs, float* Qi, float* velX, float* VelY, float* velZ, void* stream);
 
     void setNoiseTexture(int octaves, int gridSize, float lacunarity);
@@ -78,8 +89,13 @@ public:
                             float minQW,
                             float maxQw,
                             float multipleScattering,
+                            float ambientLightStrength,
                             float rayRandomOffset,
+                            float attenuation,
+                            float contribution,
+                            float eccentricattenuation,
                             float sunStrength,
+                            float exposure,
                             float* sunDir,
                             float* sunColor);
 
@@ -95,18 +111,28 @@ private:
 
 	struct cudaGraphicsResource* cudaPBOResource{};  // CUDA graphics resource to transfer PBO
 
+    float* tempArray;  // Malloced inside the creation function
+
     environmentData m_envData{};
     void* m_noiseTextureStorage; //In which we store the texture data
     void* m_QWTextureStorage; 
     void* m_QRTextureStorage; 
+    void* m_QSTextureStorage; 
 
     float* m_SDFDistanceNeigh;
     int* m_SDFClosestTarget;
     void* m_SDFTextureStorageQw;
     void* m_SDFTextureStorageQr;
+    void* m_SDFTextureStorageQs;
+
     void* m_velXTextureStorage;
     void* m_velYTextureStorage;
     void* m_velZTextureStorage;
+
+    void* m_envTransmittanceTextureStorage;
+    void* m_envScatteringTextureStorage;
+    void* m_envSkyViewTextureStorage;
+    void* m_envAerialViewTextureStorage;
 
     bool m_envInitialized{false};
     bool m_setData{false};
@@ -115,3 +141,16 @@ private:
     dim3* m_gridDim{};
     dim3* m_blockDim{};
 };
+
+
+// Initialize a cuda texture to be filled of type T, using smooth transition, which boundary condition (warp or clamp) and how
+// many dimensions
+template <typename T>
+void initTextureObj(void*& storageArray,
+                    unsigned long long& texture,
+                    const glm::ivec3 size,
+                    bool smoothTransition,
+                    bool wrapTextureBoundaryMode);
+
+template <typename T>
+void copyDataToTexture(T* data, void*& storageArray, const glm::ivec3 size, void* stream);

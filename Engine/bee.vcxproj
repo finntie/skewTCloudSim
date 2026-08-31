@@ -172,6 +172,7 @@
     <ClInclude Include="include\physics\jolt_physics_system.hpp" />
     <ClInclude Include="include\physics\physics_components.hpp" />
     <ClInclude Include="include\physics\world.hpp" />
+    <ClInclude Include="include\platform\cuda\LUTs.cuh" />
     <ClInclude Include="include\platform\cuda\texture_noise.cuh" />
     <ClInclude Include="include\platform\opengl\draw_image.hpp" />
     <ClInclude Include="include\rendering\colors.hpp" />
@@ -280,6 +281,7 @@
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="source\platform\cuda\cuda_render.cu" />
+    <CudaCompile Include="source\platform\cuda\LUTS.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

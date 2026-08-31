@@ -687,9 +687,16 @@ void editor::editModeParams()
 			static float noiseReduction = 0.45f;
 			static float maxQW = 0.005f;
 			static float minQW = 0.0001f;
+
 			static float multipleScattering = 1.0f;
+			static float ambientLightStrength = 0.1f;
 			static float rayRandomOffset = 0.05f;
+			static float attenuation = 0.8f;
+			static float contribution = 0.5f;
+			static float eccentricityAttenuation = 0.5f;
+
 			static float sunStrength = 40.0f;
+			static float exposure = 1.0f;
 			static float sunDir[3] = { 1,1,1 };
 			static float sunColor[3] = { 1, 1, 1 };
 
@@ -719,10 +726,15 @@ void editor::editModeParams()
 				if (ImGui::SliderFloat("MaxQw", &maxQW, 0.0f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic)) changed = true;
 				ImGui::Separator();
 				if (ImGui::SliderFloat("multipleScattering", &multipleScattering, 0.0f, 10.0f)) changed = true;
+				if (ImGui::SliderFloat("Ambient Light Strength", &ambientLightStrength, 0.0f, 1.0f)) changed = true;
 				if (ImGui::SliderFloat("rayRandomOffset", &rayRandomOffset, 0.0f, 1.0f)) changed = true;
+				if (ImGui::SliderFloat("MS attenuation", &attenuation, 0.0f, 1.0f)) changed = true;
+				if (ImGui::SliderFloat("MS contribution", &contribution, 0.0f, 1.0f)) changed = true;
+				if (ImGui::SliderFloat("MS eccentricity attenuation", &eccentricityAttenuation, 0.0f, 1.0f)) changed = true;
 				ImGui::Separator();
 				if (ImGui::SliderFloat("Sun Strength", &sunStrength, 1.0f, 255.0f)) changed = true;
-				if (ImGui::SliderFloat3("Sun Direction", sunDir, 0.0f, 1.0f)) changed = true;
+				if (ImGui::SliderFloat("Light Exposure", &exposure, 0.0f, 10.0f)) changed = true;
+				if (ImGui::SliderFloat3("Sun Direction", sunDir, -1.0f, 1.0f)) changed = true;
 				if (ImGui::ColorEdit3("Sun Color", sunColor)) changed = true;
 
 				ImGui::TreePop();
@@ -730,7 +742,7 @@ void editor::editModeParams()
 
 			if (changed)
 			{
-				Game.cudaRenderer().setExtraRenderInfo(noiseReduction, minQW, maxQW, multipleScattering, rayRandomOffset, sunStrength, sunDir, sunColor);
+				Game.cudaRenderer().setExtraRenderInfo(noiseReduction, minQW, maxQW, multipleScattering, ambientLightStrength, rayRandomOffset, attenuation, contribution, eccentricityAttenuation, sunStrength, exposure, sunDir, sunColor);
 			}
 
 

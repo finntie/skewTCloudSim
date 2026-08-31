@@ -586,6 +586,8 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 		//cudaDeviceSynchronize();
 		cudaMemcpyAsync(m_oldDensityAir, m_densityAir, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
 		
+		Game.Editor().setDebugValueNum(m_densityAir, 2, simStream);
+
 		pressureProject(dt * speed);
 		err = cudaGetLastError();
 		if (err != cudaSuccess) {
@@ -1147,7 +1149,7 @@ void environmentGPU::calculatePressureProject(float* outputPressure, const float
 
 	//Debug
 	//cudaDeviceSynchronize();
-	Game.Editor().setDebugValueNum(m_stor0, 2, simStream);
+	//Game.Editor().setDebugValueNum(m_stor0, 2, simStream);
 
 	//Check max divergence
 	getMaxDivergence << <gridDim, blockDim, sharedDataSizeNoHalo, simStream >> > (m_GHeight, m_singleStor0, m_stor0);

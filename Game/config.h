@@ -4,13 +4,13 @@
 //Do we want to use the GPU? (CPU is very unstable if not working at all atm)
 #define USE_GPU 1
 
-#define GRIDSIZESKYX 64
+#define GRIDSIZESKYX 128
 #define GRIDSIZESKYY 64
-#define GRIDSIZESKYZ 64
+#define GRIDSIZESKYZ 128
 
 #define GRIDSIZESKY (GRIDSIZESKYX * GRIDSIZESKYY * GRIDSIZESKYZ)
 #define GRIDSIZEGROUND (GRIDSIZESKYX * GRIDSIZESKYZ)
-#define VOXELSIZE 32.0f //Meters
+#define VOXELSIZE 128.0f //Meters
 
 // Data graph
 #define MAXGRAPHLENGTH 100

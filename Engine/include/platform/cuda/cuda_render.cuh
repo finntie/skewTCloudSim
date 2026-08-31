@@ -36,6 +36,20 @@ __global__ void JFA(int3 size,
                     const int3 offset,
                     const float invBlockSpread);
 
+// Fills the LUTs that only need to be calculated ones, no need to reset
+void fillLUTSOnce(environmentData& data, void* transmittanceLUT, void* scatteringLUT);
+
+// If used, should ALWAYS be reset at least ones before closing.
+void fillLUTS(environmentData& data,
+              void* skyViewLUT,
+              void* aerialViewLUT,
+              unsigned int width,
+              unsigned int height,
+              bool reset);
+
+
+
+
 /// <summary> Fill output with 4 layers of noise </summary>
 /// <param name="output">Texture array that will be filled</param>
 /// <param name="resolution">Resolution of each axis, can get expensive beyond 256/512</param>
@@ -61,13 +75,15 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                                          environmentData data,
                                          unsigned int width,
                                          unsigned int height,
-                                         float heightOffset);
+                                         int heightOffset);
 
 __device__ float intersectGrid(float3 dir, float3 origin, float3 recDir);
 
 __device__ float calculateCloudCoverage(float3& pos, environmentData& data);
 
 __device__ float calculateRainCoverage(float3& pos, environmentData& data);
+
+__device__ float calculateSnowCoverage(float3& pos, environmentData& data);
 
 __device__ float calculateDensity(float3& pos, environmentData& data, const float cloudCoverage);
 

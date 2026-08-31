@@ -3,20 +3,24 @@
 
 #include <cuda_runtime.h>
 #include <CUDA/include/cuda.h>
-#include <CUDA/cmath>
+#include <cmath>
 
 
-typedef struct
+struct float3x4
 {
     float4 m[3];
-} float3x4;
+};
 
 inline __host__ __device__ float dot(float2 a, float2 b) { return a.x * b.x + a.y * b.y; }
 inline __host__ __device__ float dot(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 inline __host__ __device__ float dot(float4 a, float4 b) { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
 
+
+inline __host__ __device__ float cross(float2 a, float2 b) { return a.x * b.y - a.y * b.x; }
+inline __host__ __device__ float3 cross(float3 a, float3 b) { return make_float3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); }
+
 // transform Vector by matrix
-__device__ float3 mul(const float3x4& mat, const float3& vector)
+inline __host__ __device__ float3 mul(const float3x4& mat, const float3& vector)
 { 
     float3 r;
     r.x = dot(vector, make_float3(mat.m[0].x, mat.m[0].y, mat.m[0].z));
@@ -27,7 +31,7 @@ __device__ float3 mul(const float3x4& mat, const float3& vector)
 
 
 // transform Vector by matrix with translation 
-__device__ float4 mul(const float3x4& mat, const float4& vector)
+inline __host__ __device__ float4 mul(const float3x4& mat, const float4& vector)
 {
     float4 r;
     r.x = dot(vector, mat.m[0]);
@@ -58,16 +62,21 @@ inline __host__ __device__ float4 normalize(float4 v)
 
 
 
-__device__ unsigned int rgbaFloatToInt(float4 rgba)
+__device__ inline unsigned int rgbaFloatToInt(float4 rgba)
 {
     return (unsigned(rgba.w * 255) << 24) | (unsigned(rgba.z * 255) << 16) | (unsigned(rgba.y * 255) << 8) |
            unsigned(rgba.x * 255);
 }
 
+inline __host__ __device__ float4 operator/(float4 a, float4 b) { return make_float4(a.x / b.x, a.y / b.y, a.z / b.z, a.w / b.w); }
+inline __host__ __device__ float4 operator/(float4 a, float b) { return make_float4(a.x / b, a.y / b, a.z / b, a.w / b); }
 inline __host__ __device__ float4 operator*(float4 a, float4 b) { return make_float4(a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w); }
 inline __host__ __device__ float4 operator*(float4 a, float b) { return make_float4(a.x * b, a.y * b, a.z * b, a.w * b); }
 inline __host__ __device__ float4 operator+(float4 a, float4 b) { return make_float4(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w); }
 inline __host__ __device__ float4 operator+(float4 a, float b) { return make_float4(a.x + b, a.y + b, a.z + b, a.w + b); }
+inline __host__ __device__ float4 operator-(float4 a, float b) { return make_float4(a.x - b, a.y - b, a.z - b, a.w - b); }
+inline __host__ __device__ float4 operator-(float a, float4 b) { return make_float4(a - b.x, a - b.y, a - b.z, a - b.w); }
+inline __host__ __device__ float4 operator-(float4 a, float4 b) { return make_float4(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w); }
 
 // Operators to make it easier to work with float3s
 inline __host__ __device__ float3 operator+(float3 a, float3 b) { return make_float3(a.x + b.x, a.y + b.y, a.z + b.z); }
@@ -80,6 +89,7 @@ inline __host__ __device__ float3 operator*(float3 a, float b) { return make_flo
 inline __host__ __device__ float3 operator*(float b, float3 a) { return make_float3(a.x * b, a.y * b, a.z * b); }
 inline __host__ __device__ float3 operator/(float3 a, float3 b) { return make_float3(a.x / b.x, a.y / b.y, a.z / b.z); }
 inline __host__ __device__ float3 operator/(float3 a, float b) { return make_float3(a.x / b, a.y / b, a.z / b); }
+inline __host__ __device__ float3 operator/(float a, float3 b) { return make_float3(a / b.x, a / b.y, a / b.z); }
 
 
 inline __host__ __device__ float2 fabs2f(float2 a) { return make_float2(fabsf(a.x), fabsf(a.y)); }
@@ -111,6 +121,12 @@ inline __host__ __device__ float4 clamp4f(float4 value, float min, float max)
                        clampf(value.w, min, max));
 }
 
+inline __host__ __device__ float2 expf2(float2 a) { return make_float2(expf(a.x), expf(a.y)); }
+inline __host__ __device__ float3 expf3(float3 a) { return make_float3(expf(a.x), expf(a.y), expf(a.z)); }
+inline __host__ __device__ float4 expf4(float4 a) { return make_float4(expf(a.x), expf(a.y), expf(a.z), expf(a.w)); }
+
+
+
 // Integers
 
 inline __host__ __device__ int3 operator+(int3 a, int3 b) { return make_int3(a.x + b.x, a.y + b.y, a.z + b.z); }
@@ -127,6 +143,16 @@ inline __host__ __device__ int3 operator/(int3 a, int b) { return make_int3(a.x 
 // fmodf but clammed to positive values
 inline __host__ __device__ float modClammed(float a, float b) {return fmodf(fmodf(a, b) + b, b); }
 
+
+__inline__ float __host__ __device__ distance(float2 a)
+{
+    return sqrtf((a.x * a.x) + (a.y * a.y));
+}
+
+__inline__ float __host__ __device__ distance(float3 a)
+{
+    return sqrtf((a.x * a.x) + (a.y * a.y) + (a.z * a.z));
+}
 
 __inline__ float __host__ __device__ distance(float from, float to) { return fabsf(from - to); }
 
