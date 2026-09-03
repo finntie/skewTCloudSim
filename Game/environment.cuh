@@ -115,7 +115,7 @@ private:
 
 	// Grid and Block size based on size of simulation
 	// Set default to 16, but increase based on threads available. 
-	dim3 gridDim = { ((GRIDSIZESKYX + 15) / 16), ((GRIDSIZESKYY + 15) / 16), ((GRIDSIZESKYZ + 15) / 16) };
+	dim3 gridDim = { unsigned((GRIDSIZESKYX + 15) / 16), unsigned((GRIDSIZESKYY + 15) / 16), unsigned((GRIDSIZESKYZ + 15) / 16) };
 	dim3 blockDim = { uint32_t(std::min(16, GRIDSIZESKYX)), uint32_t(std::min(16, GRIDSIZESKYY)) };
 	bool canFillAll{ false }; // If we can fit all threads within the simulation or not
 
@@ -185,9 +185,5 @@ private:
 	float* m_precon; //Precon (pressure projection)
 	float4* m_A; //A matrix (pressure projection)
 	
-	//CPU storage
-	float m_velXCPU[GRIDSIZESKY];
-	float m_velYCPU[GRIDSIZESKY];
-	float m_velZCPU[GRIDSIZESKY];
 
 };

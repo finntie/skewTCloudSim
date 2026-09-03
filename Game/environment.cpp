@@ -19,6 +19,15 @@
 //|-----------------------------------------------------------------------------------------------------------|
 
 
+//int GRIDSIZESKYX = 200;
+//int GRIDSIZESKYY = 128;
+//int GRIDSIZESKYZ = 200;
+//
+//int GRIDSIZESKY = (GRIDSIZESKYX * GRIDSIZESKYY * GRIDSIZESKYZ);
+//int GRIDSIZEGROUND = (GRIDSIZESKYX * GRIDSIZESKYZ);
+//float VOXELSIZE = 64.0f; // In Meters
+
+
 environment::environment()
 {
 	for (int i = 0; i < GRIDSIZESKY; i++)

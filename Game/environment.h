@@ -12,27 +12,163 @@ public:
 	//TODO: doubles are used for the temps, due to only 14 million precision between biggest and smallest number stored.
 	struct gridDataSky 
 	{
-		float Qv[GRIDSIZESKY]; //  Mixing Ratio of Water Vapor
-		float Qw[GRIDSIZESKY]; //	Mixing Ratio of	Liquid Water
-		float Qc[GRIDSIZESKY]; //	Mixing Ratio of Ice 
-		float Qr[GRIDSIZESKY]; //	Mixing Ratio of Rain
-		float Qs[GRIDSIZESKY]; //	Mixing Ratio of Snow
-		float Qi[GRIDSIZESKY]; //	Mixing Ratio of Ice (precip)
-		float potTemp[GRIDSIZESKY];			 // Potential temperature
-		glm::vec3 velField[GRIDSIZESKY];	// Velocity field  (fluid sim)
-		float pressure[GRIDSIZESKY];
+		// Initialize data with size in number of items
+		void init(const int size) 
+		{
+			Qv = new float[size];
+			Qw = new float[size];
+			Qc = new float[size];
+			Qr = new float[size];
+			Qs = new float[size];
+			Qi = new float[size];
+			potTemp = new float[size];
+			velField = new glm::vec3[size];
+			pressure = new float[size];
+			initialized = true;
+		}
+		float* Qv; //  Mixing Ratio of Water Vapor
+		float* Qw; //	Mixing Ratio of	Liquid Water
+		float* Qc; //	Mixing Ratio of Ice 
+		float* Qr; //	Mixing Ratio of Rain
+		float* Qs; //	Mixing Ratio of Snow
+		float* Qi; //	Mixing Ratio of Ice (precip)
+		float* potTemp;			 // Potential temperature
+		glm::vec3* velField;	// Velocity field  (fluid sim)
+		float* pressure;
+
+		gridDataSky() = default;
+		~gridDataSky()
+		{
+			if (initialized)
+			{
+				delete[] Qv;
+				delete[] Qw;
+				delete[] Qc;
+				delete[] Qr;
+				delete[] Qs;
+				delete[] Qi;
+				delete[] potTemp;
+				delete[] velField;
+				delete[] pressure;
+				initialized = false;
+			}
+		}
+
+		// Delete copy
+		gridDataSky(const gridDataSky&) = delete;
+		gridDataSky& operator=(const gridDataSky&) = delete;
+
+		// Move constructor
+		gridDataSky(gridDataSky&& other) noexcept
+		{
+			Qv = other.Qv; Qw = other.Qw; Qc = other.Qc; Qr = other.Qr; Qs = other.Qs; Qi = other.Qi;
+			potTemp = other.potTemp; velField = other.velField; pressure = other.pressure;
+			initialized = other.initialized;
+			other.initialized = false; // Since other is now empty
+		}
+		// Equal will now move:
+		gridDataSky& operator=(gridDataSky&& other) noexcept
+		{
+			if (this != &other)
+			{
+				if (initialized) // If current is already initialized, we need to free our data
+				{
+					delete[] Qv;
+					delete[] Qw;
+					delete[] Qc;
+					delete[] Qr;
+					delete[] Qs;
+					delete[] Qi;
+					delete[] potTemp;
+					delete[] velField;
+					delete[] pressure;
+				}
+				Qv = other.Qv; Qw = other.Qw; Qc = other.Qc; Qr = other.Qr; Qs = other.Qs; Qi = other.Qi;
+				potTemp = other.potTemp; velField = other.velField; pressure = other.pressure;
+				initialized = other.initialized;
+				other.initialized = false; // Since other is now empty
+			}
+			return *this;
+		}
+
+	private:
+		bool initialized = false;
 	};
 
 	//TODO: do we want halfs or not? precision lies on about 6e-8f; 
 	struct gridDataGround 
 	{
-		float Qrs[GRIDSIZEGROUND]; // Subsurface water content
-		float Qgr[GRIDSIZEGROUND]; // Rain content
-		float Qgs[GRIDSIZEGROUND]; // Snow content
-		float Qgi[GRIDSIZEGROUND]; // Ice content
-		float P[GRIDSIZEGROUND];   // Ground Pressure
-		float t[GRIDSIZEGROUND];   // Time since ground was wet
-		float T[GRIDSIZEGROUND];   // Ground temperature
+		// Initialize data with size in number of items
+		void init(const int size)
+		{
+			Qrs = new float[size];
+			Qgr = new float[size];
+			Qgs = new float[size];
+			Qgi = new float[size];
+			P = new float[size];
+			t = new float[size];
+			T = new float[size];
+			initialized = true;
+		}
+
+		float* Qrs; // Subsurface water content
+		float* Qgr; // Rain content
+		float* Qgs; // Snow content
+		float* Qgi; // Ice content
+		float* P;   // Ground Pressure
+		float* t;   // Time since ground was wet
+		float* T;   // Ground temperature
+
+		gridDataGround() = default;
+		~gridDataGround()
+		{
+			if (initialized)
+			{
+				delete[] Qrs;
+				delete[] Qgr;
+				delete[] Qgs;
+				delete[] Qgi;
+				delete[] P;
+				delete[] t;
+				delete[] T;
+			}
+		}
+
+		// Delete copy
+		gridDataGround(const gridDataGround&) = delete;
+		gridDataGround& operator=(const gridDataGround&) = delete;
+
+		// Move constructor
+		gridDataGround(gridDataGround&& other) noexcept
+		{
+			Qrs = other.Qrs; Qgr = other.Qgr; Qgs = other.Qgs; Qgi = other.Qgi; P = other.P; t = other.t; T = other.T;
+			initialized = other.initialized;
+			other.initialized = false; // Since other is now empty
+		}
+		// Equal will now move:
+		gridDataGround& operator=(gridDataGround&& other) noexcept
+		{
+			if (this != &other)
+			{
+				if (initialized) // If current is already initialized, we need to free our data
+				{
+					delete[] Qrs;
+					delete[] Qgr;
+					delete[] Qgs;
+					delete[] Qgi;
+					delete[] P;
+					delete[] t;
+					delete[] T;
+				}
+				Qrs = other.Qrs; Qgr = other.Qgr; Qgs = other.Qgs; Qgi = other.Qgi; P = other.P; t = other.t; T = other.T;
+				initialized = other.initialized;
+				other.initialized = false; // Since other is now empty
+			}
+			return *this;
+		}
+
+	private:
+		bool initialized = false;
 	};
 
 	environment();
@@ -102,38 +238,38 @@ public:
 
 	//void computeNeighArray();
 
-	Neigh m_NeighData[GRIDSIZESKY]; //Neighbour data
+	//Neigh m_NeighData[GRIDSIZESKY]; //Neighbour data
 	envDebugData* getDebugData();
 
 private:
 	gridDataSky m_envGrid;
 	gridDataGround m_groundGrid;
 
-	float m_time = 43200.0f; //0 to 86.400 time in seconds
-	const float m_dayLightDuration = 14.0f;
-	const float m_hourOfSunrise = 6.0f;
-	float m_speed = 1.0f;
-	float m_longitude = 52.37f; //Longitude on earth, 52.37 is Amsterdam
-	int m_day = 130; //Day of the year
-	float m_sunStrength = 1.0f;
-	bool m_pauseDiurnal = false;
+	//float m_time = 43200.0f; //0 to 86.400 time in seconds
+	//const float m_dayLightDuration = 14.0f;
+	//const float m_hourOfSunrise = 6.0f;
+	//float m_speed = 1.0f;
+	//float m_longitude = 52.37f; //Longitude on earth, 52.37 is Amsterdam
+	//int m_day = 130; //Day of the year
+	//float m_sunStrength = 1.0f;
+	//bool m_pauseDiurnal = false;
 
-	float m_condens = 0.0f; //Heat from condensation
-	float m_freeze = 0.0f; //Heat from freezing
-	float m_depos = 0.0f; //Heat from deposition (gas to solid)
+	//float m_condens = 0.0f; //Heat from condensation
+	//float m_freeze = 0.0f; //Heat from freezing
+	//float m_depos = 0.0f; //Heat from deposition (gas to solid)
 
-	float m_isenTropicTemps[GRIDSIZESKYY];
-	float m_isenTropicVapor[GRIDSIZESKYY];
-	float m_pressures[GRIDSIZESKYY];
-	float m_defaultVel[GRIDSIZESKYY];
-	//int m_GHeight[GRIDSIZEGROUND];
-	float m_dummyArray[GRIDSIZESKYY];
+	//float m_isenTropicTemps[GRIDSIZESKYY];
+	//float m_isenTropicVapor[GRIDSIZESKYY];
+	//float m_pressures[GRIDSIZESKYY];
+	//float m_defaultVel[GRIDSIZESKYY];
+	////int m_GHeight[GRIDSIZEGROUND];
+	//float m_dummyArray[GRIDSIZESKYY];
 
-	float velocityX[GRIDSIZESKY];
-	float velocityY[GRIDSIZESKY];
+	//float velocityX[GRIDSIZESKY];
+	//float velocityY[GRIDSIZESKY];
 
-	float m_debugArray0[GRIDSIZESKY];
-	float m_debugArray1[GRIDSIZESKY];
-	float m_debugArray2[GRIDSIZESKY];
+	//float m_debugArray0[GRIDSIZESKY];
+	//float m_debugArray1[GRIDSIZESKY];
+	//float m_debugArray2[GRIDSIZESKY];
 };
 

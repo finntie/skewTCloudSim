@@ -4,8 +4,16 @@
 
 #include "utils.cuh"
 
-tracing::tracing()
+
+tracing::~tracing()
 {
+	if (gridVoxels) delete[] gridVoxels;
+}
+
+void tracing::init()
+{	
+	gridVoxels = new bool[GRIDSIZESKY];
+	
 	// Set grid bounds
 	gridMin = glm::vec3(0, 0, 0);
 	gridMax = gridMin + glm::vec3(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ);
@@ -14,7 +22,7 @@ tracing::tracing()
 
 void tracing::resetGrid(bool value)
 {
-	std::fill_n(std::begin(gridVoxels), std::size(gridVoxels), value);
+	std::fill_n(gridVoxels , GRIDSIZESKY * sizeof(bool), value);
 }
 
 void tracing::showVoxelsWithValue(const float* array, const float value, showSettings settings)

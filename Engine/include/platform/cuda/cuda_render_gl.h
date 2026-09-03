@@ -40,7 +40,7 @@ struct environmentData
     int sizeY;
     int sizeZ;
     int fullSize;
-    int voxelSize;
+    float voxelSize;
 
 
     // Extra Render info
@@ -80,7 +80,7 @@ public:
 	void display();
 
     // Environment Simulation
-    void initEnvironmentData(const int _sizeX, const int _sizeY, const int _sizeZ, const int _voxelSize, dim3& gridDim, dim3& blockDim);
+    void initEnvironmentData(const int _sizeX, const int _sizeY, const int _sizeZ, const float _voxelSize, dim3& gridDim, dim3& blockDim);
     
     void setDataEnvironment(float* Qw, float* Qc, float* Qr, float* Qs, float* Qi, float* velX, float* VelY, float* velZ, void* stream);
 

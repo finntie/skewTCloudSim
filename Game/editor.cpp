@@ -1,10 +1,10 @@
 #include "pch.h"
 
-#include "environment.h"
 #include "editor.h"
 #include "skewTer.h"
 #include "game.h"
 #include "tracing.h"
+#include "cloudFile.h"
 
 #include "math/meteoformulas.h"
 #include "math/constants.hpp"
@@ -37,6 +37,12 @@ editor::~editor()
 	//Cleanup
 	delete tracerObj;
 	delete m_envData; //Created from environment.cpp
+}
+
+void editor::init()
+{
+	m_envData->init();
+	tracerObj->init();
 }
 
 void editor::setColors()
@@ -230,12 +236,14 @@ void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps
 	cudaMemcpyAsync(m_envData->m_envView.Qs, sky->Qs, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 	cudaMemcpyAsync(m_envData->m_envView.Qi, sky->Qi, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 	
-	static float velX[GRIDSIZESKY];
-	static float velY[GRIDSIZESKY];
-	static float velZ[GRIDSIZESKY];
-	cudaMemcpyAsync(velX, sky->velfieldX, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(velY, sky->velfieldY, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(velZ, sky->velfieldZ, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+
+	// Use static unique ptr for local arrays
+	static std::unique_ptr<float[]> velX(new float[GRIDSIZESKY]);
+	static std::unique_ptr<float[]> velY(new float[GRIDSIZESKY]);
+	static std::unique_ptr<float[]> velZ(new float[GRIDSIZESKY]);
+	cudaMemcpyAsync(velX.get(), sky->velfieldX, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(velY.get(), sky->velfieldY, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(velZ.get(), sky->velfieldZ, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 	for (int i = 0; i < GRIDSIZESKY; i++)
 	{
 		m_envData->m_envView.velField[i] = { velX[i], velY[i], velZ[i]};
@@ -260,6 +268,11 @@ void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps
 #endif
 
 	unlockGlobal();
+}
+
+void editor::checkSaveFile()
+{
+	Game.CloudFile().tryCreateFrame(m_envData->m_envView, m_envData->m_groundView, m_time);
 }
 
 void editor::editMode()

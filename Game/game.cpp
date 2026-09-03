@@ -13,6 +13,7 @@
 #include "dataClass.cuh"
 #include "skewTMaker.h"
 #include "skewTFile.h"
+#include "cloudFile.h"
 
 // Make the game a global variable on free store memory.
 game Game;
@@ -36,6 +37,7 @@ game::game()
 game::~game()
 {
 	//Cleanup from last created to first.
+	delete m_cloudFileObj;
 	delete m_skewTFileObj;
 	delete m_skewTMakerObj;
 	delete m_dataClassObj;
@@ -76,6 +78,7 @@ void game::Initialize()
 	m_dataClassObj = new dataClass();
 	m_skewTMakerObj = new skewTMaker();
 	m_skewTFileObj = new skewTFile();
+	m_cloudFileObj = new cloudFile();
 
 	// Initialize the simulation thread
 	m_running = true;

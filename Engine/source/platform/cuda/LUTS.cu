@@ -756,7 +756,7 @@ __global__ void envSkyView(float4* skyView,
     float4 pos = mul(invViewLUT, make_float4(0.0f, 0.0f, 0.0f, 1.0f));
 
     // Put our coordinates to km
-    pos.y /= 1000.0f;
+    pos = pos / 1000.0f;
 
     const float3 posC = make_float3(pos.x, pos.y + radiusEarth, pos.z);
     const float r = distance(posC);
@@ -828,7 +828,7 @@ __device__ float4 getAtmosphericSkyView(float3 dir, float3 pos, float3 lightDir,
     float u = (resolution.x + 1.0f) * 0.5f;
     float v = (resolution.y + 1.0f) * 0.5f;
 
-    pos.y /= 1000.0f;
+    pos = pos / 1000.0f; // Make sure 1000.0f coordinate is 1 km and not 1000 km
 
     float2 uv = dirToUV(dir, pos, lightDir);
 

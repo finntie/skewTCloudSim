@@ -214,6 +214,8 @@
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="cloudFile.cpp" />
+    <ClCompile Include="config.cpp" />
     <ClCompile Include="editor.cpp" />
     <ClCompile Include="environment.cpp" />
     <ClCompile Include="game.cpp" />
@@ -230,6 +232,7 @@
     <ClCompile Include="tracing.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="cloudFile.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="dataClass.cuh" />
     <ClInclude Include="editor.h" />

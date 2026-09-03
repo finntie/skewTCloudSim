@@ -10,9 +10,10 @@ public:
 		BELOW = 1, EQUAL = 2, ABOVE = 4
 	};
 
-	tracing();
-	~tracing() {};
+	tracing() {};
+	~tracing();
 
+	void init();
 	void resetGrid(bool value = false);
 	void showVoxelsWithValue(const float* array, const float value, showSettings settings);
 	void setVoxelValue(const int index, const bool value);
@@ -24,7 +25,7 @@ public:
 
 private:
 
-	bool gridVoxels[GRIDSIZESKY];
+	bool* gridVoxels;
 	glm::vec3 gridMin{};
 	glm::vec3 gridMax{};
 

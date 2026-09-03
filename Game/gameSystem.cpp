@@ -8,8 +8,10 @@
 #include "skewTer.h"
 #include "game.h"
 
+
 #include "skewTFile.h"
-	
+#include "cloudFile.h"
+
 using namespace std;
 using namespace bee;
 
@@ -75,6 +77,7 @@ void gameSystem::OnPanel()
 		break;
 	case SIMULATION:
 		Game.Editor().panel();
+		Game.CloudFile().panel();
 		break;
 	default:
 		break;

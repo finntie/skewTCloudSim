@@ -1,11 +1,9 @@
 #pragma once
 #include "config.h"
+#include "environment.h" // Can include in header since environment is mainly just struct definition.
 
-class environment;
 class environmentGPU;
 class tracing;
-struct gridDataSky;
-struct gridDataGround;
 //namespace glm { struct ivec3; struct vec3; struct vec2; }
 
 class editor
@@ -16,6 +14,7 @@ public:
 	//Could expand into multiple structs/refences from other classes.
 	editor(envDebugData* _envDebugData);
 	~editor();
+	void init(); // Quick initialization 
 	void setColors();
 	//We also include m_pressures
 	void setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressure, void* stream);
@@ -49,6 +48,7 @@ public:
 	int getDay() {return m_day;}
 	bool getDiurnalCyclePaused() { return m_pauseDiurnal; }
 	float getSunStrength() { return m_sunStrength; }
+	void checkSaveFile();
 
 private:
 	//Main functions
@@ -188,15 +188,43 @@ private:
 struct envDebugData
 {
 #if USE_GPU
-	envDebugData()  // GPU data is filled after each tick
+	envDebugData() = default;  // GPU data is filled after each tick
+	~envDebugData()
 	{
+		if (initialized)
+		{
+			delete[] m_groundHeight;
+			delete[] m_debugArray0;
+			delete[] m_debugArray1;
+			delete[] m_debugArray2;
+			delete[] m_envTemp;
+			delete[] m_envVapor;
+			delete[] m_envPressure;
+		}
+	}
+
+	void init()
+	{
+		m_envView.init(GRIDSIZESKY);
+		m_groundView.init(GRIDSIZEGROUND);
+		m_groundHeight = new int[GRIDSIZEGROUND];
+
+		m_debugArray0 = new float[GRIDSIZESKY];
+		m_debugArray1 = new float[GRIDSIZESKY];
+		m_debugArray2 = new float[GRIDSIZESKY];
+
+		m_envTemp = new float[GRIDSIZESKYY];
+		m_envVapor = new float[GRIDSIZESKYY];
+		m_envPressure = new float[GRIDSIZESKYY];
+
+		initialized = true;
 	}
 
 	//Variables
 	environment::gridDataSky m_envView;
 	environment::gridDataGround m_groundView;
 
-	int m_groundHeight[GRIDSIZEGROUND];
+	int* m_groundHeight;
 
 #else
 	envDebugData(environment::gridDataSky& skyData, environment::gridDataGround& groundData, int(&height)[GRIDSIZEGROUND])
@@ -213,11 +241,13 @@ struct envDebugData
 
 
 
-	float m_debugArray0[GRIDSIZESKY];
-	float m_debugArray1[GRIDSIZESKY];
-	float m_debugArray2[GRIDSIZESKY];
+	float* m_debugArray0;
+	float* m_debugArray1;
+	float* m_debugArray2;
 
-	float m_envTemp[GRIDSIZESKYY];
-	float m_envVapor[GRIDSIZESKYY];
-	float m_envPressure[GRIDSIZESKYY];
+	float* m_envTemp;
+	float* m_envVapor;
+	float* m_envPressure;
+
+	bool initialized = false;
 };

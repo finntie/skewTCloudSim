@@ -57,6 +57,12 @@
     <ClCompile Include="skewTFile.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="cloudFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="config.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="gameSystem.h">
@@ -129,6 +135,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="skewTFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cloudFile.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

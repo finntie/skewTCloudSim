@@ -377,7 +377,7 @@ void CudaRender::display()
 void CudaRender::initEnvironmentData(const int _sizeX,
                                      const int _sizeY,
                                      const int _sizeZ,
-                                     const int _voxelSize,
+                                     const float _voxelSize,
                                      dim3& gridDim,
                                      dim3& blockDim)
 {

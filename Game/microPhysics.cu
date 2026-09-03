@@ -1049,16 +1049,16 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     int idxsData = threadIdx.x + threadIdx.y * blockDim.x;
 
     bool valid = true;
-    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) // Avoid outside access
+    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) // Avoid outside access
     {
         x = 0; y = 0; idx = 0; // Set every index to 0
         valid = false;
     }
 
-    for (; z < fminf(GRIDSIZESKYZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+    for (; z < fminf(simSizeZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
     {
         idx = getIdx(x, y, z);
-        const int idxG = x + z * GRIDSIZESKYX;
+        const int idxG = x + z * simSizeX;
 
         if (graphActive)
         {
@@ -1068,7 +1068,7 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
 
         //Is ground?
         if (y <= _groundHeight[idxG]) continue;
-        //if (x == GRIDSIZESKYX - 1) continue; //TODO: Right side is not fully working due to pressure project 
+        //if (x == simSizeX - 1) continue; //TODO: Right side is not fully working due to pressure project 
 
 
         float PVCON{ 0.0f }; // Condensation/Evaporation rate of cloud water to vapor
@@ -1433,11 +1433,11 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
 {
     const int x = threadIdx.x;
     const int z = blockIdx.x;
-    const int idxG = x + z * GRIDSIZESKYX;
+    const int idxG = x + z * simSizeX;
     const int y = _groundHeight[idxG]; //Y to use index on environment variables
     const int idx = getIdx(x, y + 1, z);
 
-    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return; // Able to return due to no syncing
+    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return; // Able to return due to no syncing
 
     float PGREVP{ 0.0f }; // Evaporation of (rain)water.
     //float PSDEP{ 0.0f }; // TODO: Depositional growth of snow 
@@ -1557,11 +1557,11 @@ __global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _
 {
     const int x = threadIdx.x;
     const int z = blockIdx.x;
-    const int idxG = x + z * GRIDSIZESKYX;
+    const int idxG = x + z * simSizeX;
     const int y = _groundHeight[idxG]; //Y to use index on environment variables
     const int idx = getIdx(x, y + 1, z);
 
-    if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return; // Able to return due to no syncing
+    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return; // Able to return due to no syncing
 
     float PGRFR{ 0.0f }; // Freezing rain hitting the ground forming ice
 

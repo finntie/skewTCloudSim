@@ -276,12 +276,15 @@ void fillLUTS(environmentData& data, void* skyViewLUT, void* aerialViewLUT, unsi
     static float4* tempData3D = nullptr;
     static bool initialized = false;
 
-    if (reset && initialized)
+    if (reset)
     {
-        if (!initialized)
+        if (initialized)
         {
             cudaFree(tempData);
             cudaFree(tempData3D);
+            initialized = false;
+            tempData = nullptr;
+            tempData3D = nullptr;
         }
         return;
     }

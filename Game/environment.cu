@@ -30,12 +30,12 @@
 
 
 // Constant simulation variables (extern in utils.cuh)
-__constant__ int simSizeX{ GRIDSIZESKYX };
-__constant__ int simSizeY{ GRIDSIZESKYY };
-__constant__ int simSizeZ{ GRIDSIZESKYZ };
-__constant__ int simSize{ GRIDSIZESKY };
-__constant__ float voxelSize{ VOXELSIZE };
-__constant__ int simSizeGround{ GRIDSIZEGROUND };
+__constant__ int simSizeX{ 64 };
+__constant__ int simSizeY{ 64 };
+__constant__ int simSizeZ{ 64 };
+__constant__ int simSize{ 64 * 64 * 64 };
+__constant__ float voxelSize{ 64 };
+__constant__ int simSizeGround{ 64 * 64 };
 __constant__ float simSpeed{ 1.0f };
 __constant__ float simDeltaTime{ 0.0f };
 __constant__ float invBlockSpreadDepth{ 1.0f };
@@ -100,7 +100,7 @@ environmentGPU::environmentGPU()
 	// Set block dimensions to be square root of the max threads available. Making use of as much threads as possible
 	const unsigned int threadsBlock = uint32_t(floor(sqrt(totalThreadsPerBlock)));
 	// If one side is smaller than 1 block, we still want to use as many threads as possible per block
-	if (totalThreadsPerBlock > GRIDSIZESKYX)
+	if (totalThreadsPerBlock > unsigned(GRIDSIZESKYX))
 	{
 		blockDim.x = GRIDSIZESKYX;
 		blockDim.y = std::min(uint32_t(GRIDSIZESKYY), uint32_t(double(totalThreadsPerBlock) / double(blockDim.x)));
@@ -128,7 +128,7 @@ environmentGPU::environmentGPU()
 	// Depth is determined by how many blocks we have in total and use per z slice.
 	gridDim.z = unsigned int(std::min(double(GRIDSIZESKYZ), floor(double(totalBlocksPerGrid) / double(gridDim.x * gridDim.y))));
 
-	canFillAll = GRIDSIZESKYZ <= gridDim.z;
+	canFillAll = unsigned(GRIDSIZESKYZ) <= gridDim.z;
 
 	// Fill info
 	const float _invBlockSpreadDepth = 1.0f / (float(gridDim.z) / float(GRIDSIZESKYZ));
@@ -326,6 +326,16 @@ environmentGPU::~environmentGPU()
 
 void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures, float* smallPressure)
 {
+	// Set constant values for all GPU files
+	cudaMemcpyToSymbolAsync(simSizeX, &GRIDSIZESKYX, sizeof(int), 0, cudaMemcpyHostToDevice, simStream);
+	cudaMemcpyToSymbolAsync(simSizeY, &GRIDSIZESKYY, sizeof(int), 0, cudaMemcpyHostToDevice, simStream);
+	cudaMemcpyToSymbolAsync(simSizeZ, &GRIDSIZESKYZ, sizeof(int), 0, cudaMemcpyHostToDevice, simStream);
+	cudaMemcpyToSymbolAsync(simSize, &GRIDSIZESKY, sizeof(int), 0, cudaMemcpyHostToDevice, simStream);
+	cudaMemcpyToSymbolAsync(voxelSize, &VOXELSIZE, sizeof(float), 0, cudaMemcpyHostToDevice, simStream);
+	cudaMemcpyToSymbolAsync(simSizeGround, &GRIDSIZEGROUND, sizeof(int), 0, cudaMemcpyHostToDevice, simStream);
+
+	Game.Editor().init();
+
 	// Init renderer data
 	Game.cudaRenderer().initEnvironmentData(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ, VOXELSIZE, gridDim, blockDim);
 
@@ -827,7 +837,7 @@ void environmentGPU::diffuseGPU(float* diffuseArray, int type, const float dt)
 
 }
 
-void environmentGPU::advectGroundWater(const float dt, const float speed)
+void environmentGPU::advectGroundWater(const float , const float )
 {
 	// For the ground we use also use block and gridsize, but now X and Z instead of Y
 	dim3 grid(std::min(16, GRIDSIZESKYX), std::min(16, GRIDSIZESKYZ));
@@ -1295,6 +1305,7 @@ void environmentGPU::editorDataGPU()
 	m_sunStrength = Game.Editor().getSunStrength();
 	Game.Editor().getTime(m_time);
 	Game.Editor().setTime(m_time); //For if time did not change
+	Game.Editor().checkSaveFile();
 }
 
 float environmentGPU::irridianceGPU()
@@ -1322,7 +1333,7 @@ void environmentGPU::updateGroundTemps(const float dt, const float speed, const 
 	calculateGroundTempGPU << <GRIDSIZESKYZ, GRIDSIZESKYX, 0, simStream >> > (m_groundGrid.T, dt * speed, irridiance, m_dummyArrayGround);
 }
 
-void environmentGPU::calculateBuoyancy(const float dt)
+void environmentGPU::calculateBuoyancy(const float )
 {
 	// Neumann, since we will just use the current temp but divide by 2, meaning we don't actually use outside or ground
 	const int sharedDataSize = (blockDim.x + 2) * (blockDim.y + 2) * sizeof(float) * 2;

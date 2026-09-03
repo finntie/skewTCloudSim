@@ -14,9 +14,9 @@ __global__ void initGroundHeightGPU(int* _GHeight, const float* noise, const flo
 {
 	const int x = threadIdx.x;
 	const int z = blockIdx.x;
-	const int idxG = x + z * GRIDSIZESKYX;
+	const int idxG = x + z * simSizeX;
 
-	if (x >= GRIDSIZESKYX || z >= GRIDSIZESKYZ) return; 
+	if (x >= simSizeX || z >= simSizeZ) return; 
 
 	_GHeight[idxG] = static_cast<int>(roundf(noise[idxG] * maxHeight));
 }
@@ -27,12 +27,12 @@ __global__ void resetValueInGround(float* array, const int* _GHeight)
 	const int y = blockIdx.x;
 	int z = 0;
 
-	if (x >= GRIDSIZESKYX || y >= GRIDSIZESKYY || z >= GRIDSIZESKYZ) return;
+	if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return;
 
-	for (z = 0; z < GRIDSIZESKYZ; z++)
+	for (z = 0; z < simSizeZ; z++)
 	{
 		const int idx = getIdx(x, y, z);
-		if (y > _GHeight[x + z * GRIDSIZESKYX])
+		if (y > _GHeight[x + z * simSizeX])
 		{
 			continue;
 		}
@@ -44,11 +44,11 @@ __global__ void computeIsenTempGroundGPU(float* array, const float* isenTemp, co
 {
 	const int x = threadIdx.x;
 	const int z = blockIdx.x;
-	const int idx = x + z * GRIDSIZESKYX;
+	const int idx = x + z * simSizeX;
 
-	if (x >= GRIDSIZESKYX || z >= GRIDSIZESKYZ) return;
+	if (x >= simSizeX || z >= simSizeZ) return;
 	
-	const int GH = _GHeight[idx] + 1 >= GRIDSIZESKYY ? GRIDSIZESKYY - 1 : _GHeight[idx] + 1;
+	const int GH = _GHeight[idx] + 1 >= simSizeY ? simSizeY - 1 : _GHeight[idx] + 1;
 	const float T = potentialTempGPU(isenTemp[GH - 1] - 273.15f, groundPressure[idx], pressures[getIdx(x, GH, z)]);
 	array[idx] = T + 273.15f;
 }
@@ -56,10 +56,10 @@ __global__ void computeIsenTempGroundGPU(float* array, const float* isenTemp, co
 //Deprecated
 //__global__ void getFirstValidIndex(int* firstValid, const int* _GHeight)
 //{
-//	for (int x = 0; x < GRIDSIZESKYX; x++)
+//	for (int x = 0; x < simSizeX; x++)
 //	{
-//		if (_GHeight[x] >= GRIDSIZESKYY - 2) continue;
-//		*firstValid = x + (_GHeight[x] + 1) * GRIDSIZESKYX;
+//		if (_GHeight[x] >= simSizeY - 2) continue;
+//		*firstValid = x + (_GHeight[x] + 1) * simSizeX;
 //	}
 //}
 

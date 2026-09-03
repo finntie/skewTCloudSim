@@ -11,6 +11,7 @@ class environmentGPU;;
 class dataClass;
 class skewTMaker;
 class skewTFile;
+class cloudFile;
 
 class game
 {
@@ -37,6 +38,7 @@ public:
 	dataClass& DataClass() { return *m_dataClassObj; }
 	skewTMaker& SkewTMaker() { return *m_skewTMakerObj; }
 	skewTFile& SkewTFile() { return *m_skewTFileObj; }
+	cloudFile& CloudFile() { return *m_cloudFileObj; }
 private:
 
 	CudaRender* m_cudaRenderObj = nullptr;
@@ -49,6 +51,7 @@ private:
 	dataClass* m_dataClassObj = nullptr;
 	skewTMaker* m_skewTMakerObj = nullptr;
 	skewTFile* m_skewTFileObj = nullptr;
+	cloudFile* m_cloudFileObj = nullptr;
 
 };
 
