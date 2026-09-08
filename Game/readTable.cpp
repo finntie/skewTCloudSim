@@ -204,17 +204,17 @@ void readTable::debugDrawData()
 	{
 		glm::vec2 coords = convertToPlottingCoordinates(0, p, true, sizeSkewT.x, sizeSkewT.y);
 
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::Grey);
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::GreyA);
 	}
 	for (float i = -100; i < 40; i += 10)
 	{
 
 		glm::vec2 coords = convertToPlottingCoordinates(i, 30000, false, sizeSkewT.x, sizeSkewT.y);
 
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(i, 0, 0), glm::vec3(coords, 0), bee::Colors::Grey);
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(i, 0, 0), glm::vec3(coords, 0), bee::Colors::GreyA);
 	}
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40, 0, 0), glm::vec3(40, 0, 0), bee::Colors::Black);
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40, 0, 0), glm::vec3(-40, 30000 * divV, 0), bee::Colors::Black);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40, 0, 0), glm::vec3(40, 0, 0), bee::Colors::BlackA);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(-40, 0, 0), glm::vec3(-40, 30000 * divV, 0), bee::Colors::BlackA);
 
 
 	//Dry and moist adiabatic 
@@ -229,7 +229,7 @@ void readTable::debugDrawData()
 				glm::vec2 coords = convertToPlottingCoordinates(potTemps[j], pressures[j], true, sizeSkewT.x, sizeSkewT.y);
 				glm::vec2 coordsPrev = convertToPlottingCoordinates(potTemps[j - 10], pressures[j - 10], true, sizeSkewT.x, sizeSkewT.y);
 
-				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Grey);
+				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::GreyA);
 			}
 		}
 
@@ -244,7 +244,7 @@ void readTable::debugDrawData()
 				glm::vec2 coords = convertToPlottingCoordinates(potTemps[j], pressures[j], true, sizeSkewT.x, sizeSkewT.y);
 				glm::vec2 coordsPrev = convertToPlottingCoordinates(potTemps[j - 10], pressures[j - 10], true, sizeSkewT.x, sizeSkewT.y);
 
-				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Grey);
+				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::GreyA);
 			}
 		}
 	}
@@ -253,18 +253,18 @@ void readTable::debugDrawData()
 	//LCL
 	glm::vec3 LCL = meteoformulas::getLCL(skewTData.data.temperature[0], skewTData.data.pressure[0], 0, skewTData.data.dewPoint[0]);
 	glm::vec2 coords = convertToPlottingCoordinates(LCL.x, LCL.y, true, sizeSkewT.x, sizeSkewT.y);
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::Green);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::GreenA);
 
 
 	//CCL
 	glm::vec3 CCL = meteoformulas::getCCL(skewTData.data.pressure[0], skewTData.data.dewPoint[0], skewTData.data.pressure, skewTData.data.temperature, skewTData.data.dataSize);
 	coords = convertToPlottingCoordinates(CCL.x, CCL.y, true, sizeSkewT.x, sizeSkewT.y);
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::White);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::WhiteA);
 	glm::vec2 coords2 = convertToPlottingCoordinates(skewTData.data.dewPoint[0], skewTData.data.pressure[0], true, sizeSkewT.x, sizeSkewT.y);
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, coords.y, 0), glm::vec3(coords2.x, coords2.y, 0), bee::Colors::Grey);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, coords.y, 0), glm::vec3(coords2.x, coords2.y, 0), bee::Colors::GreyA);
 
 	coords = convertToPlottingCoordinates(CCL.z, skewTData.data.pressure[0], true, sizeSkewT.x, sizeSkewT.y);
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, 0, 0), glm::vec3(coords.x, 2, 0), bee::Colors::Red);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, 0, 0), glm::vec3(coords.x, 2, 0), bee::Colors::RedA);
 
 
 	//Dry adiabatic to LCL
@@ -276,7 +276,7 @@ void readTable::debugDrawData()
 		coords = convertToPlottingCoordinates(temps[j], skewTData.data.pressure[j], true, sizeSkewT.x, sizeSkewT.y);
 		glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], skewTData.data.pressure[j - 1], true, sizeSkewT.x, sizeSkewT.y);
 
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::BlackA);
 	}
 
 	//Moist adiabatic at LCL
@@ -290,29 +290,29 @@ void readTable::debugDrawData()
 			coords = convertToPlottingCoordinates(temps[j], skewTData.data.pressure[j], true, sizeSkewT.x, sizeSkewT.y);
 			glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], skewTData.data.pressure[j - 1], true, sizeSkewT.x, sizeSkewT.y);
 
-			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
+			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::BlackA);
 		}
 	}
 
 	//LFC
 	const glm::vec3 LFC = meteoformulas::getLFC(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.altitude[0], skewTData.data.dewPoint[0], skewTData.data.pressure, skewTData.data.temperature, skewTData.data.altitude, skewTData.data.dataSize);
 	coords = convertToPlottingCoordinates(skewTData.data.temperature[0], LFC.y, true, sizeSkewT.x, sizeSkewT.y);
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::Yellow);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::YellowA);
 
 	//EL
 	const glm::vec3 EL = meteoformulas::getEL(skewTData.data.temperature[0], skewTData.data.pressure[0], skewTData.data.altitude[0], skewTData.data.dewPoint[0], skewTData.data.pressure, skewTData.data.temperature, skewTData.data.altitude, skewTData.data.dataSize);
 	coords = convertToPlottingCoordinates(skewTData.data.temperature[0], EL.y, true, sizeSkewT.x, sizeSkewT.y);
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::Pink);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(35, coords.y, 0), glm::vec3(40, coords.y, 0), bee::Colors::PinkA);
 
 	//CAPE
 	CAPE = meteoformulas::calculateCAPE(skewTData.data.temperature[0], skewTData.data.pressure[0], 0, skewTData.data.dewPoint[0], skewTData.data.pressure, skewTData.data.temperature, skewTData.data.altitude, skewTData.data.dataSize);
 
 
-	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 0.1f, glm::vec3(0, 0, 1), bee::Colors::Black);
-	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 10, glm::vec3(0, 0, 1), bee::Colors::Black);
-	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 20, glm::vec3(0, 0, 1), bee::Colors::Black);
-	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 30, glm::vec3(0, 0, 1), bee::Colors::Black);
-	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 40, glm::vec3(0, 0, 1), bee::Colors::Black);
+	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 0.1f, glm::vec3(0, 0, 1), bee::Colors::BlackA);
+	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 10, glm::vec3(0, 0, 1), bee::Colors::BlackA);
+	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 20, glm::vec3(0, 0, 1), bee::Colors::BlackA);
+	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 30, glm::vec3(0, 0, 1), bee::Colors::BlackA);
+	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(hodoOffset, 0), 40, glm::vec3(0, 0, 1), bee::Colors::BlackA);
 
 	glm::vec2 prevDir = { 0,0 };
 
@@ -336,17 +336,17 @@ void readTable::debugDrawData()
 		glm::vec2 dewPrevCoords = convertToPlottingCoordinates(skewTData.data.dewPoint[i - 1], skewTData.data.pressure[i - 1], true, sizeSkewT.x, sizeSkewT.y);
 
 
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(tempCoords, 0.0f), glm::vec3(tempPrevCoords, 0.0f), bee::Colors::Red);
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(dewCoords, 0.0f), glm::vec3(dewPrevCoords, 0.0f), bee::Colors::Green);
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(tempCoords, 0.0f), glm::vec3(tempPrevCoords, 0.0f), bee::Colors::RedA);
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(dewCoords, 0.0f), glm::vec3(dewPrevCoords, 0.0f), bee::Colors::GreenA);
 
 
-		glm::vec4 color = bee::Colors::Black;
+		glm::vec4 color = bee::Colors::BlackA;
 
-		if (skewTData.data.altitude[i] > 0) color = bee::Colors::Purple;
-		if (skewTData.data.altitude[i] > 1000) color = bee::Colors::Red;
-		if (skewTData.data.altitude[i] > 2000) color = bee::Colors::Orange;
-		if (skewTData.data.altitude[i] > 6000) color = bee::Colors::Yellow;
-		if (skewTData.data.altitude[i] > 9000) color = bee::Colors::Cyan;
+		if (skewTData.data.altitude[i] > 0) color = bee::Colors::PurpleA;
+		if (skewTData.data.altitude[i] > 1000) color = bee::Colors::RedA;
+		if (skewTData.data.altitude[i] > 2000) color = bee::Colors::OrangeA;
+		if (skewTData.data.altitude[i] > 6000) color = bee::Colors::YellowA;
+		if (skewTData.data.altitude[i] > 9000) color = bee::Colors::CyanA;
 
 
 		//Hodograph

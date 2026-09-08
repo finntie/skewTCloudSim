@@ -3,6 +3,7 @@
 #include <glm/glm.hpp> //TODO: we do not want this
 #include "config.h"
 #include <cuda_runtime.h> 
+#include "environment.h"
 struct microPhysicsParams;
 struct envDebugData;
 
@@ -10,36 +11,12 @@ class environmentGPU
 {
 public:
 
-	struct gridDataSkyGPU // 88 bytes
-	{
-		float* Qv; //  Mixing Ratio of Water Vapor
-		float* Qw; //	Mixing Ratio of	Liquid Water
-		float* Qc; //	Mixing Ratio of Ice 
-		float* Qr; //	Mixing Ratio of Rain
-		float* Qs; //	Mixing Ratio of Snow
-		float* Qi; //	Mixing Ratio of Ice (precip)
-		float* potTemp;			 // Potential temperature
-		float* velfieldX;
-		float* velfieldY;
-		float* velfieldZ;
-		float* pressure;
-	};
-
-	struct gridDataGroundGPU // 56 bytes
-	{
-		float* Qrs; // Subsurface water content
-		float* Qgr; // Rain content
-		float* Qgs; // Snow content
-		float* Qgi; // Ice content
-		float* P; // Ground Pressure
-		float* t; // Time since ground was wet
-		float* T;  // Ground temperature
-	};
-
 	environmentGPU();
 	~environmentGPU();
 
 	void init(float* potTemps, glm::vec3* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures, float* smallPressure);
+
+	void getGridBlockDims(dim3& gridDim, dim3& blockDim);
 
 	void updateGPU(float dt, const float speed);
 
@@ -81,7 +58,7 @@ public:
 	void updateGroundTemps(const float dt, const float speed, const float irridiance);
 	void calculateBuoyancy(const float dt);
 	bool isGround(int x, int y);
-	float* getParamArray(parameter type, direction windDir = RIGHT);
+	float* getParamArray(parameter type);
 	//------------------------------------------
 
 
@@ -109,8 +86,8 @@ private:
 
 
 
-	gridDataSkyGPU m_envGrid{};
-	gridDataGroundGPU m_groundGrid{};
+	environment::gridDataSkyGPU m_envGrid{};
+	environment::gridDataGroundGPU m_groundGrid{};
 	simInfo simKernelInfo{};
 
 	// Grid and Block size based on size of simulation

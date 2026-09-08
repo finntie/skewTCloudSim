@@ -5,14 +5,44 @@
 #include "environment.h"
 #include "editor.h"
 
+#include <cuda_runtime.h>
 
 #include <fstream>
 #include <filesystem>
+#include <sstream>
+
+#include <execution>
 
 
 
 
 
+cloudFile::~cloudFile()
+{
+	if (m_GPUDataInitialized)
+	{
+		cudaFree(m_groundDataGPU.T);
+		cudaFree(m_groundDataGPU.t);
+		cudaFree(m_groundDataGPU.P);
+		cudaFree(m_groundDataGPU.Qgi);
+		cudaFree(m_groundDataGPU.Qgs);
+		cudaFree(m_groundDataGPU.Qgr);
+		cudaFree(m_groundDataGPU.Qrs);
+
+		cudaFree(m_skyDataGPU.pressure);
+		cudaFree(m_skyDataGPU.velfieldZ);
+		cudaFree(m_skyDataGPU.velfieldY);
+		cudaFree(m_skyDataGPU.velfieldX);
+		cudaFree(m_skyDataGPU.potTemp);
+		cudaFree(m_skyDataGPU.Qi);
+		cudaFree(m_skyDataGPU.Qs);
+		cudaFree(m_skyDataGPU.Qr);
+		cudaFree(m_skyDataGPU.Qc);
+		cudaFree(m_skyDataGPU.Qw);
+		cudaFree(m_skyDataGPU.Qv);
+	}
+
+}
 
 void cloudFile::panel()
 {
@@ -95,8 +125,8 @@ void cloudFile::panel()
 		ImGui::Text("Optional");
 		ImGui::Separator();
 		coloredSelectable("Temperature", &m_typesSky[6]);
-		coloredSelectable("Wind", &m_typesSky[7]);
-		coloredSelectable("Pressure", &m_typesSky[8]);
+		if (coloredSelectable("Wind", &m_typesSky[7])) m_typesSky[8] = m_typesSky[9] = m_typesSky[7];
+		coloredSelectable("Pressure", &m_typesSky[10]);
 		ImGui::Dummy(ImVec2(10, 10));
 
 		ImGui::Text("Ground types");
@@ -257,7 +287,7 @@ void cloudFile::confirmPopup()
 	}
 }
 
-bool cloudFile::coloredSelectable(const char* label, bool* value)
+bool coloredSelectable(const char* label, bool* value)
 {
 	// Since you can not color selectables in a style manner, we have to do it manually per item
 	ImVec4 darkGrey = ImVec4(0.05f, 0.05f, 0.05f, 1.0f);
@@ -279,7 +309,7 @@ bool cloudFile::coloredSelectable(const char* label, bool* value)
 
 bool cloudFile::isOneTypeSelected()
 {
-	for (int i = 0; i < 9; i++)
+	for (int i = 0; i < 11; i++)
 	{
 		if (m_typesSky[i]) return true;
 	}
@@ -293,7 +323,7 @@ bool cloudFile::isOneTypeSelected()
 int cloudFile::totalTypesSelected()
 {
 	int types = 0;
-	for (int i = 0; i < 9; i++)
+	for (int i = 0; i < 11; i++)
 	{
 		if (m_typesSky[i]) types++;
 	}
@@ -304,33 +334,35 @@ int cloudFile::totalTypesSelected()
 	return types;
 }
 
-float* cloudFile::typeToPointer(int type, int frame, bool sky)
+float* cloudFile::typeToPointer(int type, environment::gridDataSky* skyData, environment::gridDataGround* groundData, bool sky)
 {
-	if (sky)
+	if (sky && skyData)
 	{
 		switch (type)
 		{
-		case 0: return m_skyData[frame].Qw;
-		case 1: return m_skyData[frame].Qc;
-		case 2: return m_skyData[frame].Qr;
-		case 3: return m_skyData[frame].Qs;
-		case 4: return m_skyData[frame].Qi;
-		case 5: return m_skyData[frame].Qv;
-		case 6: return m_skyData[frame].potTemp;
-		case 7: return nullptr; // Velocity field, is not a float
-		case 8: return m_skyData[frame].pressure;
+		case 0: return (*skyData).Qw;
+		case 1: return (*skyData).Qc;
+		case 2: return (*skyData).Qr;
+		case 3: return (*skyData).Qs;
+		case 4: return (*skyData).Qi;
+		case 5: return (*skyData).Qv;
+		case 6: return (*skyData).potTemp;
+		case 7: return (*skyData).velFieldX;
+		case 8: return (*skyData).velFieldY;
+		case 9: return (*skyData).velFieldZ;
+		case 10: return (*skyData).pressure;
 		default: break;
 		}
 	}
-	else
+	else if (groundData)
 	{
 		switch (type)
 		{
-		case 0: return m_groundData[frame].T;
-		case 1: return m_groundData[frame].Qrs;
-		case 2: return m_groundData[frame].Qgr;
-		case 3: return m_groundData[frame].Qgs;
-		case 4: return m_groundData[frame].Qgi;
+		case 0: return (*groundData).T;
+		case 1: return (*groundData).Qrs;
+		case 2: return (*groundData).Qgr;
+		case 3: return (*groundData).Qgs;
+		case 4: return (*groundData).Qgi;
 		default: break;
 		}
 	}
@@ -351,7 +383,9 @@ std::string cloudFile::typeToString(int type, bool sky)
 		case 5: return "Qv";
 		case 6: return "Temp";
 		case 7: return "Wind";
-		case 8: return "Pressure";
+		case 8: return "Wind";
+		case 9: return "Wind";
+		case 10: return "Pressure";
 		default: break;
 		}
 	}
@@ -369,6 +403,28 @@ std::string cloudFile::typeToString(int type, bool sky)
 	}
 
 	return "";
+}
+
+int cloudFile::stringToType(std::string type, bool& outputSky)
+{
+	if (type == "Qw") { outputSky = true; return 0; }
+	else if (type == "Qc") { outputSky = true; return 1; }
+	else if (type == "Qr") { outputSky = true; return 2; }
+	else if (type == "Qs") { outputSky = true; return 3; }
+	else if (type == "Qi") { outputSky = true; return 4; }
+	else if (type == "Qv") { outputSky = true; return 5; }
+	else if (type == "Temp") { outputSky = true; return 6; }
+	else if (type == "Wind") { outputSky = true; return 7; } // Wind accounts for X Y and Z
+	else if (type == "Pressure") { outputSky = true; return 10; }
+	
+	else if (type == "GTemp") { outputSky = false; return 0; }
+	else if (type == "GWater") { outputSky = false; return 1; }
+	else if (type == "GQr") { outputSky = false; return 2; }
+	else if (type == "GQs") { outputSky = false; return 3; }
+	else if (type == "GQi") { outputSky = false; return 4; }
+
+	outputSky = false;
+	return -1;
 }
 
 bool cloudFile::checkFile(const char* fileName, std::string& outputFullPath)
@@ -429,11 +485,13 @@ bool cloudFile::tryCreateFrame(environment::gridDataSky& _skyData, environment::
 		{
 			memcpy_s(skyData.potTemp, GRIDSIZESKY * sizeof(float), _skyData.potTemp, GRIDSIZESKY * sizeof(float));
 		}
-		if (m_typesSky[7]) // Wind
+		if (m_typesSky[7] || m_typesSky[8] || m_typesSky[9]) // Wind, all the same
 		{
-			memcpy_s(skyData.velField, GRIDSIZESKY * sizeof(glm::vec3), _skyData.velField, GRIDSIZESKY * sizeof(glm::vec3));
+			memcpy_s(skyData.velFieldX, GRIDSIZESKY * sizeof(float), _skyData.velFieldX, GRIDSIZESKY * sizeof(float));
+			memcpy_s(skyData.velFieldY, GRIDSIZESKY * sizeof(float), _skyData.velFieldY, GRIDSIZESKY * sizeof(float));
+			memcpy_s(skyData.velFieldZ, GRIDSIZESKY * sizeof(float), _skyData.velFieldZ, GRIDSIZESKY * sizeof(float));
 		}
-		if (m_typesSky[8]) // Pressure
+		if (m_typesSky[10]) // Pressure
 		{
 			memcpy_s(skyData.pressure, GRIDSIZESKY * sizeof(float), _skyData.pressure, GRIDSIZESKY * sizeof(float));
 		}
@@ -478,7 +536,7 @@ void cloudFile::saveToFile()
 {	
 	std::string fullFile = "assets/output/" + m_fileName + ".bin";
 
-	std::ofstream writeFile(fullFile.c_str());
+	std::ofstream writeFile(fullFile.c_str(), std::ios::binary);
 
 	// Simulation Size
 	writeFile << GRIDSIZESKYX << " " << GRIDSIZESKYY << " " << GRIDSIZESKYZ << "\n";
@@ -488,38 +546,28 @@ void cloudFile::saveToFile()
 	writeFile << m_totalFrames << "\n";
 	// Time frames
 	writeFile.write(reinterpret_cast<char*>(m_frames.data()), m_frames.size() * sizeof(float));
-	writeFile << "\n";
 	// Total amount of types
 	writeFile << totalTypesSelected() << "\n";
 	// Types in order
-	for (int i = 0; i < 9; i++) if (m_typesSky[i]) writeFile << typeToString(i, true) << " ";
+	for (int i = 0; i < 11; i++) if (m_typesSky[i]) writeFile << typeToString(i, true) << " ";
 	for (int i = 0; i < 5; i++) if (m_typesGround[i]) writeFile << typeToString(i, false) << " ";
 	writeFile << "\n";
 	// Data of all types in order
 	lockGlobal(); // To be certain
 	for (int i = 0; i < m_totalFrames; i++)
 	{
-		for (int j = 0; j < 9; j++)
+		for (int j = 0; j < 11; j++)
 		{
 			if (m_typesSky[j])
 			{
-				if (j == 7) // Exception for the velocity field, since this is a vec3
-				{
-					writeFile.write(reinterpret_cast<char*>(m_skyData[i].velField), GRIDSIZESKY * sizeof(glm::vec3));
-					writeFile << "\n";
-				}
-				else
-				{
-					writeFile.write(reinterpret_cast<char*>(typeToPointer(j, i, true)), GRIDSIZESKY * sizeof(float));
-					writeFile << "\n";
-				}
+				writeFile.write(reinterpret_cast<char*>(typeToPointer(j, &m_skyData[i], &m_groundData[i], true)), GRIDSIZESKY * sizeof(float));
 			}
 		}
 		for (int j = 0; j < 5; j++)
 		{
 			if (m_typesGround[j])
 			{
-				writeFile.write(reinterpret_cast<char*>(typeToPointer(j, i, false)), GRIDSIZEGROUND * sizeof(float));
+				writeFile.write(reinterpret_cast<char*>(typeToPointer(j, &m_skyData[i], &m_groundData[i], false)), GRIDSIZEGROUND * sizeof(float));
 				writeFile << "\n";
 			}
 		}
@@ -527,4 +575,369 @@ void cloudFile::saveToFile()
 	unlockGlobal();
 
 	writeFile.close();
+}
+
+std::vector<std::string> cloudFile::getSimulationFiles()
+{
+	std::vector <std::string> output;
+	std::filesystem::path directory = "assets/output";
+
+	// If directory does not exist, we just do not have any files yet
+	if (!std::filesystem::exists(directory)) return output;
+
+	// Go through all files and add them
+	for (const auto& entry : std::filesystem::directory_iterator(directory))
+	{
+		output.push_back(entry.path().filename().string());
+	}
+	return output;
+}
+
+bool cloudFile::getMetaData(const char* fileName, int& sizeX, int& sizeY, int& sizeZ, float& voxelSize, int& totalFrames, std::string& includedTypes)
+{
+	if (!loadFile(fileName, true)) return false;
+	sizeX = m_tempSizeX;
+	sizeY = m_tempSizeY;
+	sizeZ = m_tempSizeZ;
+	voxelSize = m_tempVoxelSize;
+	totalFrames = m_totalFrames;
+	includedTypes.clear();
+
+	for (int j = 0; j < 11; j++)
+	{
+		if (m_typesSky[j])
+		{
+			includedTypes += typeToString(j, true) + " ";	
+		}
+	}
+	for (int j = 0; j < 5; j++)
+	{
+		if (m_typesGround[j])
+		{
+			includedTypes += typeToString(j, false) + " ";
+		}
+	}
+	return true;
+}
+
+bool cloudFile::loadFile(const char* fileName, bool onlyMeta)
+{
+	// Reset everything
+	m_tempSizeX = 0;
+	m_tempSizeY = 0;
+	m_tempSizeZ = 0;
+	m_tempVoxelSize = 0.0f;
+	m_amountTypes = 0;
+	m_totalFrames = 0;
+	memset(m_typesSky, 0, 11 * sizeof(bool));
+	memset(m_typesGround, 0, 5 * sizeof(bool));
+
+	std::filesystem::path directory = "assets/output";
+	directory = directory / fileName;
+
+	// TODO: has extension in filename?
+	if (!std::filesystem::exists(directory))
+	{
+		std::printf("Error, could not find file %s to load", fileName);
+		return false;
+	}
+	
+	// Data to be received
+	int gridSizeFull = 0;
+	int gridsizeGround = 0;
+
+
+	/*	File Template
+	*
+	*	1. Simulation Size
+	* 	2. Voxel Size
+	* 	3. Total amount of frames
+	* 	4. Timestamp of each frame (0 to 24 hours with decimal for minute and second)
+	* 	5. Amount of types we store
+	* 	6. Types we store in order
+	* 	7. Data for each type
+	* 
+	* 	Example:
+	* 
+	* 	1. 32 32 32
+	* 	2. 128
+	* 	3. 240
+	* 	4. 12.0341 12.0349 12.0357 12.0365 12.0383 12.0381 (etc) (In Binary)
+	* 	5. 7
+	* 	6. Qw Qc Qr Qs Qi GTemp Grs
+	* 	7. 0.0 0.0 0.0 0.0 0.00001 0.0002 0.00001 0.0 0.0 (etc x for each type) (In Binray)
+	*/
+
+
+	bool valid = true;
+	bool keepGoing = true;
+	bool skipGetLine = false;
+
+	// Open file in binary
+	std::ifstream loadedFile(directory, std::ios::binary);
+	std::string line;
+	std::string word;
+	int row = 0;
+	
+	// For the binary data we do not want to getLine, since this will offset the cursor.
+	while (valid && keepGoing && (skipGetLine || std::getline(loadedFile, line)))
+	{
+		row++;
+		std::stringstream ss(line);
+		int count = 0;
+		while (keepGoing && valid && ss >> word)
+		{
+			switch (row)
+			{
+			case 1: // Simulation Size
+				if (count == 0) m_tempSizeX = std::stoi(word);
+				else if (count == 1) m_tempSizeY = std::stoi(word);
+				else if (count == 2)
+				{
+					m_tempSizeZ = std::stoi(word);
+					gridSizeFull = m_tempSizeX * m_tempSizeY * m_tempSizeZ;
+					gridsizeGround = m_tempSizeX * m_tempSizeZ;
+				}
+				break;
+			case 2: // Voxel Size
+				m_tempVoxelSize = std::stof(word);
+				break;
+			case 3: // Total amount of frames
+				m_totalFrames = std::stoi(word);
+				m_frames.resize(m_totalFrames);
+				skipGetLine = true;
+				break;
+			case 4: // Timestamp of each frame (Binary)
+				// Advance cursor if not interested in the data itself
+				if (onlyMeta) loadedFile.seekg(m_totalFrames * sizeof(float), std::ios::cur);
+				else loadedFile.read(reinterpret_cast<char*>(m_frames.data()), m_totalFrames * sizeof(float));
+				skipGetLine = false;
+				break;
+			case 5: // Amount of types we store
+				m_amountTypes = std::stoi(word);
+				break;
+			case 6: // Types we store in order
+			{
+				bool sky = false;
+				int type = 0;
+				type = stringToType(word, sky);
+				if (type == -1) { valid = false; break; } // Invalid
+				if (sky) m_typesSky[type] = true;
+				else m_typesGround[type] = true;
+				skipGetLine = true;
+			}
+				break;
+			case 7: // Data for each type (Binary)
+
+				// Not interested if only reading meta data
+				if (onlyMeta)
+				{
+					keepGoing = false;
+					break;
+				}
+				m_skyData.resize(m_totalFrames);
+				m_groundData.resize(m_totalFrames);
+
+				for (int i = 0; i < m_totalFrames; i++)
+				{
+					m_skyData[i].init(gridSizeFull);
+					m_groundData[i].init(gridsizeGround);
+
+					for (int j = 0; j < 11; j++)
+					{
+						if (m_typesSky[j])
+						{
+							loadedFile.read(reinterpret_cast<char*>(typeToPointer(j, &m_skyData[i], &m_groundData[i], true)), gridSizeFull * sizeof(float));
+						}
+					}
+					for (int j = 0; j < 5; j++)
+					{
+						if (m_typesGround[j])
+						{
+							loadedFile.read(reinterpret_cast<char*>(typeToPointer(j, &m_skyData[i], &m_groundData[i], false)), gridsizeGround * sizeof(float));
+						}
+					}
+				}
+				skipGetLine = false;
+				keepGoing = false;
+				break;
+			default:
+				break;
+			}
+
+			count++;
+			if (count > 999) valid = false;
+		}
+		if (row > 999) valid = false;
+	}
+	// Check if everything is valid
+	if (m_tempSizeX <= 0 || m_tempSizeX >= 2048) valid = false;
+	if (m_tempSizeY <= 0 || m_tempSizeY >= 2048) valid = false;
+	if (m_tempSizeZ <= 0 || m_tempSizeZ >= 2048) valid = false;
+	if (m_tempVoxelSize <= 0 || m_tempVoxelSize >= 4096) valid = false;
+	if (m_amountTypes <= 0 || m_amountTypes > 11 + 5) valid = false;
+	if (m_totalFrames <= 0 || m_totalFrames > 10'000) valid = false; // Lets assume 10.000 frames is too much
+	if ((m_frames.empty() || m_frames.size() >= 10'000) && !onlyMeta) valid = false;
+	if (!isOneTypeSelected()) valid = false;
+	if (m_skyData.empty() && m_groundData.empty() && !onlyMeta) valid = false;
+
+	if (!valid)
+	{
+		printf("Error, something went wrong with loading data, make sure the file is correct\n");
+	}
+
+	return valid;
+}
+
+void cloudFile::getLerpedFrameData(environment::gridDataSky* skyData, environment::gridDataGround* groundData, int currentFrame, float frameTime)
+{
+	int t1 = currentFrame;
+	int t2 = currentFrame + 1;
+	float t = frameTime;
+	if (t2 >= m_skyData.size()) t2 = t1;
+
+	auto time0 = std::chrono::high_resolution_clock::now();
+
+
+	if (skyData)
+	{
+		if (m_typesSky[0]) transformLerp(m_skyData[t1].Qw, m_skyData[t2].Qw, (*skyData).Qw, t, GRIDSIZESKY);
+		if (m_typesSky[1]) transformLerp(m_skyData[t1].Qc, m_skyData[t2].Qc, (*skyData).Qc, t, GRIDSIZESKY);
+		if (m_typesSky[2]) transformLerp(m_skyData[t1].Qr, m_skyData[t2].Qr, (*skyData).Qr, t, GRIDSIZESKY);
+		if (m_typesSky[3]) transformLerp(m_skyData[t1].Qs, m_skyData[t2].Qs, (*skyData).Qs, t, GRIDSIZESKY);
+		if (m_typesSky[4]) transformLerp(m_skyData[t1].Qi, m_skyData[t2].Qi, (*skyData).Qi, t, GRIDSIZESKY);
+		if (m_typesSky[5]) transformLerp(m_skyData[t1].Qv, m_skyData[t2].Qv, (*skyData).Qv, t, GRIDSIZESKY);
+
+		if (m_typesSky[6]) transformLerp(m_skyData[t1].potTemp, m_skyData[t2].potTemp, (*skyData).potTemp, t, GRIDSIZESKY);
+		// Exception for the velocity, since its not a float
+		if (m_typesSky[7] || m_typesSky[8] || m_typesSky[9])
+		{
+			transformLerp(m_skyData[t1].velFieldX, m_skyData[t2].velFieldX, (*skyData).velFieldX, t, GRIDSIZESKY);
+			transformLerp(m_skyData[t1].velFieldY, m_skyData[t2].velFieldY, (*skyData).velFieldY, t, GRIDSIZESKY);
+			transformLerp(m_skyData[t1].velFieldZ, m_skyData[t2].velFieldZ, (*skyData).velFieldZ, t, GRIDSIZESKY);
+		}
+		if (m_typesSky[8]) transformLerp(m_skyData[t1].pressure, m_skyData[t2].pressure, (*skyData).pressure, t, GRIDSIZESKY);
+	}
+	if (groundData)
+	{
+		if (m_typesGround[0]) transformLerp(m_groundData[t1].T, m_groundData[t2].T, (*groundData).T, t, GRIDSIZEGROUND);
+		if (m_typesGround[1]) transformLerp(m_groundData[t1].Qrs, m_groundData[t2].Qrs, (*groundData).Qrs, t, GRIDSIZEGROUND);
+		if (m_typesGround[2]) transformLerp(m_groundData[t1].Qgr, m_groundData[t2].Qgr, (*groundData).Qgr, t, GRIDSIZEGROUND);
+		if (m_typesGround[3]) transformLerp(m_groundData[t1].Qgs, m_groundData[t2].Qgs, (*groundData).Qgs, t, GRIDSIZEGROUND);
+		if (m_typesGround[4]) transformLerp(m_groundData[t1].Qgi, m_groundData[t2].Qgi, (*groundData).Qgi, t, GRIDSIZEGROUND);
+	}
+	auto time1 = std::chrono::high_resolution_clock::now();
+	std::cout << "Raw loop: " << std::chrono::duration<double, std::milli>(time1 - time0).count() << " ms\n";
+}
+
+bool cloudFile::getSurroundedFrameTimes(float time, float& outputBeforeTime, float& outputAfterTime, int& beforeFrameNum)
+{
+	outputBeforeTime = -1.0f;
+	outputAfterTime = -1.0f;
+	if (m_frames.empty()) return false;
+
+	// Use lower bound to get the first value which is greater or the same as the input
+	// If (1, 3, 5, 7, 9) with input of value 6, it returns index to 7 (index[3])
+	auto it = std::lower_bound(m_frames.begin(), m_frames.end(), time);
+
+	// If none was found, time is larger than any value in the vector
+	if (it == m_frames.end())
+	{
+		beforeFrameNum = int(m_frames.size()) - 1;
+		outputBeforeTime = m_frames.back();
+		return true;
+	}
+	// If time is smaller than any value in the vector
+	else if (*it == m_frames.front())
+	{
+		beforeFrameNum = 0;
+		outputAfterTime = m_frames.front();
+		return true;
+	}
+
+	// time is in between values
+	beforeFrameNum = int(std::distance(std::begin(m_frames), it)) - 1;
+	outputBeforeTime = *(it - 1);
+	outputAfterTime = *(it);
+
+	return true;
+}
+
+void cloudFile::initGPUData(void* stream)
+{
+	// Environment Values
+	cudaMallocAsync((void**)&m_skyDataGPU.Qv, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_skyDataGPU.Qw, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_skyDataGPU.Qc, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_skyDataGPU.Qr, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_skyDataGPU.Qs, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_skyDataGPU.Qi, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_skyDataGPU.potTemp, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_skyDataGPU.velfieldX, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_skyDataGPU.velfieldY, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_skyDataGPU.velfieldZ, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_skyDataGPU.pressure, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+
+	// Ground values
+	cudaMallocAsync((void**)&m_groundDataGPU.Qrs, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_groundDataGPU.Qgr, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_groundDataGPU.Qgs, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_groundDataGPU.Qgi, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_groundDataGPU.P, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_groundDataGPU.t, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	cudaMallocAsync((void**)&m_groundDataGPU.T, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+
+	m_GPUDataInitialized = true;
+
+}
+
+environment::gridDataSkyGPU& cloudFile::CPUtoGPUDataSky(environment::gridDataSky& skyData, void* stream)
+{
+	// Copy over all data
+	cudaMemcpyAsync(m_skyDataGPU.Qw, skyData.Qw, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_skyDataGPU.Qc, skyData.Qc, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_skyDataGPU.Qr, skyData.Qr, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_skyDataGPU.Qs, skyData.Qs, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_skyDataGPU.Qi, skyData.Qi, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_skyDataGPU.Qv, skyData.Qv, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_skyDataGPU.velfieldX, skyData.velFieldX, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_skyDataGPU.velfieldY, skyData.velFieldY, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_skyDataGPU.velfieldZ, skyData.velFieldZ, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_skyDataGPU.potTemp, skyData.potTemp, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_skyDataGPU.pressure, skyData.pressure, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+
+	return m_skyDataGPU;
+}
+
+environment::gridDataGroundGPU& cloudFile::CPUtoGPUDataGround(environment::gridDataGround& groundData, void* stream)
+{
+	// Copy over all data
+	cudaMemcpyAsync(m_groundDataGPU.T, groundData.T, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_groundDataGPU.t, groundData.t, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_groundDataGPU.P, groundData.P, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_groundDataGPU.Qrs, groundData.Qrs, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_groundDataGPU.Qgr, groundData.Qgr, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_groundDataGPU.Qgs, groundData.Qgs, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_groundDataGPU.Qgi, groundData.Qgi, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
+
+	return m_groundDataGPU;
+}
+
+void cloudFile::transformLerp(float* array1, float* array2, float* outputArray, float lerp, int size)
+{
+	// Lerp in a different way:
+	//float t = lerp < 0.5f ? 0.5f * (1.0f - (1.0f - lerp * 2.0f) * (1.0f - lerp * 2.0f)) : 0.5f + 0.5f * ((lerp - 0.5f) * 2.0f * (lerp - 0.5f) * 2.0f);
+	float t = lerp;
+
+	//for (int i = 0; i < size; i++)
+	//{
+	//	outputArray[i] = array1[i] + t * (array2[i] - array1[i]);
+	//}
+	
+	// Use transform these 2 arrays to interpolate values and write to skyData
+	std::transform(std::execution::par_unseq, array1, array1 + size, array2, outputArray,
+		[t](float a, float b)
+		{
+			return a + t * (b - a);
+		});
 }

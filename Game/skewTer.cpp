@@ -98,17 +98,17 @@ void skewTer::drawBackground()
 	{
 		glm::vec2 coords = convertToPlottingCoordinates(0, h, true, skewTSize.x, skewTSize.y);
 		coords += skewTPos;
-		skewTImage->AddLine(glm::vec3(-40 * scaleX + skewTPos.x, coords.y, 0), glm::vec3(40 * scaleX + skewTPos.x, coords.y, 0), bee::Colors::Grey);
+		skewTImage->AddLine(glm::vec3(-40 * scaleX + skewTPos.x, coords.y, 0), glm::vec3(40 * scaleX + skewTPos.x, coords.y, 0), bee::Colors::GreyA);
 	}
 	for (float i = -100; i < 40; i += 10)
 	{
 		glm::vec2 coords = convertToPlottingCoordinates(i, 100, true, skewTSize.x, skewTSize.y);
 		coords += skewTPos;
 
-		skewTImage->AddLine(glm::vec3(i * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(coords, 0), bee::Colors::Grey);
+		skewTImage->AddLine(glm::vec3(i * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(coords, 0), bee::Colors::GreyA);
 	}
-	skewTImage->AddLine(glm::vec3(-40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), bee::Colors::Black);
-	skewTImage->AddLine(glm::vec3(-40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(-40 * scaleX + skewTPos.x, 100 * scaleY + skewTPos.y, 0), bee::Colors::Black);
+	skewTImage->AddLine(glm::vec3(-40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), bee::Colors::BlackA);
+	skewTImage->AddLine(glm::vec3(-40 * scaleX + skewTPos.x, 0 + skewTPos.y, 0), glm::vec3(-40 * scaleX + skewTPos.x, 100 * scaleY + skewTPos.y, 0), bee::Colors::BlackA);
 }
 
 void skewTer::drawEnvironment()
@@ -127,8 +127,8 @@ void skewTer::drawEnvironment()
 			dewCoords += skewTPos;
 			dewPrevCoords += skewTPos;
 
-			skewTImage->AddLine(glm::vec3(tempCoords, 0.0f), glm::vec3(tempPrevCoords, 0.0f), bee::Colors::Red);
-			skewTImage->AddLine(glm::vec3(dewCoords, 0.0f), glm::vec3(dewPrevCoords, 0.0f), bee::Colors::Green);
+			skewTImage->AddLine(glm::vec3(tempCoords, 0.0f), glm::vec3(tempPrevCoords, 0.0f), bee::Colors::RedA);
+			skewTImage->AddLine(glm::vec3(dewCoords, 0.0f), glm::vec3(dewPrevCoords, 0.0f), bee::Colors::GreenA);
 		}
 	}
 }
@@ -154,7 +154,7 @@ void skewTer::drawDryAndMoist()
 			coords += skewTPos;
 			coordsPrev += skewTPos;
 
-			skewTImage->AddLine(glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
+			skewTImage->AddLine(glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::BlackA);
 		}
 
 		//Moist adiabatic at LCL
@@ -172,7 +172,7 @@ void skewTer::drawDryAndMoist()
 				coords += skewTPos;
 				coordsPrev += skewTPos;
 
-				skewTImage->AddLine(glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::Black);
+				skewTImage->AddLine(glm::vec3(coords, 0), glm::vec3(coordsPrev, 0), bee::Colors::BlackA);
 			}
 		}
 	}

@@ -174,15 +174,15 @@ void skewTMaker::handleMouseInput()
 		// Add circle at between points
 		for (auto it : m_inBetweenPosses)
 		{
-			bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::General, it, m_cursorSize * (m_zoomValue + 0.2f), glm::vec3(0, 1, 0), bee::Colors::White);
+			bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::General, it, m_cursorSize * (m_zoomValue + 0.2f), glm::vec3(0, 1, 0), bee::Colors::WhiteA);
 		}
 		m_inBetweenPosses.clear();
 
 	}
 
 
-	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::General, m_cursorPos, m_cursorSize * (m_zoomValue + 0.2f), glm::vec3(0, 1, 0), bee::Colors::White);
-	if (m_cursorActive) bee::Engine.DebugRenderer().AddFilledSquare(bee::DebugCategory::General, m_cursorPos, m_cursorSize * (m_zoomValue + 0.2f), glm::vec3(0, 1, 0), bee::Colors::White);
+	bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::General, m_cursorPos, m_cursorSize * (m_zoomValue + 0.2f), glm::vec3(0, 1, 0), bee::Colors::WhiteA);
+	if (m_cursorActive) bee::Engine.DebugRenderer().AddFilledSquare(bee::DebugCategory::General, m_cursorPos, m_cursorSize * (m_zoomValue + 0.2f), glm::vec3(0, 1, 0), bee::Colors::WhiteA);
 }
 
 void skewTMaker::updateCursor(bool reset)
@@ -1365,7 +1365,7 @@ void skewTMaker::drawBackground()
 	{
 		glm::vec2 coords = convertToPlottingCoordinates(0, p, true);
 
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(m_skewTPos.x, 0, -coords.y), glm::vec3(m_skewTPos.x + m_skewTSize.x, 0, -coords.y), bee::Colors::Grey);
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(m_skewTPos.x, 0, -coords.y), glm::vec3(m_skewTPos.x + m_skewTSize.x, 0, -coords.y), bee::Colors::GreyA);
 	}
 	for (float i = m_tempMin - 50; i <= m_tempMax; i += 1)
 	{
@@ -1375,7 +1375,7 @@ void skewTMaker::drawBackground()
 		glm::vec4 color = color = glm::vec4(0.4f, 0.4f, 0.4f, 1.0f);;
 		if (int(i) % 5 == 0) color = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
 		if (int(i) % 10 == 0) color = glm::vec4(0.75f, 0.75f, 0.75f, 1.0f);
-		if (i == 0) color = bee::Colors::White;
+		if (i == 0) color = bee::Colors::WhiteA;
 
 		if (coords2.x < m_skewTPos.x)
 		{
@@ -1394,8 +1394,8 @@ void skewTMaker::drawBackground()
 		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords2.x, 0, -coords2.y), glm::vec3(coords.x, 0, -coords.y), color);
 	}
 
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(m_skewTPos.x, 0, -m_skewTPos.y), glm::vec3(m_skewTPos.x + m_skewTSize.x, 0, -m_skewTPos.y), bee::Colors::Black);
-	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(m_skewTPos.x, 0, -m_skewTPos.y), glm::vec3(m_skewTPos.x, 0, -(m_skewTPos.y + m_skewTSize.y)), bee::Colors::Black);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(m_skewTPos.x, 0, -m_skewTPos.y), glm::vec3(m_skewTPos.x + m_skewTSize.x, 0, -m_skewTPos.y), bee::Colors::BlackA);
+	bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(m_skewTPos.x, 0, -m_skewTPos.y), glm::vec3(m_skewTPos.x, 0, -(m_skewTPos.y + m_skewTSize.y)), bee::Colors::BlackA);
 
 
 	// Hodograph
@@ -1403,12 +1403,12 @@ void skewTMaker::drawBackground()
 		for (float wind = 10.0f * m_hodoGraphDecrease; wind <= m_windMax * m_hodoGraphDecrease; wind += 10.0f * m_hodoGraphDecrease)
 		{
 			// Windspeed in knots
-			bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(m_centerhodoPos.x, 0.0f, -m_centerhodoPos.z), wind, glm::vec3(0, 1, 0), bee::Colors::Grey);
+			bee::Engine.DebugRenderer().AddCircle(bee::DebugCategory::All, glm::vec3(m_centerhodoPos.x, 0.0f, -m_centerhodoPos.z), wind, glm::vec3(0, 1, 0), bee::Colors::GreyA);
 		}
 
 		// Axis
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(m_centerhodoPos.x - m_windMax * m_hodoGraphDecrease, 0.0f, -m_centerhodoPos.z), glm::vec3(m_centerhodoPos.x + m_windMax * m_hodoGraphDecrease, 0.0f, -m_centerhodoPos.z), bee::Colors::Black);
-		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(m_centerhodoPos.x, 0.0f, -(m_centerhodoPos.z - m_windMax * m_hodoGraphDecrease)), glm::vec3(m_centerhodoPos.x, 0.0f, -(m_centerhodoPos.z + m_windMax * m_hodoGraphDecrease)), bee::Colors::Black);
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(m_centerhodoPos.x - m_windMax * m_hodoGraphDecrease, 0.0f, -m_centerhodoPos.z), glm::vec3(m_centerhodoPos.x + m_windMax * m_hodoGraphDecrease, 0.0f, -m_centerhodoPos.z), bee::Colors::BlackA);
+		bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(m_centerhodoPos.x, 0.0f, -(m_centerhodoPos.z - m_windMax * m_hodoGraphDecrease)), glm::vec3(m_centerhodoPos.x, 0.0f, -(m_centerhodoPos.z + m_windMax * m_hodoGraphDecrease)), bee::Colors::BlackA);
 	}
 }
 
@@ -1421,14 +1421,14 @@ void skewTMaker::drawEnvironment()
 			glm::vec2 tempCoords = convertToPlottingCoordinates(m_simpleTemps.value[i], m_simpleTemps.pressure[i], true);
 			glm::vec2 tempPrevCoords = convertToPlottingCoordinates(m_simpleTemps.value[i - 1], m_simpleTemps.pressure[i - 1], true);
 
-			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(tempCoords.x, 0.0f, -tempCoords.y), glm::vec3(tempPrevCoords.x, 0.0f, -tempPrevCoords.y), bee::Colors::Red);
+			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(tempCoords.x, 0.0f, -tempCoords.y), glm::vec3(tempPrevCoords.x, 0.0f, -tempPrevCoords.y), bee::Colors::RedA);
 		}
 		for (int i = 1; i < int(m_simpleDews.value.size()); i++)
 		{
 			glm::vec2 dewCoords = convertToPlottingCoordinates(m_simpleDews.value[i], m_simpleDews.pressure[i], true);
 			glm::vec2 dewPrevCoords = convertToPlottingCoordinates(m_simpleDews.value[i - 1], m_simpleDews.pressure[i - 1], true);
 
-			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(dewCoords.x, 0.0f, -dewCoords.y), glm::vec3(dewPrevCoords.x, 0.0f, -dewPrevCoords.y), bee::Colors::Green);
+			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(dewCoords.x, 0.0f, -dewCoords.y), glm::vec3(dewPrevCoords.x, 0.0f, -dewPrevCoords.y), bee::Colors::GreenA);
 		}
 		for (int i = 0; i < int(m_simpleWindSpeed.value.size()); i++)
 		{
@@ -1477,7 +1477,7 @@ void skewTMaker::drawDryAndMoist()
 			glm::vec2 coords = convertToPlottingCoordinates(temps[j], pressureCanvas[j], true);
 			glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], pressureCanvas[j - 1], true);
 
-			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, 0, -coords.y), glm::vec3(coordsPrev.x, 0, -coordsPrev.y), bee::Colors::Grey);
+			bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, 0, -coords.y), glm::vec3(coordsPrev.x, 0, -coordsPrev.y), bee::Colors::GreyA);
 		}
 
 		//Moist adiabatic at LCL
@@ -1493,7 +1493,7 @@ void skewTMaker::drawDryAndMoist()
 				glm::vec2 coords = convertToPlottingCoordinates(temps[j], pressureCanvas[j], true);
 				glm::vec2 coordsPrev = convertToPlottingCoordinates(temps[j - 1], pressureCanvas[j - 1], true);
 
-				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, 0, -coords.y), glm::vec3(coordsPrev.x, 0, -coordsPrev.y), bee::Colors::Grey);
+				bee::Engine.DebugRenderer().AddLine(bee::DebugCategory::All, glm::vec3(coords.x, 0, -coords.y), glm::vec3(coordsPrev.x, 0, -coordsPrev.y), bee::Colors::GreyA);
 			}
 		}
 	}

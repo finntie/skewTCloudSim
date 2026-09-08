@@ -10,9 +10,9 @@ __constant__ float radiusEarth = 6360.0f;  // Radius of the earth in km
 __constant__ float sampleHeight = 100.0f;  // Height of sampled medium (until the medium gets small enough that we dont care)
 __constant__ float3x4 invViewLUT;
 
-void setConstants(const float* _invView, size_t sizeViewMat)
+void setConstants(const float* _invView, size_t sizeViewMat, void* stream)
 {
-    if (_invView) cudaMemcpyToSymbol(invViewLUT, _invView, sizeViewMat);
+    if (_invView) cudaMemcpyToSymbolAsync(invViewLUT, _invView, sizeViewMat, 0, cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
 }
 
 // position.y ranging from 0 to sampleHeight
@@ -748,6 +748,7 @@ __global__ void envSkyView(float4* skyView,
 
     if (x >= resolution.x || y >= resolution.y) return;
 
+    float4 & output = skyView[idx];
     
     // Set UV, ranging between 0 and 1
     float u = (float(x) + 0.5f) / float(resolution.x);
@@ -778,7 +779,7 @@ __global__ void envSkyView(float4* skyView,
     result = result / (result + 1);
     result = make_float3(powf(result.x, 1 / 2.2f), powf(result.y, 1 / 2.2f), powf(result.z, 1 / 2.2f));
 
-    skyView[idx] = make_float4(result.x, result.y, result.z, 0.0f);
+    output = make_float4(result.x, result.y, result.z, 0.0f);
 }
 
 // 3D texture, the third dimension covering multiple depths

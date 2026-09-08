@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <vector_types.h>
 
 struct dim3;
 struct float4;
@@ -80,7 +81,7 @@ public:
 	void display();
 
     // Environment Simulation
-    void initEnvironmentData(const int _sizeX, const int _sizeY, const int _sizeZ, const float _voxelSize, dim3& gridDim, dim3& blockDim);
+    void initEnvironmentData(const int _sizeX, const int _sizeY, const int _sizeZ, const float _voxelSize, dim3 gridDim, dim3 blockDim);
     
     void setDataEnvironment(float* Qw, float* Qc, float* Qr, float* Qs, float* Qi, float* velX, float* VelY, float* velZ, void* stream);
 
@@ -99,6 +100,8 @@ public:
                             float* sunDir,
                             float* sunColor);
 
+    // Remove delay of renderer to improve render time, will decrease resources towards other GPU functions (such as simulating)
+    void setOnlyRenderResource(bool value) { m_allResourcesRender = value; }
 
 private:
 
@@ -137,9 +140,10 @@ private:
     bool m_envInitialized{false};
     bool m_setData{false};
 
+    bool m_allResourcesRender{false};
 
-    dim3* m_gridDim{};
-    dim3* m_blockDim{};
+    dim3 m_gridDim{};
+    dim3 m_blockDim{};
 };
 
 

@@ -31,20 +31,36 @@ private:
 namespace Colors
 {
 
-inline glm::vec4 Black = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
-inline glm::vec4 White = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-inline glm::vec4 Grey = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
-inline glm::vec4 Red = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
-inline glm::vec4 Green = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
-inline glm::vec4 Blue = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
-inline glm::vec4 DodgerBlue = glm::vec4(0.0f, 0.5f, 1.0f, 1.0f);
-inline glm::vec4 Orange = glm::vec4(1.0f, 0.66f, 0.0f, 1.0f);
-inline glm::vec4 Cyan = glm::vec4(0.0f, 1.0f, 1.0f, 1.0f);
-inline glm::vec4 Magenta = glm::vec4(1.0f, 0.0f, 1.0f, 1.0f);
-inline glm::vec4 Yellow = glm::vec4(1.0f, 1.0, 0.0f, 1.0f);
-inline glm::vec4 Purple = glm::vec4(0.55f, 0.0, 0.65f, 1.0f);
-inline glm::vec4 Pink = glm::vec4(1.0f, 0.0, 0.72f, 1.0f);
-inline glm::vec4 Brown = glm::vec4(0.5f, 0.3f, 0.0f, 1.0f);
+inline glm::vec4 BlackA = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+inline glm::vec4 WhiteA = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+inline glm::vec4 GreyA = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
+inline glm::vec4 RedA = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+inline glm::vec4 GreenA = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
+inline glm::vec4 BlueA = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
+inline glm::vec4 DodgerBlueA = glm::vec4(0.0f, 0.5f, 1.0f, 1.0f);
+inline glm::vec4 OrangeA = glm::vec4(1.0f, 0.66f, 0.0f, 1.0f);
+inline glm::vec4 CyanA = glm::vec4(0.0f, 1.0f, 1.0f, 1.0f);
+inline glm::vec4 MagentaA = glm::vec4(1.0f, 0.0f, 1.0f, 1.0f);
+inline glm::vec4 YellowA = glm::vec4(1.0f, 1.0, 0.0f, 1.0f);
+inline glm::vec4 PurpleA = glm::vec4(0.55f, 0.0, 0.65f, 1.0f);
+inline glm::vec4 PinkA = glm::vec4(1.0f, 0.0, 0.72f, 1.0f);
+inline glm::vec4 BrownA = glm::vec4(0.5f, 0.3f, 0.0f, 1.0f);
+
+inline glm::vec3 Black = glm::vec3(0.0f, 0.0f, 0.0f);
+inline glm::vec3 White = glm::vec3(1.0f, 1.0f, 1.0f);
+inline glm::vec3 Grey = glm::vec3(0.5f, 0.5f, 0.5f);
+inline glm::vec3 Red = glm::vec3(1.0f, 0.0f, 0.0f);
+inline glm::vec3 Green = glm::vec3(0.0f, 1.0f, 0.0f);
+inline glm::vec3 Blue = glm::vec3(0.0f, 0.0f, 1.0f);
+inline glm::vec3 DodgerBlue = glm::vec3(0.0f, 0.5f, 1.0f);
+inline glm::vec3 Orange = glm::vec3(1.0f, 0.66f, 0.0f);
+inline glm::vec3 Cyan = glm::vec3(0.0f, 1.0f, 1.0f);
+inline glm::vec3 Magenta = glm::vec3(1.0f, 0.0f, 1.0f);
+inline glm::vec3 Yellow = glm::vec3(1.0f, 1.0, 0.0f);
+inline glm::vec3 Purple = glm::vec3(0.55f, 0.0, 0.65f);
+inline glm::vec3 Pink = glm::vec3(1.0f, 0.0, 0.72f);
+inline glm::vec3 Brown = glm::vec3(0.5f, 0.3f, 0.0f);
+
 
 }  // namespace Colors
 

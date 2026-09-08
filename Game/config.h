@@ -126,7 +126,7 @@ struct boundsEnv
 // Parameter type
 enum parameter
 {
-	POTTEMP, QV, QW, QC, QR, QS, QI, WIND, PGROUND, PRESSURE, DEBUG1, DEBUG2, DEBUG3
+	POTTEMP, QV, QW, QC, QR, QS, QI, WINDX, WINDY, WINDZ, PGROUND, PRESSURE, DEBUG1, DEBUG2, DEBUG3
 };
 
 struct simInfo

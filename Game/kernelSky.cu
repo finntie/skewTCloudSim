@@ -1788,7 +1788,7 @@ __global__ void applyBrushGPU(const int* GHeight, float* array, float* array2, f
 				const bool groundChanged = setGround(GHeight, groundGridStor, mX, mY, mZ, groundErase);
 				if (groundChanged) *changedGround = groundChanged; //We don;t want to set back to false, if ever set, it is that.
 			}
-			else if (paramType == WIND) //For wind
+			else if (paramType == WINDX || paramType == WINDY || paramType == WINDZ) //For wind
 			{
 				array[mIdx] += value1;
 				array2[mIdx] += value2;
@@ -1838,7 +1838,7 @@ __global__ void applySelectionGPU(const int* GHeight, float* array, float* array
 			const bool groundChanged = setGround(GHeight, groundGridStor, mX, mY, mZ, groundErase);
 			if (groundChanged) *changedGround = groundChanged; //We don;t want to set back to false, if ever set, it is that.
 		}
-		else if (paramType == WIND) //For wind
+		else if (paramType == WINDX || paramType == WINDY || paramType == WINDZ) //For wind
 		{
 			array[mIdx] = value1;
 			array2[mIdx] = value2;

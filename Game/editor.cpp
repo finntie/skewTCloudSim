@@ -1,5 +1,7 @@
 #include "pch.h"
 
+#include <glm/glm.hpp>
+
 #include "editor.h"
 #include "skewTer.h"
 #include "game.h"
@@ -12,6 +14,7 @@
 #include "utils.cuh"
 
 #include "platform/cuda/cuda_render_gl.h"
+#include "platform/cuda/cuda_render.cuh"
 
 
 #if USE_GPU
@@ -39,10 +42,18 @@ editor::~editor()
 	delete m_envData; //Created from environment.cpp
 }
 
-void editor::init()
+void editor::initSimulation()
 {
 	m_envData->init();
 	tracerObj->init();
+}
+
+void editor::initCloudViewSkyData()
+{
+	m_currentCloudViewSkyData.init(GRIDSIZESKY);
+	m_currentCloudViewSkyData.reset();
+	tracerObj->init();
+	Game.CloudFile().initGPUData(getStream());
 }
 
 void editor::setColors()
@@ -73,26 +84,26 @@ void editor::setColors()
 	colorScheme.addColor("debugColor", 0.0001f, bee::Colors::Yellow);
 	colorScheme.addColor("debugColor", 0.001f, bee::Colors::Orange);
 	colorScheme.addColor("debugColor", 0.01f, bee::Colors::Red);
-	colorScheme.addColor("debugColor", 0.1f, bee::Colors::Pink + glm::vec4(0, 0.8f, 0, 0));
+	colorScheme.addColor("debugColor", 0.1f, bee::Colors::Pink + glm::vec3(0, 0.8f, 0));
 
 	colorScheme.createColorScheme("realistic", 0.0f, bee::Colors::Grey, 1.0f, bee::Colors::Black);
-	colorScheme.addColor("realistic", 0.0005f, glm::vec4(0.6f, 0.7f, 0.8f, 1.0f));
+	colorScheme.addColor("realistic", 0.0005f, glm::vec3(0.6f, 0.7f, 0.8f));
 	colorScheme.addColor("realistic", 0.001f, bee::Colors::White);
-	colorScheme.addColor("realistic", 0.005f, glm::vec4(0.8f, 0.8f, 0.8f, 1.0f));
-	colorScheme.addColor("realistic", 0.01f, glm::vec4(0.4f, 0.4f, 0.4f, 1.0f));
+	colorScheme.addColor("realistic", 0.005f, glm::vec3(0.8f, 0.8f, 0.8f));
+	colorScheme.addColor("realistic", 0.01f, glm::vec3(0.4f, 0.4f, 0.4f));
 
 	colorScheme.createColorScheme("pressure", 0.0f, bee::Colors::Purple, 1050.0f, bee::Colors::White);
-	colorScheme.addColor("pressure", 100.0f, glm::vec4(0.3f, 0.0f, 0.75f, 1.0f));
-	colorScheme.addColor("pressure", 200.0f, glm::vec4(0.1f, 0.8f, 0.9f, 1.0f));
-	colorScheme.addColor("pressure", 300.0f, glm::vec4(0.0f, 0.8f, 1.0f, 1.0f));
-	colorScheme.addColor("pressure", 400.0f, glm::vec4(0.0f, 0.4f, 1.0f, 1.0f));
-	colorScheme.addColor("pressure", 600.0f, glm::vec4(0.0f, 0.8f, 0.8f, 1.0f));
-	colorScheme.addColor("pressure", 700.0f, glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
-	colorScheme.addColor("pressure", 800.0f, glm::vec4(0.4f, 0.8f, 0.0f, 1.0f));
-	colorScheme.addColor("pressure", 900.0f, glm::vec4(0.8f, 0.0f, 0.0f, 1.0f));
-	colorScheme.addColor("pressure", 950.0f, glm::vec4(1.0f, 0.6f, 0.6f, 1.0f));
-	colorScheme.addColor("pressure", 975.0f, glm::vec4(0.6f, 0.5f, 0.5f, 1.0f));
-	colorScheme.addColor("pressure", 1000.0f, glm::vec4(0.2f, 0.2f, 0.2f, 1.0f));
+	colorScheme.addColor("pressure", 100.0f, glm::vec3(0.3f, 0.0f, 0.75f));
+	colorScheme.addColor("pressure", 200.0f, glm::vec3(0.1f, 0.8f, 0.9f));
+	colorScheme.addColor("pressure", 300.0f, glm::vec3(0.0f, 0.8f, 1.0f));
+	colorScheme.addColor("pressure", 400.0f, glm::vec3(0.0f, 0.4f, 1.0f));
+	colorScheme.addColor("pressure", 600.0f, glm::vec3(0.0f, 0.8f, 0.8f));
+	colorScheme.addColor("pressure", 700.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+	colorScheme.addColor("pressure", 800.0f, glm::vec3(0.4f, 0.8f, 0.0f));
+	colorScheme.addColor("pressure", 900.0f, glm::vec3(0.8f, 0.0f, 0.0f));
+	colorScheme.addColor("pressure", 950.0f, glm::vec3(1.0f, 0.6f, 0.6f));
+	colorScheme.addColor("pressure", 975.0f, glm::vec3(0.6f, 0.5f, 0.5f));
+	colorScheme.addColor("pressure", 1000.0f, glm::vec3(0.2f, 0.2f, 0.2f));
 
 	colorScheme.createColorScheme("density", -1, bee::Colors::Purple * 0.0f, 1, bee::Colors::White);
 	colorScheme.addColor("density", 0.15f, bee::Colors::Purple);
@@ -103,7 +114,7 @@ void editor::setColors()
 	colorScheme.addColor("density", 1.0f, bee::Colors::Yellow);
 	colorScheme.addColor("density", 1.1f, bee::Colors::Orange);
 	colorScheme.addColor("density", 1.2f, bee::Colors::Red);
-	colorScheme.addColor("density", 1.225f, bee::Colors::Pink + glm::vec4(0, 0.8f, 0, 0));
+	colorScheme.addColor("density", 1.225f, bee::Colors::Pink + glm::vec3(0, 0.8f, 0));
 }
 
 void editor::setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressures, void* stream)
@@ -148,36 +159,85 @@ void editor::update(float dt)
 {
 	m_deltatime = dt;
 
-	//Variable set
-	setVariables();
-	//Camera
-	cameraControl();
-	//Edit mode
-	editMode();
+	switch (m_simulateMode)
+	{
+	case editor::OFF:
+		break;
+	case editor::SIMULATING:
+
+		//Variable set
+		setVariables();
+		//Camera
+		cameraControl();
+		//Edit mode
+		editMode();
+
+		break;
+	case editor::CLOUDVIEW:
+
+		//Variable set
+		setVariables();
+		//Camera
+		cameraControl();
+		updateViewCloud();
+		break;
+	default:
+		break;
+	}
 }
 
 void editor::panel()
 {
-	mainButtons();
-	viewParamInformation();
-	ImGui::Begin("Viewset");
-	setView();
-	setSlice();
-	ImGui::End();
-	editModeParams();
-	setSkewTData();
-	skewTTexture();
-	dataClassView();
-	viewMicroPhysGraph();
-	viewImguiData();
+	switch (m_simulateMode)
+	{
+	case editor::OFF:
+		break;
+	case editor::SIMULATING:
+
+		mainButtons();
+		viewParamInformation();
+		ImGui::Begin("Viewset");
+		setView();
+		setSlice();
+		ImGui::End();
+		editModeParams();
+		setSkewTData();
+		skewTTexture();
+		dataClassView();
+		viewMicroPhysGraph();
+		viewImguiData();
+
+		break;
+	case editor::CLOUDVIEW:
+
+		cloudViewMenu();
+
+		break;
+	default:
+		break;
+	}
+
 }
 
 void editor::viewData()
 {
-	viewBackground();
-	viewSky();
-	viewGround();
-	viewSkewT();
+	switch (m_simulateMode)
+	{
+	case editor::OFF:
+		break;
+	case editor::SIMULATING:
+
+		viewBackground();
+		viewSky();
+		viewGround();
+		viewSkewT();
+
+		break;
+	case editor::CLOUDVIEW:
+		break;
+	default:
+		break;
+	}
 
 	resetValues();
 }
@@ -224,8 +284,8 @@ void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps
 
 	lockGlobal();
 
-	auto* sky = static_cast<environmentGPU::gridDataSkyGPU*>(_sky);
-	auto* ground = static_cast<environmentGPU::gridDataGroundGPU*>(_ground);
+	auto* sky = static_cast<environment::gridDataSkyGPU*>(_sky);
+	auto* ground = static_cast<environment::gridDataGroundGPU*>(_ground);
 
 	//Set sky values.
 	cudaMemcpyAsync(m_envData->m_envView.potTemp, sky->potTemp, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
@@ -235,19 +295,11 @@ void editor::GPUSetEnv(void* _sky, void* _ground, int* _groundHeight, float* _ps
 	cudaMemcpyAsync(m_envData->m_envView.Qr, sky->Qr, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 	cudaMemcpyAsync(m_envData->m_envView.Qs, sky->Qs, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 	cudaMemcpyAsync(m_envData->m_envView.Qi, sky->Qi, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
-	
 
-	// Use static unique ptr for local arrays
-	static std::unique_ptr<float[]> velX(new float[GRIDSIZESKY]);
-	static std::unique_ptr<float[]> velY(new float[GRIDSIZESKY]);
-	static std::unique_ptr<float[]> velZ(new float[GRIDSIZESKY]);
-	cudaMemcpyAsync(velX.get(), sky->velfieldX, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(velY.get(), sky->velfieldY, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(velZ.get(), sky->velfieldZ, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
-	for (int i = 0; i < GRIDSIZESKY; i++)
-	{
-		m_envData->m_envView.velField[i] = { velX[i], velY[i], velZ[i]};
-	}
+	cudaMemcpyAsync(m_envData->m_envView.velFieldX, sky->velfieldX, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_envView.velFieldY, sky->velfieldY, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	cudaMemcpyAsync(m_envData->m_envView.velFieldZ, sky->velfieldZ, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
+	
 	//Set pressure
 	cudaMemcpyAsync(m_envData->m_envView.pressure, _ps, GRIDSIZESKY * sizeof(float), cudaMemcpyDeviceToHost, static_cast<cudaStream_t>(stream));
 
@@ -484,6 +536,79 @@ void editor::setVariables()
 	}
 }
 
+void editor::updateViewCloud(bool force)
+{
+	while (m_cloudViewActive || m_cloudViewStep != 0 || force)
+	{
+
+		if (m_cloudViewStep < 0) m_cloudViewSpeedMult *= -1;
+		else m_cloudViewSpeedMult = abs(m_cloudViewSpeedMult);
+		// Get data about the time
+		float beforeTime, afterTime;
+		int frame = -1;
+		if (!Game.CloudFile().getSurroundedFrameTimes(m_time, beforeTime, afterTime, frame))
+		{
+			printf("Warning: No frames were found in the file\n");
+			return;
+		}
+		// Apply bounds of time in the simulation
+		if (beforeTime < 0.0f) m_time = afterTime, beforeTime = afterTime;
+		else if (afterTime < 0.0f) m_time = beforeTime, afterTime = beforeTime;
+
+		//if (m_time >= 86400.0f) m_time -= 86400.0f;
+		//if (m_time < 0.0f) m_time = 86400.0f;
+
+		// Convert from time to frameTime with decimal indicating progress from current frame to next one
+		const float a = afterTime - beforeTime;
+		const float b = m_time - beforeTime;
+		const float frameTime = b / (a + 1e-16f);
+
+		environment::gridDataSky& data = m_currentCloudViewSkyData;
+
+		Game.CloudFile().getLerpedFrameData(&data, nullptr, frame, frameTime);
+
+
+		// Reset parameters if hidden
+		for (int i = 0; i < 7; i++)
+		{
+			if (i == 6 && !m_visibleTypes[i])
+			{
+				// Mismatch in array indices, handling it manually
+				memset(Game.CloudFile().typeToPointer(7, &data, nullptr, true), 0, GRIDSIZESKY * sizeof(float));
+				memset(Game.CloudFile().typeToPointer(8, &data, nullptr, true), 0, GRIDSIZESKY * sizeof(float));
+				memset(Game.CloudFile().typeToPointer(9, &data, nullptr, true), 0, GRIDSIZESKY * sizeof(float));
+			}
+			else if (!m_visibleTypes[i]) memset(Game.CloudFile().typeToPointer(i, &data, nullptr, true), 0, GRIDSIZESKY * sizeof(float));
+		}
+
+
+		environment::gridDataSkyGPU& skyDataGPU = Game.CloudFile().CPUtoGPUDataSky(data, getStream());
+
+		Game.cudaRenderer().setDataEnvironment(
+			skyDataGPU.Qw,
+			skyDataGPU.Qc,
+			skyDataGPU.Qr,
+			skyDataGPU.Qs,
+			skyDataGPU.Qi,
+			skyDataGPU.velfieldX,
+			skyDataGPU.velfieldY,
+			skyDataGPU.velfieldZ,
+			getStream());
+
+		// Forcing will not update time, since it is only meant to update values
+		if (force) break;
+
+		// Update time, since environment would actually do that.
+		m_time += m_simulationActive ? m_deltatime * m_cloudViewSpeedMult : m_deltatime * m_cloudViewSpeedMult;
+
+
+		if (m_cloudViewStep < 0) m_cloudViewStep += 1;
+		else if (m_cloudViewStep > 0) m_cloudViewStep -= 1;
+		if (m_cloudViewStep == 0) break;
+	}
+}
+
+
 void editor::mainButtons()
 {
 	ImGui::BeginGroup();
@@ -548,7 +673,7 @@ void editor::viewParamInformation()
 		std::to_string(m_envData->m_envView.Qs[m_mousePointingIndex]) + "\n" +
 		std::to_string(m_envData->m_envView.Qi[m_mousePointingIndex]) + "\n" +
 		//ImGui::Text((std::string("Wind: ") + std::to_string(getUV(mousePointingIndex).x) + ", " + std::to_string(getUV(mousePointingIndex).y)).c_str());
-		std::to_string(m_envData->m_envView.velField[m_mousePointingIndex].x) + ", " + std::to_string(m_envData->m_envView.velField[m_mousePointingIndex].y) + ", " + std::to_string(m_envData->m_envView.velField[m_mousePointingIndex].z) + "\n" +
+		std::to_string(m_envData->m_envView.velFieldX[m_mousePointingIndex]) + ", " + std::to_string(m_envData->m_envView.velFieldY[m_mousePointingIndex]) + ", " + std::to_string(m_envData->m_envView.velFieldZ[m_mousePointingIndex]) + "\n" +
 		std::to_string(m_envData->m_envView.pressure[m_mousePointingIndex]) + "\n" +
 		std::to_string(m_envData->m_debugArray0[m_mousePointingIndex]) + "\n" +
 		std::to_string(m_envData->m_debugArray1[m_mousePointingIndex]) + "\n" +
@@ -563,7 +688,7 @@ void editor::viewParamInformation()
 
 	//Also render a square
 	//bee::Engine.DebugRenderer().AddSquare(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, float(z) + 0.5f), 1.0f, glm::vec3(0, 0, 1), bee::Colors::White);
-	bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, float(z) + 0.5f), 1.0f, bee::Colors::White);
+	bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(float(x) + 0.5f, float(y) + 0.5f, float(z) + 0.5f), 1.0f, bee::Colors::WhiteA);
 
 }
 
@@ -573,7 +698,7 @@ void editor::setView()
 	{
 		ImGui::Text("View parameter of:");
 		if (ImGui::Button("Temp")) m_viewParamSky = POTTEMP;	ImGui::SameLine();
-		if (ImGui::Button("Wind")) m_viewParamSky = WIND;	ImGui::SameLine();
+		if (ImGui::Button("Wind")) m_viewParamSky = WINDX;	ImGui::SameLine();
 		if (ImGui::Button("Ps"))   m_viewParamSky = PRESSURE;		ImGui::SameLine();
 		if (ImGui::Button("Qv"))   m_viewParamSky = QV;		ImGui::SameLine();
 		if (ImGui::Button("Qw"))   m_viewParamSky = QW;
@@ -605,7 +730,7 @@ void editor::setView()
 		ImGui::Text("Reset one parameter:");
 #if USE_GPU
 		if (ImGui::Button("Temp")) lockGlobal(), Game.EnvGPU().resetParameterGPU(POTTEMP), unlockGlobal(); ImGui::SameLine();
-		if (ImGui::Button("Wind")) lockGlobal(), Game.EnvGPU().resetParameterGPU(WIND), unlockGlobal(); ImGui::SameLine();
+		if (ImGui::Button("Wind")) lockGlobal(), Game.EnvGPU().resetParameterGPU(WINDX), unlockGlobal(); ImGui::SameLine();
 		if (ImGui::Button("Ps")) lockGlobal(), Game.EnvGPU().resetParameterGPU(PRESSURE), unlockGlobal();
 		if (ImGui::Button("Qv")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QV), unlockGlobal(); ImGui::SameLine();
 		if (ImGui::Button("Qw")) lockGlobal(), Game.EnvGPU().resetParameterGPU(QW), unlockGlobal(); ImGui::SameLine();
@@ -694,74 +819,7 @@ void editor::editModeParams()
 		ImGui::SliderFloat("Simulation Speed", &m_simulationSpeed, 0.1f, 100.0f);
 		if (ImGui::Button("Reset Speed")) m_simulationSpeed = 1.0f;
 
-		if (ImGui::TreeNode("Render Info"))
-		{
-			bool changed = false;
-			static float noiseReduction = 0.45f;
-			static float maxQW = 0.005f;
-			static float minQW = 0.0001f;
-
-			static float multipleScattering = 1.0f;
-			static float ambientLightStrength = 0.1f;
-			static float rayRandomOffset = 0.05f;
-			static float attenuation = 0.8f;
-			static float contribution = 0.5f;
-			static float eccentricityAttenuation = 0.5f;
-
-			static float sunStrength = 40.0f;
-			static float exposure = 1.0f;
-			static float sunDir[3] = { 1,1,1 };
-			static float sunColor[3] = { 1, 1, 1 };
-
-			static int octaves = 6;
-			static int gridSize = 2;
-			static float lacunarity = 2.0f;
-
-			if (ImGui::TreeNode("Noise Texture settings"))
-			{
-				ImGui::SliderInt("octaves", &octaves, 1, 10);
-				ImGui::SliderInt("gridSize", &gridSize, 1, 100);
-				ImGui::SliderFloat("lacunarity", &lacunarity, 1.0f, 32.0f);
-
-				if (ImGui::Button("Generate Noise"))
-				{
-					Game.cudaRenderer().setNoiseTexture(octaves, gridSize, lacunarity);
-				}
-				ImGui::TreePop();
-			}
-
-			ImGui::Separator();
-
-			if (ImGui::TreeNode("Visual settings"))
-			{
-				if (ImGui::SliderFloat("NoiseReduction", &noiseReduction, 0.0f, 5.0f)) changed = true;
-				if (ImGui::SliderFloat("MinQw", &minQW, 0.0f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic)) changed = true;
-				if (ImGui::SliderFloat("MaxQw", &maxQW, 0.0f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic)) changed = true;
-				ImGui::Separator();
-				if (ImGui::SliderFloat("multipleScattering", &multipleScattering, 0.0f, 10.0f)) changed = true;
-				if (ImGui::SliderFloat("Ambient Light Strength", &ambientLightStrength, 0.0f, 1.0f)) changed = true;
-				if (ImGui::SliderFloat("rayRandomOffset", &rayRandomOffset, 0.0f, 1.0f)) changed = true;
-				if (ImGui::SliderFloat("MS attenuation", &attenuation, 0.0f, 1.0f)) changed = true;
-				if (ImGui::SliderFloat("MS contribution", &contribution, 0.0f, 1.0f)) changed = true;
-				if (ImGui::SliderFloat("MS eccentricity attenuation", &eccentricityAttenuation, 0.0f, 1.0f)) changed = true;
-				ImGui::Separator();
-				if (ImGui::SliderFloat("Sun Strength", &sunStrength, 1.0f, 255.0f)) changed = true;
-				if (ImGui::SliderFloat("Light Exposure", &exposure, 0.0f, 10.0f)) changed = true;
-				if (ImGui::SliderFloat3("Sun Direction", sunDir, -1.0f, 1.0f)) changed = true;
-				if (ImGui::ColorEdit3("Sun Color", sunColor)) changed = true;
-
-				ImGui::TreePop();
-			}
-
-			if (changed)
-			{
-				Game.cudaRenderer().setExtraRenderInfo(noiseReduction, minQW, maxQW, multipleScattering, ambientLightStrength, rayRandomOffset, attenuation, contribution, eccentricityAttenuation, sunStrength, exposure, sunDir, sunColor);
-			}
-
-
-
-			ImGui::TreePop();
-		}
+		renderSettings();
 
 		if (ImGui::TreeNode("Diurnal Cycle"))
 		{
@@ -774,7 +832,7 @@ void editor::editModeParams()
 			ImGui::Text(std::string("Currently Editing: " + std::to_string(m_editParamSky)).c_str());
 			ImGui::Text("Edit parameter of:");
 			if (ImGui::Button("Temp")) m_editParamSky = POTTEMP;		ImGui::SameLine();
-			if (ImGui::Button("Wind")) m_editParamSky = WIND;		ImGui::SameLine();
+			if (ImGui::Button("Wind")) m_editParamSky = WINDX;		ImGui::SameLine();
 			if (ImGui::Button("Qv")) m_editParamSky = QV;		ImGui::SameLine();
 			if (ImGui::Button("Qw")) m_editParamSky = QW;
 			if (ImGui::Button("Qc")) m_editParamSky = QC;		ImGui::SameLine();
@@ -842,6 +900,76 @@ void editor::editModeParams()
 			ImGui::TreePop();
 		}
 		ImGui::End();
+	}
+}
+
+void editor::renderSettings()
+{
+	if (ImGui::TreeNode("Render Info"))
+	{
+		bool changed = false;
+		static float noiseReduction = 0.45f;
+		static float maxQW = 0.005f;
+		static float minQW = 0.0001f;
+
+		static float multipleScattering = 1.0f;
+		static float ambientLightStrength = 0.1f;
+		static float rayRandomOffset = 0.05f;
+		static float attenuation = 0.8f;
+		static float contribution = 0.5f;
+		static float eccentricityAttenuation = 0.5f;
+
+		static float sunStrength = 40.0f;
+		static float exposure = 1.0f;
+		static float sunDir[3] = { 1,1,1 };
+		static float sunColor[3] = { 1, 1, 1 };
+
+		static int octaves = 6;
+		static int gridSize = 2;
+		static float lacunarity = 2.0f;
+
+		if (ImGui::TreeNode("Noise Texture settings"))
+		{
+			ImGui::SliderInt("octaves", &octaves, 1, 10);
+			ImGui::SliderInt("gridSize", &gridSize, 1, 100);
+			ImGui::SliderFloat("lacunarity", &lacunarity, 1.0f, 32.0f);
+
+			if (ImGui::Button("Generate Noise"))
+			{
+				Game.cudaRenderer().setNoiseTexture(octaves, gridSize, lacunarity);
+			}
+			ImGui::TreePop();
+		}
+
+		ImGui::Separator();
+
+		if (ImGui::TreeNode("Visual settings"))
+		{
+			if (ImGui::SliderFloat("NoiseReduction", &noiseReduction, 0.0f, 5.0f)) changed = true;
+			if (ImGui::SliderFloat("MinQw", &minQW, 0.0f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic)) changed = true;
+			if (ImGui::SliderFloat("MaxQw", &maxQW, 0.0f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic)) changed = true;
+			ImGui::Separator();
+			if (ImGui::SliderFloat("multipleScattering", &multipleScattering, 0.0f, 10.0f)) changed = true;
+			if (ImGui::SliderFloat("Ambient Light Strength", &ambientLightStrength, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("rayRandomOffset", &rayRandomOffset, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("MS attenuation", &attenuation, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("MS contribution", &contribution, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("MS eccentricity attenuation", &eccentricityAttenuation, 0.0f, 1.0f)) changed = true;
+			ImGui::Separator();
+			if (ImGui::SliderFloat("Sun Strength", &sunStrength, 1.0f, 255.0f)) changed = true;
+			if (ImGui::SliderFloat("Light Exposure", &exposure, 0.0f, 10.0f)) changed = true;
+			if (ImGui::SliderFloat3("Sun Direction", sunDir, -1.0f, 1.0f)) changed = true;
+			if (ImGui::ColorEdit3("Sun Color", sunColor)) changed = true;
+
+			ImGui::TreePop();
+		}
+
+		if (changed)
+		{
+			Game.cudaRenderer().setExtraRenderInfo(noiseReduction, minQW, maxQW, multipleScattering, ambientLightStrength, rayRandomOffset, attenuation, contribution, eccentricityAttenuation, sunStrength, exposure, sunDir, sunColor);
+		}
+
+		ImGui::TreePop();
 	}
 }
 
@@ -1112,6 +1240,80 @@ void editor::dataClassView()
 	}
 }
 
+void editor::cloudViewMenu()
+{
+	ImGui::Begin("View Menu");
+
+
+	// Variables
+	static bool lerping = true;
+
+	// Menu for the cloud viewer
+	if (ImGui::Button(ICON_FA_PLAY))
+	{
+		m_cloudViewActive = true;
+	} ImGui::SameLine();
+	if (ImGui::Button(ICON_FA_STOP))
+	{
+		m_cloudViewActive = false;
+	}
+
+	//Step forwards and step backwards
+	if (ImGui::Button(ICON_FA_ARROW_LEFT) || bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::ArrowLeft))
+	{
+		m_cloudViewStep = -1;
+	}	ImGui::SameLine();
+
+	if (ImGui::Button(ICON_FA_ARROW_RIGHT) || bee::Engine.Input().GetKeyboardKey(bee::Input::KeyboardKey::ArrowRight))
+	{
+		m_cloudViewStep = 1;
+	}
+
+	ImGui::SliderFloat("Time", &m_time, Game.CloudFile().getFirstFrameTime(), Game.CloudFile().getLastFrameTime());
+
+	ImGui::Dummy(ImVec2(30, 30));
+
+
+	// Calculate the current time of day from seconds 
+	const int hours = int(std::floor(m_time / (60.0f * 60.0f)));
+	const int minutes = int(std::floor(m_time / 60.0f - (hours * 60.0f)));
+	const int seconds = int(std::floor(m_time - (hours * 60.0f * 60.0f) - (minutes * 60.0f)));
+	std::string time = std::to_string(hours) + ":" + std::to_string(minutes) + ":" + std::to_string(seconds);
+	ImGui::Text("Time of day: %s", time.c_str());
+
+	ImGui::Text("Speed Multiplier");
+	ImGui::SliderFloat("##SpeedMult", &m_cloudViewSpeedMult, 1.0f, 120.0f);
+
+	ImGui::Checkbox("Enable Lerping Frames", &lerping);
+	ImGui::SetItemTooltip("Disabling lerping will snap simulaion to the nearest captured frame");
+
+	// Type selection
+	ImGui::BeginGroup();
+	if (ImGui::TreeNode("Show Type"))
+	{
+		ImGui::Dummy(ImVec2(10, 10));
+		ImGui::Separator();
+		// If changed, we have to update the visibility 
+		if (coloredSelectable("Water Cloud", &m_visibleTypes[0])) updateViewCloud(true);
+		if (coloredSelectable("Ice Cloud", &m_visibleTypes[1])) updateViewCloud(true);
+		if (coloredSelectable("Rain", &m_visibleTypes[2])) updateViewCloud(true);
+		if (coloredSelectable("Snow", &m_visibleTypes[3])) updateViewCloud(true);
+		if (coloredSelectable("Hail", &m_visibleTypes[4])) updateViewCloud(true);
+		if (coloredSelectable("Water Vapor", &m_visibleTypes[5])) updateViewCloud(true);
+		if (coloredSelectable("Wind", &m_visibleTypes[6])) updateViewCloud(true);
+		ImGui::Dummy(ImVec2(10, 10));
+		ImGui::TreePop();
+	}
+	ImGui::EndGroup();
+	ImGui::SetItemTooltip("Show or hide different types of choosing");
+
+	// Render info
+	renderSettings();
+
+
+	ImGui::End();
+}
+
 
 void editor::viewBackground()
 {
@@ -1143,7 +1345,7 @@ void editor::viewSky()
 				{
 					tracerObj->setVoxelValue(idx, true); // Add voxel to tracer so we can select it
 					if (y == m_envData->m_groundHeight[idxG]) continue; // Leaving 1 voxel space for ground itself
-					bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 0.999f, bee::Colors::Brown);
+					bee::Engine.DebugRenderer().AddFilledVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 0.999f, bee::Colors::BrownA);
 					//bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), 1.0f, bee::Colors::Black);
 					continue;
 				}
@@ -1178,11 +1380,15 @@ void editor::viewSky()
 				case QI:
 					colorScheme.getColor("mixingRatio", m_envData->m_envView.Qi[idx], color);
 					break;
-				case WIND:
+				case WINDX:
+				case WINDY:
+				case WINDZ:
 					//const glm::vec3 VelUV = Game.Environment().getUV(m_envData->m_envView.velField, x, y, z);
 					// = m_envData->m_envView.velField[x + y * GRIDSIZESKYX];// getUV(idx);
 					//colorScheme.getColor("velField", glm::length(VelUV), color);
-					colorScheme.getColor("velField", glm::length(m_envData->m_envView.velField[idx]), color);
+
+
+					colorScheme.getColor("velField", glm::length(glm::vec3(m_envData->m_envView.velFieldX[idx], m_envData->m_envView.velFieldY[idx], m_envData->m_envView.velFieldZ[idx])), color);
 
 					//bee::Engine.DebugRenderer().AddArrow(bee::DebugCategory::All, glm::vec3(x + 0.5f, y + 0.5f, z + 0.5f), glm::vec3(0.0f, 0.0f, 1.0f), VelUV, 0.9f, bee::Colors::Black);
 					break;
@@ -1282,7 +1488,7 @@ void editor::viewBrush()
 
 					if (distance > maxBrushSize) continue;
 
-					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(xb, yb, zb) + 0.5f, 1.0f, bee::Colors::White);
+					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(xb, yb, zb) + 0.5f, 1.0f, bee::Colors::WhiteA);
 				}
 			}
 		}
@@ -1347,7 +1553,7 @@ void editor::viewSelection()
 			{
 				for (int sx = sx1; sx <= sx2; sx++)
 				{
-					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(sx, sy, sz) + 0.5f, 1.0f, bee::Colors::White);
+					bee::Engine.DebugRenderer().AddVoxel(bee::DebugCategory::All, glm::vec3(sx, sy, sz) + 0.5f, 1.0f, bee::Colors::WhiteA);
 				}
 			}
 		}
@@ -1384,7 +1590,7 @@ void editor::viewPickerData()
 
 	std::string pickerString = "Value: " + std::string(format);
 
-	if (m_viewParamSky == WIND)
+	if (m_viewParamSky == WINDX || m_viewParamSky == WINDY || m_viewParamSky == WINDZ)
 	{
 		pickerString = pickerString + ", " + std::string(format) + ", " + std::string(format);
 		ImGui::SetTooltip(pickerString.c_str(), m_applyValue * m_valueDir.x, m_applyValue * m_valueDir.y, m_applyValue * m_valueDir.z);
@@ -1438,6 +1644,7 @@ void editor::viewSkewT()
 
 	delete[] temps;
 	delete[] dewPoints;
+	delete[] pressures;
 }
 
 
@@ -1486,7 +1693,7 @@ void editor::applyBrush()
 
 					//For directional value
 					float value2 = 0.0f;
-					if (m_editParamSky == 7)
+					if (m_editParamSky == parameter::WINDX)
 					{
 						value2 = value1 * m_valueDir.y;
 						value1 *= m_valueDir.x;
@@ -1505,7 +1712,7 @@ void editor::applyBrush()
 							continue;
 						}
 
-						setValueOfParam(Rx + Ry * GRIDSIZESKYX, m_editParamSky, true, value1, value2);
+						setValueOfParam(Rx + Ry * GRIDSIZESKYX, m_editParamSky, true);
 					}
 				}
 			}
@@ -1579,16 +1786,20 @@ void editor::usePicker()
 	{
 		if (!isOutside(m_mousePointingPos.x, m_mousePointingPos.y, m_mousePointingPos.z))
 		{
-			glm::vec3 value = getValueParam(m_mousePointingIndex, m_viewParamSky);
-			if (m_viewParamSky == WIND)
+			if (m_viewParamSky == WINDX || m_viewParamSky == WINDY || m_viewParamSky == WINDZ)
 			{
 				//Using normalize and dividing will result in exact value if trying to set value
+				glm::vec3 value;
+				value.x = m_applyValue = getValueParam(m_mousePointingIndex, WINDX);
+				value.x = m_applyValue = getValueParam(m_mousePointingIndex, WINDY);
+				value.x = m_applyValue = getValueParam(m_mousePointingIndex, WINDZ);
+
 				m_valueDir = glm::normalize(value);
 				m_applyValue = value.x / m_valueDir.x;
 			}
 			else
 			{
-				m_applyValue = value.x;
+				m_applyValue = getValueParam(m_mousePointingIndex, m_viewParamSky);
 			}
 		}
 	}
@@ -1600,7 +1811,7 @@ void editor::resetValues()
 	MouseWheel = bee::Engine.Input().GetMouseWheel(); //Update scroll 
 }
 
-void editor::setValueOfParam(const int i, const parameter p, const bool add, const float value, const float value2, const float value3)
+void editor::setValueOfParam(const int i, const parameter p, const bool add, const float value)
 {
 	switch (p)
 	{
@@ -1625,8 +1836,14 @@ void editor::setValueOfParam(const int i, const parameter p, const bool add, con
 	case QI:
 		m_envData->m_envView.Qi[i] = add ? m_envData->m_envView.Qi[i] + value : value;
 		break;
-	case WIND:
-		m_envData->m_envView.velField[i] = add ? m_envData->m_envView.velField[i] + glm::vec3{ value, value2, value3 } : glm::vec3{ value, value2, value3 };
+	case WINDX:
+		m_envData->m_envView.velFieldX[i] = add ? m_envData->m_envView.velFieldX[i] + value : value;
+		break;
+	case WINDY:
+		m_envData->m_envView.velFieldY[i] = add ? m_envData->m_envView.velFieldY[i] + value : value;
+		break;
+	case WINDZ:
+		m_envData->m_envView.velFieldZ[i] = add ? m_envData->m_envView.velFieldZ[i] + value : value;
 		break;
 	default:
 		break;
@@ -1668,7 +1885,9 @@ void editor::addDataErasedGround(const int x, const int y)
 	m_envData->m_envView.Qs[idx] = 0.0f;
 	m_envData->m_envView.Qi[idx] = 0.0f;
 	m_envData->m_envView.potTemp[idx] = m_envData->m_envTemp[y];
-	m_envData->m_envView.velField[idx] = { 0, 0, 0 };
+	m_envData->m_envView.velFieldX[idx] = 0.0f;
+	m_envData->m_envView.velFieldY[idx] = 0.0f;
+	m_envData->m_envView.velFieldZ[idx] = 0.0f;
 	m_envData->m_envView.pressure[idx] = m_envData->m_envPressure[y];
 }
 
@@ -1719,7 +1938,9 @@ glm::vec2 editor::getMinMaxVaueParam(parameter param)
 	case POTTEMP:
 		return { 0, 373.15f };
 		break;
-	case WIND:
+	case WINDX:
+	case WINDY:
+	case WINDZ:
 		return { -50.0f, 50.0f };
 		break;
 	case PGROUND:
@@ -1746,7 +1967,9 @@ const char* editor::getFormatParam(parameter param, int& flagOutput)
 	case POTTEMP:
 		return "%.2f";
 		break;
-	case WIND:
+	case WINDX:
+	case WINDY:
+	case WINDZ:
 		return "%.3f";
 		break;
 	case PGROUND:
@@ -1768,50 +1991,56 @@ const char* editor::getFormatParam(parameter param, int& flagOutput)
 	return "%.1f";
 }
 
-glm::vec3 editor::getValueParam(const int i, parameter param)
+float editor::getValueParam(const int i, parameter param)
 {
 	switch (param)
 	{
 	case POTTEMP:
-		return { m_envData->m_envView.potTemp[i], 0.0f, 0.0f };
+		return { m_envData->m_envView.potTemp[i] };
 		break;
 	case QV:
-		return { m_envData->m_envView.Qv[i], 0.0f, 0.0f };
+		return { m_envData->m_envView.Qv[i] };
 		break;
 	case QW:
-		return { m_envData->m_envView.Qw[i], 0.0f, 0.0f };
+		return { m_envData->m_envView.Qw[i] };
 		break;
 	case QC:
-		return { m_envData->m_envView.Qc[i], 0.0f, 0.0f };
+		return { m_envData->m_envView.Qc[i] };
 		break;
 	case QR:
-		return { m_envData->m_envView.Qr[i], 0.0f, 0.0f };
+		return { m_envData->m_envView.Qr[i] };
 		break;
 	case QS:
-		return { m_envData->m_envView.Qs[i], 0.0f, 0.0f };
+		return { m_envData->m_envView.Qs[i] };
 		break;
 	case QI:
-		return { m_envData->m_envView.Qi[i], 0.0f, 0.0f };
+		return { m_envData->m_envView.Qi[i] };
 		break;
-	case WIND:
-		return { m_envData->m_envView.velField[i].x, m_envData->m_envView.velField[i].y, m_envData->m_envView.velField[i].z };
+	case WINDX:
+		return { m_envData->m_envView.velFieldX[i] };
+		break;
+	case WINDY:
+		return { m_envData->m_envView.velFieldY[i] };
+		break;
+	case WINDZ:
+		return { m_envData->m_envView.velFieldZ[i] };
 		break;
 	case PGROUND:
-		return { 0,0,0 };
+		return { 0 };
 		break;
 	case DEBUG1:
-		return { m_envData->m_debugArray0[i], 0.0f, 0.0f };
+		return { m_envData->m_debugArray0[i] };
 		break;
 	case DEBUG2:
-		return { m_envData->m_debugArray1[i], 0.0f, 0.0f };
+		return { m_envData->m_debugArray1[i] };
 		break;
 	case DEBUG3:
-		return { m_envData->m_debugArray2[i], 0.0f, 0.0f };
+		return { m_envData->m_debugArray2[i] };
 		break;
 	default:
 		break;
 	}
-	return { 0,0,0 };
+	return { 0 };
 }
 
 int editor::getDaysInMonth(int month)

@@ -8,6 +8,10 @@
 #include "skewTer.h"
 #include "game.h"
 
+#include "platform/cuda/cuda_render_gl.h"
+#include "environment.cuh"
+#include <vector_types.h>
+
 
 #include "skewTFile.h"
 #include "cloudFile.h"
@@ -39,15 +43,18 @@ gameSystem::~gameSystem()
 //Update function 
 void gameSystem::Update(float dt)
 {
-	if (m_currentState == SKEWTMAKER)
+	if (m_currentState == SKEWT_CREATOR)
 	{
 		Game.SkewTMaker().update(dt);
 		if (Game.SkewTMaker().doneMakingSkewT)
 		{
 			m_currentState = SIMULATION;
+			// Set slower render speed in trade of higher simulation speed
+			Game.cudaRenderer().setOnlyRenderResource(false);
+			Game.Editor().setMode(editor::SIMULATING);
 		}
 	}
-	if (m_currentState == SIMULATION)
+	if (m_currentState == SIMULATION || m_currentState == VIEW_SIMULATION)
 	{
 		Game.Update(dt);
 	}
@@ -68,30 +75,25 @@ void gameSystem::OnPanel()
 {
 	switch (m_currentState)
 	{
-	case CHOOSEDATE:
-	case STARTMENU:
+	case OBSERVED_SOUNDING_SELECTION:
+	case CUSTOM_ENVIRONMENT_SELECTION:
+	case VIEW_SIMULATION_SELECTION:
+	case CREATE_SIMULATION:
+	case MAINMENU:
 		startMenu();
 		break;
-	case SKEWTMAKER:
+	case SKEWT_CREATOR:
 		Game.SkewTMaker().panel();
 		break;
 	case SIMULATION:
-		Game.Editor().panel();
 		Game.CloudFile().panel();
+		Game.Editor().panel();
+		break;
+	case VIEW_SIMULATION:
+		Game.Editor().panel();
 		break;
 	default:
 		break;
-	}
-
-
-	if (makingSkewT)
-	{
-	}
-	else if (loaded)
-	{
-	}
-	else
-	{
 	}
 
 	//ImGui::Begin("NewWindow");
@@ -123,6 +125,8 @@ void gameSystem::startMenu()
 	ImGui::SetWindowSize(io.DisplaySize);
 	ImGui::SetWindowFocus();
 	ImVec2 centerOfScreen = ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
+	ImVec2 returnButSize = ImVec2(100, 50);
+	ImVec2 returnButLoc = ImVec2(io.DisplaySize.x - returnButSize.x - 10, io.DisplaySize.y - returnButSize.y - 10);
 
 	// Button customization
 	ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 1, 1.0f));
@@ -147,27 +151,55 @@ void gameSystem::startMenu()
 
 	switch (m_currentState)
 	{
-	case STARTMENU:
+	case MAINMENU:
+
 		// Actual buttons
 		ImGui::SetCursorPos(ImVec2(centerOfScreen.x - 175, centerOfScreen.y - 200));
+		if (ImGui::Button("Create Simulation", ImVec2(350, 100)))
+		{
+			m_currentState = CREATE_SIMULATION;
+		}
+		ImGui::SetCursorPos(ImVec2(centerOfScreen.x - 175, centerOfScreen.y));
+		if (ImGui::Button("View Simulation", ImVec2(350, 100)))
+		{
+			m_currentState = VIEW_SIMULATION_SELECTION;
+		}
+
+		break;
+
+	case CREATE_SIMULATION:
+
+		// Menu to all option to create a simulation, includes loading soundings
+		ImGui::SetCursorPos(ImVec2(centerOfScreen.x - 175, centerOfScreen.y - 250));
 		if (ImGui::Button("Create Skew-T", ImVec2(350, 100)))
 		{
 			Game.SkewTMaker().init();
-			m_currentState = SKEWTMAKER;
+			m_currentState = SKEWT_CREATOR;
 		}
-		ImGui::SetCursorPos(ImVec2(centerOfScreen.x - 175, centerOfScreen.y));
+		ImGui::SetCursorPos(ImVec2(centerOfScreen.x - 175, centerOfScreen.y - 75));
 		if (ImGui::Button("Load Observed Skew-T", ImVec2(350, 100)))
 		{
 			Game.SkewTFile().init();
 			availableYears.clear();
 			Game.SkewTFile().getAvailableYears(availableYears);
-			m_currentState = CHOOSEDATE;
+			m_currentState = OBSERVED_SOUNDING_SELECTION;
 		}
+		ImGui::SetCursorPos(ImVec2(centerOfScreen.x - 175, centerOfScreen.y + 100));
+		if (ImGui::Button("Load Custom Skew-T", ImVec2(350, 100)))
+		{
+			m_currentState = CUSTOM_ENVIRONMENT_SELECTION;
+		}
+
+		ImGui::SetCursorPos(returnButLoc);
+		if (ImGui::Button("Back", returnButSize)) m_currentState = MAINMENU;
+
 		break;
-	case CHOOSEDATE:
+
+	case OBSERVED_SOUNDING_SELECTION:
 
 		// Make player choose from year, month and day
 
+	{
 		// Using lambda to convert string to const char data
 		auto getter = [](void* data, int idx, const char** outText) -> bool {
 			auto& vec = *static_cast<std::vector<std::string>*>(data);
@@ -244,7 +276,7 @@ void gameSystem::startMenu()
 						if (ImGui::IsMouseDoubleClicked(0))
 						{
 							Game.SkewTFile().openAndReadFile(file, date);
-							m_currentState = SKEWTMAKER;
+							m_currentState = SKEWT_CREATOR;
 						}
 					}
 					ImGui::TableNextColumn();
@@ -257,6 +289,132 @@ void gameSystem::startMenu()
 			}
 			ImGui::EndTable();
 		}
+	}
+		ImGui::SetCursorPos(returnButLoc);
+		if (ImGui::Button("Back", returnButSize)) m_currentState = CREATE_SIMULATION;
+
+		break;
+
+	case CUSTOM_ENVIRONMENT_SELECTION:
+	
+		// Nothing here yet...
+
+		ImGui::SetCursorPos(returnButLoc);
+		if (ImGui::Button("Back", returnButSize)) m_currentState = CREATE_SIMULATION;
+
+		break;
+
+	case VIEW_SIMULATION_SELECTION:
+
+		// View all saved simulation
+
+
+		static std::vector<std::string> simulationFiles = Game.CloudFile().getSimulationFiles();
+		static std::vector<cloudFileInfo> simulationFilesInfo(simulationFiles.size());
+
+		
+
+		// Using lambda to convert string to const char data
+		auto getter = [](void* data, int idx, const char** outText) -> bool {
+			auto& vec = *static_cast<std::vector<std::string>*>(data);
+			*outText = vec[idx].c_str();
+			return true;
+			};
+
+
+		ImGui::SameLine();
+		if (ImGui::BeginTable("Files", 8))
+		{
+			// Introduction
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::Text("Loading");
+			ImGui::TableNextColumn();
+			ImGui::Text("File");
+			ImGui::TableNextColumn();
+			ImGui::Text("Simulation Size X");
+			ImGui::TableNextColumn();
+			ImGui::Text("Simulation Size Y");
+			ImGui::TableNextColumn();
+			ImGui::Text("Simulation Size Z");
+			ImGui::TableNextColumn();
+			ImGui::Text("Size of One Voxel");
+			ImGui::TableNextColumn();
+			ImGui::Text("Total Amount of Frames");
+			ImGui::TableNextColumn();
+			ImGui::Text("All Included Types");
+
+
+			// List all files and note down meta data info if wanted to load
+			for (int i = 0; i < simulationFiles.size(); i++)
+			{
+				std::string file = simulationFiles[i];
+				cloudFileInfo& info = simulationFilesInfo[i];
+
+				// Show all info
+				char label[32];
+				snprintf(label, sizeof(label), "Load Info ##%i", i);
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+
+				// Load meta data if button is pressed
+				if (!info.loaded && ImGui::Button(label))
+				{
+					info.loaded = Game.CloudFile().getMetaData(simulationFiles[i].c_str(), info.sizeX, info.sizeY, info.sizeZ, info.voxelSize, info.totalFrames, info.types);
+				}
+				ImGui::TableNextColumn();
+
+				snprintf(label, sizeof(label), "File %s", file.c_str());
+				static bool isSelected = false;
+				if (ImGui::Selectable(label, isSelected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick))
+				{
+					if (ImGui::IsMouseDoubleClicked(0))
+					{
+						if (!info.loaded) info.loaded = Game.CloudFile().getMetaData(simulationFiles[i].c_str(), info.sizeX, info.sizeY, info.sizeZ, info.voxelSize, info.totalFrames, info.types);
+						Game.CloudFile().loadFile(simulationFiles[i].c_str(), false);
+						GRIDSIZESKYX = info.sizeX;
+						GRIDSIZESKYY = info.sizeY;
+						GRIDSIZESKYZ = info.sizeZ;
+						VOXELSIZE = info.voxelSize;
+						GRIDSIZESKY = GRIDSIZESKYX * GRIDSIZESKYY * GRIDSIZESKYZ;
+						GRIDSIZEGROUND = GRIDSIZESKYX * GRIDSIZESKYZ;
+
+						// Get grid and blockdim from a cu file where we can check our specs
+						dim3 blockDim;
+						dim3 gridDim;
+						Game.EnvGPU().getGridBlockDims(gridDim, blockDim);
+
+						Game.Editor().initCloudViewSkyData();
+						Game.Editor().setMode(editor::CLOUDVIEW);
+
+						// Set faster render speed
+						Game.cudaRenderer().setOnlyRenderResource(true);
+
+						// Load viewer
+						m_currentState = VIEW_SIMULATION;
+						Game.cudaRenderer().initEnvironmentData(info.sizeX, info.sizeY, info.sizeZ, info.voxelSize, gridDim, blockDim);
+					}
+				}
+				ImGui::TableNextColumn();
+				if (info.loaded) ImGui::Text(std::to_string(info.sizeX).c_str());
+				ImGui::TableNextColumn();
+				if (info.loaded) ImGui::Text(std::to_string(info.sizeY).c_str());
+				ImGui::TableNextColumn();
+				if (info.loaded) ImGui::Text(std::to_string(info.sizeZ).c_str());
+				ImGui::TableNextColumn();
+				if (info.loaded) ImGui::Text(std::to_string(info.voxelSize).c_str());
+				ImGui::TableNextColumn();
+				if (info.loaded) ImGui::Text(std::to_string(info.totalFrames).c_str());
+				ImGui::TableNextColumn();
+				if (info.loaded) ImGui::Text(info.types.c_str());
+			}
+
+			ImGui::EndTable();
+		}
+
+
+		ImGui::SetCursorPos(returnButLoc);
+		if (ImGui::Button("Back", returnButSize)) m_currentState = MAINMENU;
 
 		break;
 	}

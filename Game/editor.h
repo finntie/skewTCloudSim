@@ -10,11 +10,17 @@ class editor
 {
 public:
 
+	enum editorModes 
+	{
+		OFF, SIMULATING, CLOUDVIEW
+	};
 
 	//Could expand into multiple structs/refences from other classes.
 	editor(envDebugData* _envDebugData);
 	~editor();
-	void init(); // Quick initialization 
+	void initSimulation(); // Quick initialization of everything Simulation needs
+	void initCloudViewSkyData(); // Quick initialization of everything cloudView needs
+	void setMode(editorModes editingMode) { m_simulateMode = editingMode; } // Set editor mode to be view or simulate
 	void setColors();
 	//We also include m_pressures
 	void setIsentropics(float* isentropicTemps, float* isentropicVapor, float* pressure, void* stream);
@@ -56,12 +62,16 @@ private:
 	void cameraControl();
 	void setVariables();
 
+	// If forced, time will not be updated
+	void updateViewCloud(bool force = false);
+
 	//ImGui
 	void mainButtons();
 	void viewParamInformation();
 	void setView();
 	void setSlice();
 	void editModeParams();
+	void renderSettings();
 	void editModeParamsSun();
 	int chooseDateDay();
 	void vectorArrow();
@@ -69,6 +79,8 @@ private:
 	void setSkewTData();
 	void skewTTexture();
 	void dataClassView();
+
+	void cloudViewMenu();
 
 	//View
 	void viewBackground();
@@ -88,7 +100,7 @@ private:
 
 	void resetValues();
 
-	void setValueOfParam(const int index, const parameter param, const bool add, const float value, const float secondValue = 0.0f, const float thirdValue = 0.0f);
+	void setValueOfParam(const int index, const parameter param, const bool add, const float value);
 	void setGround(const int index, bool ground);
 	void addDataErasedGround(const int x, const int y);
 
@@ -96,7 +108,7 @@ private:
 	void dataToSkewTData(float* temp, float* dew, float* pres);
 	glm::vec2 getMinMaxVaueParam(parameter param);
 	const char* getFormatParam(parameter param, int& flagOutput);
-	glm::vec3 getValueParam(const int index, parameter param);
+	float getValueParam(const int index, parameter param);
 	int getDaysInMonth(int month);
 	void dayToMonthDay(int dayOfYear, int& month, int& dayOfMonth);
 	void setSliceMinMax(bool fullView);
@@ -108,6 +120,8 @@ private:
 	tracing* tracerObj;
 
 	float m_deltatime = 1.0f / 60.0f;
+
+	editorModes m_simulateMode{ OFF };
 
 	bool m_editMode{ false };
 	bool m_skewTSettings{ false };
@@ -126,6 +140,15 @@ private:
 	bool m_changedGround = false;
 	int m_skewTidx = GRIDSIZESKYX / 2;
 	glm::ivec3 m_skewTPos{ 0 };
+
+	// CloudView variables
+	// Qw, Qc, Qr, Qs, Qi, Qv, Wind
+	bool m_visibleTypes[7]{ false, false,false,false,false,false, false };
+	bool m_cloudViewActive{ false };
+	int m_cloudViewStep{ 0 };
+	float m_cloudViewSpeedMult{ 1.0f };
+	environment::gridDataSky m_currentCloudViewSkyData;
+
 
 	// Viewing Settings
 	bool m_viewSlice{ true };
@@ -169,6 +192,7 @@ private:
 	float MouseWheel = 0;
 
 	//Diurnal cycle variables
+
 	float m_time = 43200.0f; //0 to 86.400 time in seconds
 	const float m_dayLightDuration = 14.0f; //TODO: should be calculated using longitude and day
 	const float m_hourOfSunrise = 6.0f;

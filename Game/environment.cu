@@ -92,41 +92,13 @@ environmentGPU::environmentGPU()
 
 
 	// Set block and grid dimension based on GPU specs.
+	getGridBlockDims(gridDim, blockDim);
 	cudaDeviceProp prop;
 	cudaGetDeviceProperties(&prop, 0);
 	unsigned int totalThreadsPerBlock = prop.maxThreadsPerBlock / 4; // Use smaller threads so we have more leeway
 	unsigned int totalBlocksPerGrid = prop.maxBlocksPerMultiProcessor * prop.multiProcessorCount;
 	unsigned int totalRegsPerThread = prop.regsPerBlock / totalThreadsPerBlock;
-	// Set block dimensions to be square root of the max threads available. Making use of as much threads as possible
-	const unsigned int threadsBlock = uint32_t(floor(sqrt(totalThreadsPerBlock)));
-	// If one side is smaller than 1 block, we still want to use as many threads as possible per block
-	if (totalThreadsPerBlock > unsigned(GRIDSIZESKYX))
-	{
-		blockDim.x = GRIDSIZESKYX;
-		blockDim.y = std::min(uint32_t(GRIDSIZESKYY), uint32_t(double(totalThreadsPerBlock) / double(blockDim.x)));
-	}
-	//else if (threadsBlock > GRIDSIZESKYY)
-	//{
-	//	blockDim.y = GRIDSIZESKYY;
-	//	blockDim.x = std::min(uint32_t(GRIDSIZESKYX), uint32_t(double(totalThreadsPerBlock) / double(blockDim.y)));
-	//}
-	else
-	{
-		blockDim.x = std::min(uint32_t(GRIDSIZESKYX), threadsBlock);
-		blockDim.y = std::min(uint32_t(GRIDSIZESKYY), threadsBlock);
-	}
 
-	// Amount of blocks on the x and y axis is determined by how big our grid is
-	gridDim.x = unsigned int(ceil(double(GRIDSIZESKYX) / double(blockDim.x)));
-	gridDim.y = unsigned int(ceil(double(GRIDSIZESKYY) / double(blockDim.y)));
-	// Error Check
-	if (gridDim.x * gridDim.y >= totalBlocksPerGrid)
-	{
-		printf("Error: current simulation size is greater than available theads and blocks on the x and y axis, use a small simulation size!\n");
-		return;
-	}
-	// Depth is determined by how many blocks we have in total and use per z slice.
-	gridDim.z = unsigned int(std::min(double(GRIDSIZESKYZ), floor(double(totalBlocksPerGrid) / double(gridDim.x * gridDim.y))));
 
 	canFillAll = unsigned(GRIDSIZESKYZ) <= gridDim.z;
 
@@ -334,7 +306,7 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 	cudaMemcpyToSymbolAsync(voxelSize, &VOXELSIZE, sizeof(float), 0, cudaMemcpyHostToDevice, simStream);
 	cudaMemcpyToSymbolAsync(simSizeGround, &GRIDSIZEGROUND, sizeof(int), 0, cudaMemcpyHostToDevice, simStream);
 
-	Game.Editor().init();
+	Game.Editor().initSimulation();
 
 	// Init renderer data
 	Game.cudaRenderer().initEnvironmentData(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ, VOXELSIZE, gridDim, blockDim);
@@ -479,6 +451,46 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 		std::cerr << "Cuda error: " << cudaGetErrorString(err) << std::endl;
 		__debugbreak();
 	}
+}
+
+void environmentGPU::getGridBlockDims(dim3& _gridDim, dim3& _blockDim)
+{
+	// Set block and grid dimension based on GPU specs.
+	cudaDeviceProp prop;
+	cudaGetDeviceProperties(&prop, 0);
+	unsigned int totalThreadsPerBlock = prop.maxThreadsPerBlock / 4; // Use smaller threads so we have more leeway
+	unsigned int totalBlocksPerGrid = prop.maxBlocksPerMultiProcessor * prop.multiProcessorCount;
+	//unsigned int totalRegsPerThread = prop.regsPerBlock / totalThreadsPerBlock;
+	// Set block dimensions to be square root of the max threads available. Making use of as much threads as possible
+	const unsigned int threadsBlock = uint32_t(floor(sqrt(totalThreadsPerBlock)));
+	// If one side is smaller than 1 block, we still want to use as many threads as possible per block
+	if (totalThreadsPerBlock > unsigned(GRIDSIZESKYX))
+	{
+		_blockDim.x = GRIDSIZESKYX;
+		_blockDim.y = std::min(uint32_t(GRIDSIZESKYY), uint32_t(double(totalThreadsPerBlock) / double(_blockDim.x)));
+	}
+	//else if (threadsBlock > GRIDSIZESKYY)
+	//{
+	//	_blockDim.y = GRIDSIZESKYY;
+	//	_blockDim.x = std::min(uint32_t(GRIDSIZESKYX), uint32_t(double(totalThreadsPerBlock) / double(_blockDim.y)));
+	//}
+	else
+	{
+		_blockDim.x = std::min(uint32_t(GRIDSIZESKYX), threadsBlock);
+		_blockDim.y = std::min(uint32_t(GRIDSIZESKYY), threadsBlock);
+	}
+
+	// Amount of blocks on the x and y axis is determined by how big our grid is
+	_gridDim.x = unsigned int(ceil(double(GRIDSIZESKYX) / double(_blockDim.x)));
+	_gridDim.y = unsigned int(ceil(double(GRIDSIZESKYY) / double(_blockDim.y)));
+	// Error Check
+	if (_gridDim.x * _gridDim.y >= totalBlocksPerGrid)
+	{
+		printf("Error: current simulation size is greater than available theads and blocks on the x and y axis, use a small simulation size!\n");
+		return;
+	}
+	// Depth is determined by how many blocks we have in total and use per z slice.
+	_gridDim.z = unsigned int(std::min(double(GRIDSIZESKYZ), floor(double(totalBlocksPerGrid) / double(_gridDim.x * _gridDim.y))));
 }
 
 void environmentGPU::updateGPU(const float dt, const float speed)
@@ -1361,7 +1373,7 @@ bool environmentGPU::isGround(int x, int y)
 	return y <= m_GHeight[x];
 }
 
-float* environmentGPU::getParamArray(parameter type, direction windDir)
+float* environmentGPU::getParamArray(parameter type)
 {
 	switch (type)
 	{
@@ -1386,21 +1398,14 @@ float* environmentGPU::getParamArray(parameter type, direction windDir)
 	case QI:
 		return m_envGrid.Qi;
 		break;
-	case WIND:
-		switch (windDir)
-		{
-		case LEFT:
-		case RIGHT:
-			return m_envGrid.velfieldX;
-		case UP:
-		case DOWN:
-			return m_envGrid.velfieldY;
-		case FORWARD:
-		case BACKWARD:
-			return m_envGrid.velfieldZ;
-		default:
-			break;
-		}
+	case WINDX:
+		return m_envGrid.velfieldX;
+		break;
+	case WINDY:
+		return m_envGrid.velfieldY;
+		break;
+	case WINDZ:
+		return m_envGrid.velfieldZ;
 		break;
 	case PGROUND:
 		printf("Error, getParamArray() can not return PGROUND, must return float, change return value to template or void to fix\n");
@@ -1454,11 +1459,11 @@ void environmentGPU::prepareBrushGPU(parameter paramType, const float brushSize,
 	float* array = nullptr;
 	float* array2 = nullptr;
 	float* array3 = nullptr;
-	if (paramType == WIND)
+	if (paramType == WINDX || paramType == WINDY || paramType == WINDZ)
 	{
-		array = getParamArray(paramType, RIGHT);
-		array2 = getParamArray(paramType, UP);
-		array3 = getParamArray(paramType, FORWARD);
+		array = getParamArray(WINDX);
+		array2 = getParamArray(WINDY);
+		array3 = getParamArray(WINDZ);
 	}
 	else if (paramType != PGROUND)
 	{
@@ -1508,11 +1513,11 @@ void environmentGPU::prepareSelectionGPU(parameter paramType, const int3 minPos,
 	float* array = nullptr;
 	float* array2 = nullptr;
 	float* array3 = nullptr;
-	if (paramType == WIND)
+	if (paramType == WINDX || paramType == WINDY || paramType == WINDZ)
 	{
-		array = getParamArray(paramType, RIGHT);
-		array2 = getParamArray(paramType, UP);
-		array3 = getParamArray(paramType, FORWARD);
+		array = getParamArray(WINDX);
+		array2 = getParamArray(WINDY);
+		array3 = getParamArray(WINDZ);
 	}
 	else if (paramType != PGROUND)
 	{
@@ -1545,7 +1550,7 @@ void environmentGPU::prepareSelectionGPU(parameter paramType, const int3 minPos,
 void environmentGPU::resetParameterGPU(parameter paramType)
 {
 	if (paramType == POTTEMP) setToDefault << <GRIDSIZESKYY, GRIDSIZESKYX, 0, simStream >> > (m_GHeight, m_envGrid.potTemp, m_isentropicTemp);
-	if (paramType == WIND)
+	if (paramType == WINDX || paramType == WINDY || paramType == WINDZ)
 	{
 		setToDefault << <GRIDSIZESKYY, GRIDSIZESKYX, 0, simStream >> > (m_GHeight, m_envGrid.velfieldX, m_defaultVelX);
 		setToValue << <GRIDSIZESKYY, GRIDSIZESKYX, 0, simStream >> > (m_envGrid.velfieldY, 0.0f, GRIDSIZESKYZ);

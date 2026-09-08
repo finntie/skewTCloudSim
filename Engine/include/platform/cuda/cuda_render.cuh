@@ -68,6 +68,7 @@ void renderEnvironmentCUDA(dim3 gridSize,
                            dim3 blockSize,
                            unsigned int* dOutput,
                            environmentData data,
+                           bool noDelay,
                            unsigned int width,
                            unsigned int height);
 

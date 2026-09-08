@@ -325,6 +325,7 @@ void CudaRender::render()
                               blockSize,
                               dOutput,
                               m_envData,
+                              m_allResourcesRender,
                               bee::Engine.Device().GetWidth(),
                               bee::Engine.Device().GetHeight());
 
@@ -378,8 +379,8 @@ void CudaRender::initEnvironmentData(const int _sizeX,
                                      const int _sizeY,
                                      const int _sizeZ,
                                      const float _voxelSize,
-                                     dim3& gridDim,
-                                     dim3& blockDim)
+                                     dim3 gridDim,
+                                     dim3 blockDim)
 {
     m_envData.sizeX = _sizeX;
     m_envData.sizeY = _sizeY;
@@ -387,8 +388,8 @@ void CudaRender::initEnvironmentData(const int _sizeX,
     m_envData.voxelSize = _voxelSize;
     m_envData.fullSize = _sizeX * _sizeY * _sizeZ;
 
-    m_gridDim = &gridDim;
-    m_blockDim = &blockDim;
+    m_gridDim = gridDim;
+    m_blockDim = blockDim;
 
     // Malloc data
     //cudaMalloc((void**)&m_envData.Qw, m_envData.fullSize * sizeof(float));
@@ -436,7 +437,12 @@ void CudaRender::initEnvironmentData(const int _sizeX,
     fillLUTSOnce(m_envData, m_envTransmittanceTextureStorage, m_envScatteringTextureStorage);
 
 
-
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+        __debugbreak();
+    }
 
     m_envInitialized = true;
 }
@@ -544,41 +550,51 @@ void CudaRender::setDataEnvironment(float* Qw,
     }
     // cudaMemcpy(m_envData.Qw, Qw, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
 
-    copyDataToTexture<float>(Qw, m_QWTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
-    copyDataToTexture<float>(Qr, m_QRTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
-    copyDataToTexture<float>(Qs, m_QSTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
-    copyDataToTexture<float>(velX, m_velXTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
-    copyDataToTexture<float>(velY, m_velYTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
-    copyDataToTexture<float>(velZ, m_velZTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
+    if (Qw) copyDataToTexture<float>(Qw, m_QWTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
+    if (Qr) copyDataToTexture<float>(Qr, m_QRTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
+    if (Qs) copyDataToTexture<float>(Qs, m_QSTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
+    if (velX) copyDataToTexture<float>(velX, m_velXTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
+    if (velY) copyDataToTexture<float>(velY, m_velYTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
+    if (velZ) copyDataToTexture<float>(velZ, m_velZTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), stream);
 
+        cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+        __debugbreak();
+    }
+
+    if (Qw)
     fillSDF(glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ),
             Qw,
             0.00005f,
             m_SDFTextureStorageQw,
             m_SDFDistanceNeigh,
             m_SDFClosestTarget,
-            *m_gridDim,
-            *m_blockDim,
+            m_gridDim,
+            m_blockDim,
             stream);
 
+    if (Qr)
     fillSDF(glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ),
             Qr,
             0.00001f,
             m_SDFTextureStorageQr,
             m_SDFDistanceNeigh,
             m_SDFClosestTarget,
-            *m_gridDim,
-            *m_blockDim,
+            m_gridDim,
+            m_blockDim,
             stream);
 
-        fillSDF(glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ),
+    if (Qs)
+    fillSDF(glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ),
             Qs,
             0.00001f,
             m_SDFTextureStorageQs,
             m_SDFDistanceNeigh,
             m_SDFClosestTarget,
-            *m_gridDim,
-            *m_blockDim,
+            m_gridDim,
+            m_blockDim,
             stream);
     // cudaMemcpy(m_envData.Qc, Qc, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
     // cudaMemcpy(m_envData.Qr, Qr, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
@@ -591,5 +607,11 @@ void CudaRender::setDataEnvironment(float* Qw,
     // switchActiveTexture();
 
     m_setData = true;
+
+        if (err != cudaSuccess)
+    {
+        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+        __debugbreak();
+    }
 }
 

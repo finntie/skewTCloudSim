@@ -60,11 +60,11 @@ void initConstants(const float* invViewMatrix, size_t sizeViewMat, float3 _gridM
 {
     if (invViewMatrix)
     {
-        cudaMemcpyToSymbol(invView, invViewMatrix, sizeViewMat);
+        cudaMemcpyToSymbolAsync(invView, invViewMatrix, sizeViewMat, 0, cudaMemcpyHostToDevice, getStream());
         setConstants(invViewMatrix, sizeViewMat);
     }
-    cudaMemcpyToSymbol(gridMin, &_gridMin, sizeof(float3));
-    cudaMemcpyToSymbol(gridMax, &_gridMax, sizeof(float3));
+    cudaMemcpyToSymbolAsync(gridMin, &_gridMin, sizeof(float3), 0, cudaMemcpyHostToDevice, getStream());
+    cudaMemcpyToSymbolAsync(gridMax, &_gridMax, sizeof(float3), 0, cudaMemcpyHostToDevice, getStream());
 }
 
 void fillSDF(glm::ivec3 gridSize, float* parameter, float densityTreshold, void* textureStorage, float* SDFClosestDist, int* SDFClosestTarget, dim3 gridDim, dim3 blockDim, void* stream)
@@ -291,8 +291,8 @@ void fillLUTS(environmentData& data, void* skyViewLUT, void* aerialViewLUT, unsi
 
     if (!initialized)
     {
-        cudaMalloc((void**)&tempData, 200 * 100 * sizeof(float4));
-        cudaMalloc((void**)&tempData3D, 32 * 32 * 32 * sizeof(float4));
+        cudaMallocAsync((void**)&tempData, 200 * 100 * sizeof(float4), getStream());
+        cudaMallocAsync((void**)&tempData3D, 32 * 32 * 32 * sizeof(float4), getStream());
         initialized = true;
     }
 
@@ -381,6 +381,7 @@ void renderEnvironmentCUDA(dim3 gridSize,
                            dim3 blockSize,
                            unsigned int* dOutput,
                            environmentData data,
+                           bool noDelay,
                            unsigned int width,
                            unsigned int height)
 {
@@ -391,7 +392,7 @@ void renderEnvironmentCUDA(dim3 gridSize,
         int h = std::min(pixelsPer, int(height) - i);
         dim3 newGrid(DivideUp(width, blockSize.x), DivideUp(h, blockSize.y));
         renderEnvironmentCUDAGPU<<<newGrid, blockSize, 0, renderStream>>>(dOutput, data, width, height, i);
-    cudaStreamSynchronize(renderStream); // Synchronize to give simulation time to also do their part
+        if (!noDelay) cudaStreamSynchronize(renderStream); // Synchronize to give simulation time to also do their part, if put away, renderer will be way faster, but simulation will lack.
 
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess)

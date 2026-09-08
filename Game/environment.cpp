@@ -28,36 +28,6 @@
 //float VOXELSIZE = 64.0f; // In Meters
 
 
-environment::environment()
-{
-	for (int i = 0; i < GRIDSIZESKY; i++)
-	{
-		m_envGrid.Qv[i] = 0.0f;
-		m_envGrid.Qw[i] = 0.0f;
-		m_envGrid.Qc[i] = 0.0f;
-		m_envGrid.Qr[i] = 0.0f;
-		m_envGrid.Qs[i] = 0.0f;
-		m_envGrid.Qi[i] = 0.0f;
-		m_envGrid.potTemp[i] = 301.15f;
-		m_envGrid.velField[i] = { 0,1,0 };
-	}
-	for (int i = 0; i < GRIDSIZEGROUND; i++)
-	{
-		m_groundGrid.Qrs[i] = 0.001f; 
-		m_groundGrid.Qgr[i] = 0.0f; 
-		m_groundGrid.Qgs[i] = 0.0f; 
-		m_groundGrid.Qgi[i] = 0.0f; 
-		m_groundGrid.P[i] = 1000.0f;
-		m_groundGrid.T[i] = 315.15f;
-		m_groundGrid.t[i] = 0.0f;
-	}
-}
-
-environment::~environment()
-{
-
-}
-
 //void environment::init(float* potTemps, glm::vec2* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures)
 //{
 //	memcpy(m_envGrid.potTemp, potTemps, GRIDSIZESKY * sizeof(float));

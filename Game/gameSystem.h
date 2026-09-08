@@ -2,10 +2,35 @@
 
 using namespace bee; 
 
+/*
+ *													GameStates / Menus
+ * 
+ * 
+ *  +-----------+     +----------------------+    											 +---------------------------+				+--------------+
+ *  | Main Menu |---->|  Create Simulation   |---------------------------------------------->|	     SkewT Creator       |------------->| Simulation   |
+ *  +-----------+     +----------------------+    											 +---------------------------+				+--------------+
+ *        |                          |             +---------------------------+						   ^
+ *        |                          +------------>| Observed Sounding Select. |---------------------------+
+ *        |                          |             +---------------------------+				     	   |
+ *        |                          |             +---------------------------+						   |
+ *        |                          +------------>| Custom Environment Select.|---------------------------+
+ *        |                                        +---------------------------+														
+ *        |
+ *		  |			  +---------------------------+											    +--------------------+
+ *		  +---------->| View Simulation Selection |-------------------------------------------->| View Simulation    |
+ *  				  +---------------------------+											    +--------------------+
+ */
 
 enum gameStates
 {
-	STARTMENU, CHOOSEDATE, SKEWTMAKER, SIMULATION
+	MAINMENU, 
+	CREATE_SIMULATION, 
+	SKEWT_CREATOR, 
+	OBSERVED_SOUNDING_SELECTION, 
+	CUSTOM_ENVIRONMENT_SELECTION, 
+	SIMULATION,
+	VIEW_SIMULATION_SELECTION, 
+	VIEW_SIMULATION,
 };
 
 class gameSystem : public bee::System, public bee::IPanel
@@ -30,7 +55,7 @@ private:
 
 	bool loaded{ false };
 	bool makingSkewT{ false };
-	gameStates m_currentState = STARTMENU;
+	gameStates m_currentState = MAINMENU;
 	std::string m_countrySelected{};
 	std::string m_yearSelected{};
 	std::string m_monthSelected{};

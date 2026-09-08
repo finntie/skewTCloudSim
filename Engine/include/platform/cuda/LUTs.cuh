@@ -2,7 +2,7 @@
 
 struct float3x4;
 
-void setConstants(const float* invView = nullptr, size_t sizeViewMat = 0);
+void setConstants(const float* invView = nullptr, size_t sizeViewMat = 0, void* stream = nullptr);
 
 __device__ float posToLUT(const float3& pos, float width);
 
