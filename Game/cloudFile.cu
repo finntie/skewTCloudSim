@@ -1,9 +1,16 @@
-#include "pch.h"
-#include "cloudFile.h"
+#include "cloudFile.cuh"
+
 
 #include "game.h"
 #include "environment.h"
 #include "editor.h"
+#include "platform/cuda/cuda_render.cuh"
+
+// Extras
+#include "rendering/render.hpp"
+#include "rendering/model.hpp"
+#include "imgui/imgui.h"
+#include "imgui/IconsFontAwesome.h"
 
 #include <cuda_runtime.h>
 
@@ -12,34 +19,36 @@
 #include <sstream>
 
 #include <execution>
+#include <iostream>
 
-
-
-
+#include <utility>
 
 cloudFile::~cloudFile()
 {
 	if (m_GPUDataInitialized)
 	{
-		cudaFree(m_groundDataGPU.T);
-		cudaFree(m_groundDataGPU.t);
-		cudaFree(m_groundDataGPU.P);
-		cudaFree(m_groundDataGPU.Qgi);
-		cudaFree(m_groundDataGPU.Qgs);
-		cudaFree(m_groundDataGPU.Qgr);
-		cudaFree(m_groundDataGPU.Qrs);
+		for (int i = 0; i < m_sizeGPUData + 1; i++)
+		{
+			cudaFree(m_groundDataGPU[i].T);
+			cudaFree(m_groundDataGPU[i].t);
+			cudaFree(m_groundDataGPU[i].P);
+			cudaFree(m_groundDataGPU[i].Qgi);
+			cudaFree(m_groundDataGPU[i].Qgs);
+			cudaFree(m_groundDataGPU[i].Qgr);
+			cudaFree(m_groundDataGPU[i].Qrs);
 
-		cudaFree(m_skyDataGPU.pressure);
-		cudaFree(m_skyDataGPU.velfieldZ);
-		cudaFree(m_skyDataGPU.velfieldY);
-		cudaFree(m_skyDataGPU.velfieldX);
-		cudaFree(m_skyDataGPU.potTemp);
-		cudaFree(m_skyDataGPU.Qi);
-		cudaFree(m_skyDataGPU.Qs);
-		cudaFree(m_skyDataGPU.Qr);
-		cudaFree(m_skyDataGPU.Qc);
-		cudaFree(m_skyDataGPU.Qw);
-		cudaFree(m_skyDataGPU.Qv);
+			cudaFree(m_skyDataGPU[i].pressure);
+			cudaFree(m_skyDataGPU[i].velfieldZ);
+			cudaFree(m_skyDataGPU[i].velfieldY);
+			cudaFree(m_skyDataGPU[i].velfieldX);
+			cudaFree(m_skyDataGPU[i].potTemp);
+			cudaFree(m_skyDataGPU[i].Qi);
+			cudaFree(m_skyDataGPU[i].Qs);
+			cudaFree(m_skyDataGPU[i].Qr);
+			cudaFree(m_skyDataGPU[i].Qc);
+			cudaFree(m_skyDataGPU[i].Qw);
+			cudaFree(m_skyDataGPU[i].Qv);
+		}
 	}
 
 }
@@ -350,6 +359,41 @@ float* cloudFile::typeToPointer(int type, environment::gridDataSky* skyData, env
 		case 7: return (*skyData).velFieldX;
 		case 8: return (*skyData).velFieldY;
 		case 9: return (*skyData).velFieldZ;
+		case 10: return (*skyData).pressure;
+		default: break;
+		}
+	}
+	else if (groundData)
+	{
+		switch (type)
+		{
+		case 0: return (*groundData).T;
+		case 1: return (*groundData).Qrs;
+		case 2: return (*groundData).Qgr;
+		case 3: return (*groundData).Qgs;
+		case 4: return (*groundData).Qgi;
+		default: break;
+		}
+	}
+	return nullptr;
+}
+
+float* cloudFile::typeToPointerGPU(int type, environment::gridDataSkyGPU* skyData, environment::gridDataGroundGPU* groundData, bool sky)
+{
+	if (sky && skyData)
+	{
+		switch (type)
+		{
+		case 0: return (*skyData).Qw;
+		case 1: return (*skyData).Qc;
+		case 2: return (*skyData).Qr;
+		case 3: return (*skyData).Qs;
+		case 4: return (*skyData).Qi;
+		case 5: return (*skyData).Qv;
+		case 6: return (*skyData).potTemp;
+		case 7: return (*skyData).velfieldX;
+		case 8: return (*skyData).velfieldY;
+		case 9: return (*skyData).velfieldZ;
 		case 10: return (*skyData).pressure;
 		default: break;
 		}
@@ -789,7 +833,9 @@ bool cloudFile::loadFile(const char* fileName, bool onlyMeta)
 	return valid;
 }
 
-void cloudFile::getLerpedFrameData(environment::gridDataSky* skyData, environment::gridDataGround* groundData, int currentFrame, float frameTime)
+inline int iDivUp(int a, int b) { return (a % b != 0) ? (a / b + 1) : (a / b); }
+
+void cloudFile::getLerpedFrameData(environment::gridDataSkyGPU*& outputSkyData, environment::gridDataGroundGPU* outputGroundData, int currentFrame, float frameTime)
 {
 	int t1 = currentFrame;
 	int t2 = currentFrame + 1;
@@ -798,36 +844,32 @@ void cloudFile::getLerpedFrameData(environment::gridDataSky* skyData, environmen
 
 	auto time0 = std::chrono::high_resolution_clock::now();
 
+	// Check if we need to update the GPU data
+	checkIfUpdateGPU(t1, t2);
 
-	if (skyData)
-	{
-		if (m_typesSky[0]) transformLerp(m_skyData[t1].Qw, m_skyData[t2].Qw, (*skyData).Qw, t, GRIDSIZESKY);
-		if (m_typesSky[1]) transformLerp(m_skyData[t1].Qc, m_skyData[t2].Qc, (*skyData).Qc, t, GRIDSIZESKY);
-		if (m_typesSky[2]) transformLerp(m_skyData[t1].Qr, m_skyData[t2].Qr, (*skyData).Qr, t, GRIDSIZESKY);
-		if (m_typesSky[3]) transformLerp(m_skyData[t1].Qs, m_skyData[t2].Qs, (*skyData).Qs, t, GRIDSIZESKY);
-		if (m_typesSky[4]) transformLerp(m_skyData[t1].Qi, m_skyData[t2].Qi, (*skyData).Qi, t, GRIDSIZESKY);
-		if (m_typesSky[5]) transformLerp(m_skyData[t1].Qv, m_skyData[t2].Qv, (*skyData).Qv, t, GRIDSIZESKY);
+	outputSkyData = &m_skyDataGPU[m_sizeGPUData]; // Extra index acts as storage
 
-		if (m_typesSky[6]) transformLerp(m_skyData[t1].potTemp, m_skyData[t2].potTemp, (*skyData).potTemp, t, GRIDSIZESKY);
-		// Exception for the velocity, since its not a float
-		if (m_typesSky[7] || m_typesSky[8] || m_typesSky[9])
-		{
-			transformLerp(m_skyData[t1].velFieldX, m_skyData[t2].velFieldX, (*skyData).velFieldX, t, GRIDSIZESKY);
-			transformLerp(m_skyData[t1].velFieldY, m_skyData[t2].velFieldY, (*skyData).velFieldY, t, GRIDSIZESKY);
-			transformLerp(m_skyData[t1].velFieldZ, m_skyData[t2].velFieldZ, (*skyData).velFieldZ, t, GRIDSIZESKY);
-		}
-		if (m_typesSky[8]) transformLerp(m_skyData[t1].pressure, m_skyData[t2].pressure, (*skyData).pressure, t, GRIDSIZESKY);
+	// Lerp data on the GPU, input the correct array index from the GPU array
+	dim3 blockSize(8, 8, 8);
+	dim3 gridSize = dim3(unsigned(iDivUp(GRIDSIZESKYX, blockSize.x)),
+		unsigned(iDivUp(GRIDSIZESKYY, blockSize.y)),
+		unsigned(iDivUp(GRIDSIZESKYZ, blockSize.z)));
+	for (int i = 0; i < 11; i++) if (m_typesSky[i]) lerpFramesType << <gridSize, blockSize, 0, getStream() >> > (
+		typeToPointerGPU(i, outputSkyData, outputGroundData, true),
+		typeToPointerGPU(i, &m_skyDataGPU[m_GPUFrames[t1 - m_firstFrameGPU]], nullptr, true),
+		typeToPointerGPU(i, &m_skyDataGPU[m_GPUFrames[t2 - m_firstFrameGPU]], nullptr, true), 
+		t, 
+		make_int3(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ));
+
+	cudaError_t err = cudaGetLastError();
+	if (err != cudaSuccess) {
+		std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+		__debugbreak();
 	}
-	if (groundData)
-	{
-		if (m_typesGround[0]) transformLerp(m_groundData[t1].T, m_groundData[t2].T, (*groundData).T, t, GRIDSIZEGROUND);
-		if (m_typesGround[1]) transformLerp(m_groundData[t1].Qrs, m_groundData[t2].Qrs, (*groundData).Qrs, t, GRIDSIZEGROUND);
-		if (m_typesGround[2]) transformLerp(m_groundData[t1].Qgr, m_groundData[t2].Qgr, (*groundData).Qgr, t, GRIDSIZEGROUND);
-		if (m_typesGround[3]) transformLerp(m_groundData[t1].Qgs, m_groundData[t2].Qgs, (*groundData).Qgs, t, GRIDSIZEGROUND);
-		if (m_typesGround[4]) transformLerp(m_groundData[t1].Qgi, m_groundData[t2].Qgi, (*groundData).Qgi, t, GRIDSIZEGROUND);
-	}
+
+
 	auto time1 = std::chrono::high_resolution_clock::now();
-	std::cout << "Raw loop: " << std::chrono::duration<double, std::milli>(time1 - time0).count() << " ms\n";
+	std::cout << "Raw loop (not valid since work is done asynchronisely on the GPU): " << std::chrono::duration<double, std::milli>(time1 - time0).count() << " ms\n";
 }
 
 bool cloudFile::getSurroundedFrameTimes(float time, float& outputBeforeTime, float& outputAfterTime, int& beforeFrameNum)
@@ -865,79 +907,177 @@ bool cloudFile::getSurroundedFrameTimes(float time, float& outputBeforeTime, flo
 
 void cloudFile::initGPUData(void* stream)
 {
+	// Include 1 extra, this will hold the lerped data that is used
+	m_skyDataGPU = new environment::gridDataSkyGPU[m_sizeGPUData + 1]();
+	m_groundDataGPU = new environment::gridDataGroundGPU[m_sizeGPUData + 1]();
+
 	// Environment Values
-	cudaMallocAsync((void**)&m_skyDataGPU.Qv, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_skyDataGPU.Qw, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_skyDataGPU.Qc, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_skyDataGPU.Qr, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_skyDataGPU.Qs, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_skyDataGPU.Qi, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_skyDataGPU.potTemp, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_skyDataGPU.velfieldX, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_skyDataGPU.velfieldY, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_skyDataGPU.velfieldZ, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_skyDataGPU.pressure, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	for (int i = 0; i < m_sizeGPUData + 1; i++)
+	{
+		cudaMallocAsync((void**)&m_skyDataGPU[i].Qv, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_skyDataGPU[i].Qw, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_skyDataGPU[i].Qc, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_skyDataGPU[i].Qr, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_skyDataGPU[i].Qs, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_skyDataGPU[i].Qi, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_skyDataGPU[i].potTemp, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_skyDataGPU[i].velfieldX, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_skyDataGPU[i].velfieldY, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_skyDataGPU[i].velfieldZ, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_skyDataGPU[i].pressure, GRIDSIZESKY * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	}
 
 	// Ground values
-	cudaMallocAsync((void**)&m_groundDataGPU.Qrs, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_groundDataGPU.Qgr, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_groundDataGPU.Qgs, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_groundDataGPU.Qgi, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_groundDataGPU.P, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_groundDataGPU.t, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
-	cudaMallocAsync((void**)&m_groundDataGPU.T, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	for (int i = 0; i < m_sizeGPUData + 1; i++)
+	{
+		cudaMallocAsync((void**)&m_groundDataGPU[i].Qrs, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_groundDataGPU[i].Qgr, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_groundDataGPU[i].Qgs, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_groundDataGPU[i].Qgi, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_groundDataGPU[i].P, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_groundDataGPU[i].t, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+		cudaMallocAsync((void**)&m_groundDataGPU[i].T, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<cudaStream_t>(stream));
+	}
+
+	cudaError_t err = cudaGetLastError();
+	if (err != cudaSuccess) {
+		std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+		__debugbreak();
+	}
 
 	m_GPUDataInitialized = true;
 
 }
 
-environment::gridDataSkyGPU& cloudFile::CPUtoGPUDataSky(environment::gridDataSky& skyData, void* stream)
+
+void cloudFile::checkIfUpdateGPU(int frame1, int frame2)
 {
-	// Copy over all data
-	cudaMemcpyAsync(m_skyDataGPU.Qw, skyData.Qw, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_skyDataGPU.Qc, skyData.Qc, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_skyDataGPU.Qr, skyData.Qr, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_skyDataGPU.Qs, skyData.Qs, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_skyDataGPU.Qi, skyData.Qi, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_skyDataGPU.Qv, skyData.Qv, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_skyDataGPU.velfieldX, skyData.velFieldX, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_skyDataGPU.velfieldY, skyData.velFieldY, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_skyDataGPU.velfieldZ, skyData.velFieldZ, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_skyDataGPU.potTemp, skyData.potTemp, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_skyDataGPU.pressure, skyData.pressure, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-
-	return m_skyDataGPU;
-}
-
-environment::gridDataGroundGPU& cloudFile::CPUtoGPUDataGround(environment::gridDataGround& groundData, void* stream)
-{
-	// Copy over all data
-	cudaMemcpyAsync(m_groundDataGPU.T, groundData.T, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_groundDataGPU.t, groundData.t, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_groundDataGPU.P, groundData.P, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_groundDataGPU.Qrs, groundData.Qrs, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_groundDataGPU.Qgr, groundData.Qgr, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_groundDataGPU.Qgs, groundData.Qgs, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-	cudaMemcpyAsync(m_groundDataGPU.Qgi, groundData.Qgi, GRIDSIZEGROUND * sizeof(float), cudaMemcpyHostToDevice, reinterpret_cast<cudaStream_t>(stream));
-
-	return m_groundDataGPU;
-}
-
-void cloudFile::transformLerp(float* array1, float* array2, float* outputArray, float lerp, int size)
-{
-	// Lerp in a different way:
-	//float t = lerp < 0.5f ? 0.5f * (1.0f - (1.0f - lerp * 2.0f) * (1.0f - lerp * 2.0f)) : 0.5f + 0.5f * ((lerp - 0.5f) * 2.0f * (lerp - 0.5f) * 2.0f);
-	float t = lerp;
-
-	//for (int i = 0; i < size; i++)
-	//{
-	//	outputArray[i] = array1[i] + t * (array2[i] - array1[i]);
-	//}
-	
-	// Use transform these 2 arrays to interpolate values and write to skyData
-	std::transform(std::execution::par_unseq, array1, array1 + size, array2, outputArray,
-		[t](float a, float b)
+	// First check if the first frames are already initialized
+	if (m_firstFrameGPU == m_lastFrameGPU && m_firstFrameGPU == 0 && m_lastFrameGPU == 0)
+	{
+		// Not yet initialized
+		// So, initialize every type that is saved for the amount of frames we want to copy to the GPU
+		m_firstFrameGPU = frame1;
+		for (int j = 0; j < m_sizeGPUData; j++)
 		{
-			return a + t * (b - a);
-		});
+			// Make sure to only copy types that we saved and not to overshoot it.
+			if (frame1 + j < int(m_frames.size()))
+			{
+				for (int i = 0; i < 11; i++)
+				{
+					if (m_typesSky[i]) copyOver1Frame(&m_skyDataGPU[j], i, frame1 + j);
+				}
+				m_lastFrameGPU = frame1 + j;
+			}
+			m_GPUFrames[j] = j; // Initialize GPU frames which we know is in order currently
+		}
+		return;
+	}
+
+
+	if (frame2 >= m_lastFrameGPU)
+	{
+		// Save frames onwards starting from frame1
+
+		int range = frame1 + m_sizeGPUData - 1;
+		if (range >= int(m_frames.size())) range = int(m_frames.size()) - 1;
+		copyNewFrames(frame1, range);
+		return;
+	}
+	if (frame1 < m_firstFrameGPU)
+	{
+		// Save previous frames, since it looks like we are going backwards
+
+		int range = frame2 - m_sizeGPUData + 1;
+		if (range < 0) range = 0;
+		copyNewFrames(range, frame2);
+		return;
+	}
+}
+
+void cloudFile::copyNewFrames(int firstFrame, int lastFrame)
+{
+	// We should always check to copy max amount of frames
+	if (lastFrame - firstFrame > m_sizeGPUData || lastFrame - firstFrame <= 0)
+	{
+		printf("Warning, unable to copy new frames over, firstFrame: %i, lastFrame: %i\n", firstFrame, lastFrame);
+		return;
+	}
+
+	// Key = CPU frame
+	// Value = (Index , Index in the GPU array) 
+	std::unordered_map<int, std::pair<int, int>> overlapData2;
+
+
+	// Check which frames overlap and need to move the values of
+	for (int i = 0; i < m_lastFrameGPU - m_firstFrameGPU + 1; i++)
+	{
+		// Write overlapped frames
+		// Saving (CPU frame), as key and (GPU array index) as value
+		if (m_firstFrameGPU + i >= firstFrame && m_firstFrameGPU + i <= lastFrame) overlapData2[m_firstFrameGPU + i] = { i, m_GPUFrames[i] };
+	}
+	
+	// So, new begin of frames will be #firstFrame, we put the old frames in the correct order, then we can copy over the other data
+	for (int i = 0; i < m_sizeGPUData; i++)
+	{
+		// Loop over the new frames, starting at firstFrame
+		// If we already had this value saved, we reuse it by setting it in the new correct position
+		auto it = overlapData2.find(firstFrame + i);
+		if (it != overlapData2.end())
+		{
+			// We found it! Pfew, lets reuse it and not copy!
+			// We do this by swapping the values, after this, we have all the reusables at the correct place
+			int value = m_GPUFrames[i];
+			m_GPUFrames[i] = it->second.second;
+			m_GPUFrames[it->second.first] = value;
+		}
+	}
+	
+	// Now that we have the reusable frames at the correct place, we ignore those indices
+	// We don't loop over the full GPU size, since maybe we want to copy less, so loop over the inputted frame range
+	for (int i = 0; i < lastFrame - firstFrame + 1; i++)
+	{
+		auto it = overlapData2.find(firstFrame + i);
+		// If we did NOT find it, we will copy over
+		if (it == overlapData2.end())
+		{
+			for (int j = 0; j < 11; j++)
+			{
+				if (m_typesSky[j]) copyOver1Frame(&m_skyDataGPU[m_GPUFrames[i]], j, firstFrame + i);
+			}
+		}
+	}
+
+	cudaError_t err = cudaGetLastError();
+	if (err != cudaSuccess) {
+		std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+		__debugbreak();
+	}
+
+
+	// Set data
+	m_firstFrameGPU = firstFrame;
+	m_lastFrameGPU = lastFrame;
+}
+
+void cloudFile::copyOver1Frame(environment::gridDataSkyGPU* dst, int type, int frame)
+{
+	cudaMemcpyAsync(typeToPointerGPU(type, dst, nullptr, true), typeToPointer(type, &m_skyData[frame], &m_groundData[frame], true), GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, getStream());
+}
+
+__global__ void lerpFramesType(float* result, float* frame1Data, float* frame2Data, float t, int3 size)
+{
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+	int z = threadIdx.z + blockDim.z * blockIdx.z;
+
+	if (x >= size.x || y >= size.y || z >= size.z) return;
+
+	int idx = x + y * size.x + z * size.x * size.y;
+
+	const float a = frame1Data[idx];
+	const float b = frame2Data[idx];
+
+	// Possible room for change/improvement
+	result[idx] = a + t * (b - a);
 }

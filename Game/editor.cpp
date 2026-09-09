@@ -6,7 +6,7 @@
 #include "skewTer.h"
 #include "game.h"
 #include "tracing.h"
-#include "cloudFile.h"
+#include "cloudFile.cuh"
 
 #include "math/meteoformulas.h"
 #include "math/constants.hpp"
@@ -551,21 +551,23 @@ void editor::updateViewCloud(bool force)
 			printf("Warning: No frames were found in the file\n");
 			return;
 		}
+
+		// Do not continue if already at the end
+		if (!force && Game.CloudFile().getLastFrameTime() == m_time) break;
+
 		// Apply bounds of time in the simulation
 		if (beforeTime < 0.0f) m_time = afterTime, beforeTime = afterTime;
 		else if (afterTime < 0.0f) m_time = beforeTime, afterTime = beforeTime;
-
-		//if (m_time >= 86400.0f) m_time -= 86400.0f;
-		//if (m_time < 0.0f) m_time = 86400.0f;
 
 		// Convert from time to frameTime with decimal indicating progress from current frame to next one
 		const float a = afterTime - beforeTime;
 		const float b = m_time - beforeTime;
 		const float frameTime = b / (a + 1e-16f);
 
-		environment::gridDataSky& data = m_currentCloudViewSkyData;
+		environment::gridDataSkyGPU* output = nullptr;
 
-		Game.CloudFile().getLerpedFrameData(&data, nullptr, frame, frameTime);
+		// Lerp between values between frames
+		Game.CloudFile().getLerpedFrameData(output, nullptr, frame, frameTime);
 
 
 		// Reset parameters if hidden
@@ -573,26 +575,22 @@ void editor::updateViewCloud(bool force)
 		{
 			if (i == 6 && !m_visibleTypes[i])
 			{
-				// Mismatch in array indices, handling it manually
-				memset(Game.CloudFile().typeToPointer(7, &data, nullptr, true), 0, GRIDSIZESKY * sizeof(float));
-				memset(Game.CloudFile().typeToPointer(8, &data, nullptr, true), 0, GRIDSIZESKY * sizeof(float));
-				memset(Game.CloudFile().typeToPointer(9, &data, nullptr, true), 0, GRIDSIZESKY * sizeof(float));
+				cudaMemsetAsync(Game.CloudFile().typeToPointerGPU(7, output, nullptr, true), 0, GRIDSIZESKY * sizeof(float), getStream());
+				cudaMemsetAsync(Game.CloudFile().typeToPointerGPU(8, output, nullptr, true), 0, GRIDSIZESKY * sizeof(float), getStream());
+				cudaMemsetAsync(Game.CloudFile().typeToPointerGPU(9, output, nullptr, true), 0, GRIDSIZESKY * sizeof(float), getStream());
 			}
-			else if (!m_visibleTypes[i]) memset(Game.CloudFile().typeToPointer(i, &data, nullptr, true), 0, GRIDSIZESKY * sizeof(float));
+			else if (!m_visibleTypes[i]) cudaMemsetAsync(Game.CloudFile().typeToPointerGPU(i, output, nullptr, true), 0, GRIDSIZESKY * sizeof(float), getStream());
 		}
 
-
-		environment::gridDataSkyGPU& skyDataGPU = Game.CloudFile().CPUtoGPUDataSky(data, getStream());
-
 		Game.cudaRenderer().setDataEnvironment(
-			skyDataGPU.Qw,
-			skyDataGPU.Qc,
-			skyDataGPU.Qr,
-			skyDataGPU.Qs,
-			skyDataGPU.Qi,
-			skyDataGPU.velfieldX,
-			skyDataGPU.velfieldY,
-			skyDataGPU.velfieldZ,
+			(*output).Qw,
+			(*output).Qc,
+			(*output).Qr,
+			(*output).Qs,
+			(*output).Qi,
+			(*output).velfieldX,
+			(*output).velfieldY,
+			(*output).velfieldZ,
 			getStream());
 
 		// Forcing will not update time, since it is only meant to update values
@@ -1269,7 +1267,15 @@ void editor::cloudViewMenu()
 		m_cloudViewStep = 1;
 	}
 
-	ImGui::SliderFloat("Time", &m_time, Game.CloudFile().getFirstFrameTime(), Game.CloudFile().getLastFrameTime());
+
+	float firstTime = Game.CloudFile().getFirstFrameTime();
+	float lastTime = Game.CloudFile().getLastFrameTime();
+	static float slideTimeInput = 0.0f;
+	slideTimeInput = m_time - firstTime;
+	if (ImGui::SliderFloat("Time", &slideTimeInput, 0.0f, lastTime - firstTime))
+	{
+		m_time = slideTimeInput + firstTime;
+	}
 
 	ImGui::Dummy(ImVec2(30, 30));
 
@@ -1282,7 +1288,7 @@ void editor::cloudViewMenu()
 	ImGui::Text("Time of day: %s", time.c_str());
 
 	ImGui::Text("Speed Multiplier");
-	ImGui::SliderFloat("##SpeedMult", &m_cloudViewSpeedMult, 1.0f, 120.0f);
+	ImGui::SliderFloat("##SpeedMult", &m_cloudViewSpeedMult, 1.0f, 10000.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
 
 	ImGui::Checkbox("Enable Lerping Frames", &lerping);
 	ImGui::SetItemTooltip("Disabling lerping will snap simulaion to the nearest captured frame");

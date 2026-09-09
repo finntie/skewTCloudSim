@@ -13,7 +13,7 @@
 #include "dataClass.cuh"
 #include "skewTMaker.h"
 #include "skewTFile.h"
-#include "cloudFile.h"
+#include "cloudFile.cuh"
 
 // Make the game a global variable on free store memory.
 game Game;

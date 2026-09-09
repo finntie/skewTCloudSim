@@ -14,7 +14,8 @@
 
 
 #include "skewTFile.h"
-#include "cloudFile.h"
+#include "cloudFile.cuh"
+#include <unordered_map>
 
 using namespace std;
 using namespace bee;

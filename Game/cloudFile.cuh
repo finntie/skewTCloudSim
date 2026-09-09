@@ -1,7 +1,10 @@
 #pragma once
-#include "environment.h"
+#include <glm/glm.hpp> //TODO: we do not want this
 #include <string>
 #include <vector>
+#include "environment.h"
+
+#include <cuda_runtime.h>
 
 
 struct cloudFileInfo
@@ -27,6 +30,7 @@ public:
 	bool isOneTypeSelected();
 	int totalTypesSelected();
 	float* typeToPointer(int type, environment::gridDataSky* skyData, environment::gridDataGround* groundData, bool sky);
+	float* typeToPointerGPU(int type, environment::gridDataSkyGPU* skyData, environment::gridDataGroundGPU* groundData, bool sky);
 	std::string typeToString(int type, bool sky);
 	int stringToType(std::string type, bool& outputSky);
 
@@ -56,7 +60,7 @@ public:
 
 	// Get lerped data in between 2 frames.
 	// frameTime: Ranging 0 - 1, with decimal point being in between frames
-	void getLerpedFrameData(environment::gridDataSky* skyData, environment::gridDataGround* groundData, int currentFrame, float frameTime);
+	void getLerpedFrameData(environment::gridDataSkyGPU*& outputSkyData, environment::gridDataGroundGPU* outputGroundData, int currentFrame, float frameTime);
 
 	// Receive closest times around the input time, returns false if outside the max and min
 	// If outside, outputBeforeTime will be filled if time is LATER than timeframes
@@ -67,19 +71,30 @@ public:
 	// Malloc data for the GPU, uses current grid sizes
 	void initGPUData(void* stream);
 
-	environment::gridDataSkyGPU& CPUtoGPUDataSky(environment::gridDataSky& skyData, void* stream);
-	environment::gridDataGroundGPU& CPUtoGPUDataGround(environment::gridDataGround& groundData, void* stream);
-
 private:
 
-	void transformLerp(float* array1, float* array2, float* outputArray, float lerp, int size);
+	// Check if the GPU data needs an update
+	void checkIfUpdateGPU(int frame1, int frame2);
+	// Copy max amount of frames, with difference between frames needing to be size of total GPU frames or less.
+	// firstFrame will be the new first frame of the GPU data
+	// Lastframe should be valid
+	void copyNewFrames(int firstFrame, int lastFrame);
+	// Copy over a frame from the CPU to the GPU, destination input is the frame of the GPU skydata
+	void copyOver1Frame(environment::gridDataSkyGPU* dst, int type, int frame);
 
-	// Data of all frames
+
+
+	// Data of all frames on the CPU
 	std::vector<environment::gridDataSky> m_skyData;
 	std::vector<environment::gridDataGround> m_groundData;
 
-	environment::gridDataSkyGPU m_skyDataGPU;
-	environment::gridDataGroundGPU m_groundDataGPU;
+	// GPU data
+	environment::gridDataSkyGPU* m_skyDataGPU;
+	environment::gridDataGroundGPU* m_groundDataGPU;
+	static const int m_sizeGPUData = 4; // How many frames can be saved
+	int m_GPUFrames[m_sizeGPUData]; // Maps frames on GPU
+	int m_firstFrameGPU = 0; // First frame saved on the GPU
+	int m_lastFrameGPU = 0; // Last frame saved on the GPU
 	bool m_GPUDataInitialized = false;
 
 	std::string m_fileName;
@@ -110,3 +125,5 @@ private:
 
 // Helper function
 bool coloredSelectable(const char* label, bool* value);
+
+__global__ void lerpFramesType(float* result, float* frame1Data, float* frame2Data, float t, int3 size);
