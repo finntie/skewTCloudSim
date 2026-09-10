@@ -540,6 +540,7 @@ void CudaRender::setDataEnvironment(float* Qw,
                                     float* velX,
                                     float* velY,
                                     float* velZ,
+                                    bool updateSDF,
                                     void* stream)
 {
     if (m_envData.fullSize == 0)
@@ -564,7 +565,7 @@ void CudaRender::setDataEnvironment(float* Qw,
         __debugbreak();
     }
 
-    if (Qw)
+    if (Qw && updateSDF)
     fillSDF(glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ),
             Qw,
             0.00005f,
@@ -575,7 +576,7 @@ void CudaRender::setDataEnvironment(float* Qw,
             m_blockDim,
             stream);
 
-    if (Qr)
+    if (Qr && updateSDF)
     fillSDF(glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ),
             Qr,
             0.00001f,
@@ -586,7 +587,7 @@ void CudaRender::setDataEnvironment(float* Qw,
             m_blockDim,
             stream);
 
-    if (Qs)
+    if (Qs && updateSDF)
     fillSDF(glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ),
             Qs,
             0.00001f,

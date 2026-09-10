@@ -148,6 +148,7 @@ private:
 	int m_cloudViewStep{ 0 };
 	float m_cloudViewSpeedMult{ 1.0f };
 	environment::gridDataSky m_currentCloudViewSkyData;
+	float m_lastFrameTime{ -1 };
 
 
 	// Viewing Settings

@@ -569,12 +569,25 @@ void editor::updateViewCloud(bool force)
 		// Lerp between values between frames
 		Game.CloudFile().getLerpedFrameData(output, nullptr, frame, frameTime);
 
+		// Calculate last frametime to see if we need to update the SDF
+		// 1. We are fully in between 2 frames 
+		// 2. distance is larger than 1.5 frames
+		// 3. or we have not even set it yet
+		// 4. or we need to force
+		bool updateSDF = false;
+		if (force || abs(m_lastFrameTime - (frameTime + frame)) > 0.5f && (frameTime > 0.25f && frameTime < 0.75f) || m_lastFrameTime < 0.0f || abs(m_lastFrameTime - (frameTime + frame)) > 1.5f)
+		{
+			printf("Updated old time: %f, to now: %f\n", m_lastFrameTime, frameTime + frame);
+			m_lastFrameTime = frameTime + frame;
+			updateSDF = true;
+		}
 
 		// Reset parameters if hidden
 		for (int i = 0; i < 7; i++)
 		{
 			if (i == 6 && !m_visibleTypes[i])
 			{
+
 				cudaMemsetAsync(Game.CloudFile().typeToPointerGPU(7, output, nullptr, true), 0, GRIDSIZESKY * sizeof(float), getStream());
 				cudaMemsetAsync(Game.CloudFile().typeToPointerGPU(8, output, nullptr, true), 0, GRIDSIZESKY * sizeof(float), getStream());
 				cudaMemsetAsync(Game.CloudFile().typeToPointerGPU(9, output, nullptr, true), 0, GRIDSIZESKY * sizeof(float), getStream());
@@ -591,6 +604,7 @@ void editor::updateViewCloud(bool force)
 			(*output).velfieldX,
 			(*output).velfieldY,
 			(*output).velfieldZ,
+			updateSDF,
 			getStream());
 
 		// Forcing will not update time, since it is only meant to update values

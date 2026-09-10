@@ -83,7 +83,7 @@ public:
     // Environment Simulation
     void initEnvironmentData(const int _sizeX, const int _sizeY, const int _sizeZ, const float _voxelSize, dim3 gridDim, dim3 blockDim);
     
-    void setDataEnvironment(float* Qw, float* Qc, float* Qr, float* Qs, float* Qi, float* velX, float* VelY, float* velZ, void* stream);
+    void setDataEnvironment(float* Qw, float* Qc, float* Qr, float* Qs, float* Qi, float* velX, float* VelY, float* velZ, bool updateSDF, void* stream);
 
     void setNoiseTexture(int octaves, int gridSize, float lacunarity);
     void setExtraRenderInfo(float noiseReduction,

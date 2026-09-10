@@ -672,7 +672,7 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 	if (m_time > 86400.0f) m_time = 0.0f;
 
 	Game.Editor().GPUSetEnv(&m_envGrid, &m_groundGrid, m_GHeight, m_envGrid.pressure, simStream);
-	Game.cudaRenderer().setDataEnvironment(m_envGrid.Qw, m_envGrid.Qc, m_envGrid.Qr, m_envGrid.Qs, m_envGrid.Qi, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ, simStream);
+	Game.cudaRenderer().setDataEnvironment(m_envGrid.Qw, m_envGrid.Qc, m_envGrid.Qr, m_envGrid.Qs, m_envGrid.Qi, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ, true, simStream);
 
 	m_groundChanged = false;
 	m_updatingSimulation = false;

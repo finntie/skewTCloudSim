@@ -842,8 +842,6 @@ void cloudFile::getLerpedFrameData(environment::gridDataSkyGPU*& outputSkyData, 
 	float t = frameTime;
 	if (t2 >= m_skyData.size()) t2 = t1;
 
-	auto time0 = std::chrono::high_resolution_clock::now();
-
 	// Check if we need to update the GPU data
 	checkIfUpdateGPU(t1, t2);
 
@@ -866,10 +864,6 @@ void cloudFile::getLerpedFrameData(environment::gridDataSkyGPU*& outputSkyData, 
 		std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
 		__debugbreak();
 	}
-
-
-	auto time1 = std::chrono::high_resolution_clock::now();
-	std::cout << "Raw loop (not valid since work is done asynchronisely on the GPU): " << std::chrono::duration<double, std::milli>(time1 - time0).count() << " ms\n";
 }
 
 bool cloudFile::getSurroundedFrameTimes(float time, float& outputBeforeTime, float& outputAfterTime, int& beforeFrameNum)
