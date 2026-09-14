@@ -582,7 +582,7 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
             {
                 // Starting with calculating how much light is absorbed 
                 // From the total accumulated density using exponential which correlates with Beer's law
-                lightAbsorption = 1 - exp(-accumulatedDensity);
+                lightAbsorption = exp(-accumulatedDensity);
 
                 // Calculate mass extinction coëfficient of variables 
                 // By converting mixing ratio (kg/kg) to mass (kg/m3) using air density
@@ -601,12 +601,13 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
 
 
                 // At every step also march a ray towards the light source (sun) to check how much density is in between.
-                const float lightDirMarchDensity = lightMarch(pos, lightDir, data, stepSize);
+                const float lightDirMarchDensity = lightMarch(pos, lightDir, data, stepSize, heightOffset, make_int2(width, height));
                 // To gain transmittance we use exponent which corrolates with Beer's law
                 const float lightTransmittance = exp(-lightDirMarchDensity);
 
 
                 // Calculate multiple scattering using approximation https://www.researchgate.net/publication/262309690_Oz_the_great_and_volumetric
+                // (if link does not work https://fpsunflower.github.io/ckulla/data/oz_volumes.pdf)
                 const int octaves = 8;
                 const float g = (sigmaQw * gQw + sigmaQr * gQr + sigmaQs * gQs) / scattering; // Mixture weighting
                 float msValue = 0.0f;
@@ -620,13 +621,11 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                 }
 
 
-
-
                 // Multiple scattering phase
-                const float msVolume = fminf(extinction / 0.05f, 1.0f) * pow(lightTransmittance, 0.5f);
+               // const float msVolume = fminf(extinction / 0.05f, 1.0f) * pow(lightTransmittance, 0.5f);
 
                 // Add all scattering together
-                const float directScattering = (lightTransmittance * primScattering) + (msVolume * secScattering);
+                //const float directScattering = (lightTransmittance * primScattering) + (msValue * secScattering);
 
                 const float ambientScattering = data.ambientLightStrength * 0.01f * expf(-accumulatedDensity * 0.5f);
 
@@ -635,9 +634,9 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
 
                 // Calculate our final light intensity based on total light from scattering, our scattering coëfficient, 
                 // reducing with more light being absorbed, and finally make sure to map it to world size.
-                lightIntensity += totalLight * scattering * (1.0f - lightAbsorption) * stepSize * data.voxelSize;
+                lightIntensity += totalLight * scattering * (lightAbsorption * (1 - lightAbsorption)) * stepSize * data.voxelSize;
 
-                if (x == 0 && y == 0)
+                if (x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f))
                 {
                      printf(
                          "x %i y %i, t %f, cloudDensity %f, rainCoverage %f msVolume %f, lightTransmittance %f, "
@@ -647,17 +646,17 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                          t,
                          cloudDensity,
                          rainCoverage,
-                         msVolume,
+                         msValue,
                         lightTransmittance,
                          lightIntensity,
                          accumulatedDensity,
                          lightDirMarchDensity,
-                         directScattering,
+                         0.0f,//directScattering,
                          lightAbsorption);
                  }
                 if (lightAbsorption >= 1 - 0.01f)
                 {
-                    break;  // TODO: test out when cloud is full
+                    //break;  // TODO: test out when cloud is full
                 }
             }
 
@@ -788,7 +787,9 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
 
     unsigned int outputColorI = rgbaFloatToInt(outputColor);
 
-    dOutput[x + y * width] = outputColorI;
+
+    if (x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f)) dOutput[x + y * width] = 0.0f;
+    else dOutput[x + y * width] = outputColorI;
 }
 
 __device__ float intersectGrid(float3 dir, float3 origin, float3 recDir)
@@ -932,9 +933,14 @@ __device__ float calculateDensity(float3& pos,
     return fmaxf(coverage - noise * edgeFactor * data.noiseReduction, 0.0f) * cloudCoverage;
 }
 
-__device__ float lightMarch(float3 pos, const float3& lightDir, environmentData& data, float stepSize)
+__device__ float lightMarch(float3 pos, const float3& lightDir, environmentData& data, float stepSize, int heightOffset, int2 size)
 {
-    // TODO: This can be precomputed every simulation update and put in texture
+    // TODO: This can be precomputed every simulation update and put in texture (can it?)
+    
+    // Debug XY
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y + heightOffset;
+    const int2 halfSize = make_int2(int(float(size.x) / 2.0f), int(float(size.y) / 2.0f));
 
     // Trace from position until we are out of the grid
     unsigned int rSeed = 128;
@@ -943,20 +949,25 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
     float3 normPos = make_float3(pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
     float distanceFieldValueQw = 0.0f;
     float distanceFieldValueQs = 0.0f;
-    float prevDFieldValueQw = 0.0f;
+    // Already check distance field for first step
+    distanceFieldValueQw = fmaxf(tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f);
+    distanceFieldValueQs = fmaxf(tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f);
+    bool closeQw = false;
+    bool closeQs = false;
+    //float prevDFieldValueQw = 0.0f;
     //float distanceFieldValueQr = 0.0f;
 
     float t = 0.0f;
     int samples = 0;
-    const int maxSamples = 25;
+    const int maxSamples = 50;
     float standardStepSize = stepSize;
 
     const float airDens = 1.0f; // TODO: use variable or calculate
 
     // How much light is reflected by each case
-    const float albedoQw = 0.999f;
-    const float albedoQr = 0.99f;
-    const float albedoQs = 0.999f;
+    //const float albedoQw = 0.999f;
+    //const float albedoQr = 0.99f;
+    //const float albedoQs = 0.999f;
 
     // Extinction Coëfficiënt divided by Mass concentration, in m2/kg
     const float keQw = 150.0f;
@@ -971,10 +982,12 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
         const float uniformRand = (rSeed & 0xFFFF) / 65535.0f;
         lightStepSize += (uniformRand - 0.5f) * data.rayRandomOffset * lightStepSize * 0.5f;
 
+        if (distanceFieldValueQw <= lightStepSize) closeQw = true;
+        if (distanceFieldValueQs <= lightStepSize) closeQs = true;
 
-        const float cloudCoverage = calculateCloudCoverage(pos, data);
+        const float cloudCoverage = closeQw ? calculateCloudCoverage(pos, data) : 0.0f;
         //float rainCoverage = calculateRainCoverage(pos, data); Ignoring rain for now since it does not add much and is much slower
-        float snowCoverage = calculateSnowCoverage(pos, data);
+        float snowCoverage = closeQs ? calculateSnowCoverage(pos, data) : 0.0f;
 
         // Maybe if we want to erode, but that seems not needed and unnecessary expensive
         const float cloudDens = cloudCoverage > 0.0f ? calculateDensity(pos, data, cloudCoverage) : 0.0f;
@@ -991,7 +1004,7 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
         const float extinction = sigmaQw + sigmaQr + sigmaQs;
 
         // Density is the ray length in world size multiplied by how much the ray is consumed per meter (extinction)
-        density += extinction * stepSize * data.voxelSize;
+        density += extinction * lightStepSize * data.voxelSize;
 
         samples++;
 
@@ -1021,27 +1034,8 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
             distanceFieldValueQs = fmaxf(tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f);
 
             // Increase stepsize if no cloud is nearby
-            standardStepSize = distanceFieldValueQw < 0.5f ? stepSize + 0.25f : stepSize;
+            standardStepSize = distanceFieldValueQw < 0.5f ? stepSize : (stepSize + 0.5f) * 5.0f;
 
-
-            //                    if (blockIdx.x * blockDim.x + threadIdx.x == 0 && blockIdx.y * blockDim.y + threadIdx.y == 0)
-            //{
-            //    printf(
-            //        "x %f y %f z %f, t %f, cloudCoverage %f, cloudDens %f, density %f, DFQw %f, DFQr %f, samples: %i, "
-            //        "standardStepSize %f, stepsize: %f\n ",
-            //        pos.x,
-            //        pos.y,
-            //        pos.z,
-            //        t,
-            //        cloudCoverage,
-            //        cloudDens,
-            //        density,
-            //        distanceFieldValueQw,
-            //        0.0f,
-            //        samples,
-            //        standardStepSize,
-            //        stepSize);
-            //}
 
             // If going out of the cloud in the next step
             //if (prevDFieldValueQw == 0.0f && distanceFieldValueQw > 0.0f)
@@ -1070,7 +1064,7 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
             //    }
             //}
 
-            prevDFieldValueQw = distanceFieldValueQw;
+            //prevDFieldValueQw = distanceFieldValueQw;
 
 
 
@@ -1079,6 +1073,25 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
             // const float closest = fminf(distanceFieldValueQw, distanceFieldValueQr);
             if (distanceFieldValueQw <= lightStepSize || distanceFieldValueQs <= lightStepSize) break;
         }
+
+        //if (x == halfSize.x && y == halfSize.y)
+        //{
+        //    printf(
+        //        "x %f y %f z %f, t %f, cloudCoverage %f, cloudDens %f, density %f, DFQw %f, DFQr %f, samples: %i, "
+        //        "standardStepSize %f, stepsize: %f\n ",
+        //        pos.x,
+        //        pos.y,
+        //        pos.z,
+        //        t,
+        //        cloudCoverage,
+        //        cloudDens,
+        //        density,
+        //        distanceFieldValueQw,
+        //        0.0f,
+        //        samples,
+        //        standardStepSize,
+        //        stepSize);
+        //}
 
         if (isOutside(pos.x, pos.y, pos.z)) break;
     }

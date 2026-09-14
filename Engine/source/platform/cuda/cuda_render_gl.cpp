@@ -91,7 +91,7 @@ void CudaRender::initGL()
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
 
-        // Check if the PBO is valid
+    // Check if the PBO is valid
     if (PBO == 0)
     {
         printf("PBO not initialized!\n");
@@ -122,13 +122,6 @@ void CudaRender::initGL()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glBindTexture(GL_TEXTURE_2D, 0);
-
-    err = cudaGetLastError();
-    if (err != cudaSuccess)
-    {
-        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
-        __debugbreak();
-    }
 }
 
 void CudaRender::initQuad() 
@@ -245,7 +238,7 @@ void CudaRender::initShader()
     glDeleteShader(fragShader);
 }
 
-void CudaRender::cleanUp() 
+void CudaRender::cleanUp()
 {
 
     if (PBO)
@@ -312,7 +305,7 @@ void CudaRender::render()
                  bee::Engine.Device().GetHeight(),
                  false);
 
-        cudaStreamSynchronize(getStream());
+        cudaStreamSynchronize(stream);
         err = cudaGetLastError();
         if (err != cudaSuccess)
         {
@@ -435,7 +428,6 @@ void CudaRender::initEnvironmentData(const int _sizeX,
     initTextureObj<float4>(m_envAerialViewTextureStorage, m_envData.envAerialViewTexture, glm::ivec3(32, 32, 32), true, true);
 
     fillLUTSOnce(m_envData, m_envTransmittanceTextureStorage, m_envScatteringTextureStorage);
-
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)

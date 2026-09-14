@@ -483,6 +483,7 @@ void Renderer::Render()
             for (const auto& [entity, renderer, transform] : Engine.ECS().Registry.view<MeshRenderer, Transform>().each())
                 drawables.push_back({entity, renderer, transform});
 
+            // Struct to gain the ability to sort the tuple correctly
             struct CompareDrawables
             {
                 bool operator()(const std::tuple<bee::Entity, MeshRenderer, Transform>& d1,
@@ -490,6 +491,7 @@ void Renderer::Render()
                 {
                     const auto& t1 = get<2>(d1);
                     const auto& t2 = get<2>(d2);
+                    // If unable to sort on z, try y and else x. 
                     if (t1.GetTranslation().z == t2.GetTranslation().z)
                     {
                         if (t1.GetTranslation().y == t2.GetTranslation().y)

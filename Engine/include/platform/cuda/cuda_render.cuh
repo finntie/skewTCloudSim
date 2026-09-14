@@ -88,6 +88,6 @@ __device__ float calculateSnowCoverage(float3& pos, environmentData& data);
 
 __device__ float calculateDensity(float3& pos, environmentData& data, const float cloudCoverage);
 
-__device__ float lightMarch(float3 pos, const float3& lightDir, environmentData& data, float stepSize);
+__device__ float lightMarch(float3 pos, const float3& lightDir, environmentData& data, float stepSize, int heightOffset, int2 size);
 
 __device__ float henyenGreenstein(float inCosAngle, float inG);
