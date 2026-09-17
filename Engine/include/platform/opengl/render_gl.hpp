@@ -10,6 +10,9 @@
 #include "tools/inspectable.hpp"
 #include "imgui/IconsFontAwesome.h"
 
+
+class CudaRender;
+
 namespace bee
 {
 
@@ -58,6 +61,8 @@ public:
     void setRenderSize(int width, int height);
 
     void setBackGroundColor(float R, float G, float B);
+
+    CudaRender* getCudaRenderObj() { return m_cudaRenderObj; }
 
 private:
     void ProcessObjectForRendering(const bee::MeshRenderer& renderer, bee::Transform& transform, int& instances);
@@ -123,6 +128,8 @@ private:
     bool m_useAlphaBlending = false;
 
     float m_backColor[3] = {0.35f, 0.15f, 0.9f};
+
+    CudaRender* m_cudaRenderObj;
 
 //#ifdef BEE_INSPECTOR
 public:

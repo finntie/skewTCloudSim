@@ -31,6 +31,8 @@
 template void copyDataToTexture<float>(float*, void*&, glm::ivec3, void*);
 template void copyDataToTexture<float4>(float4*, void*&, glm::ivec3, void*);
 
+static void RenderQuad();
+
 CudaRender::CudaRender() 
 {
     initShader();
@@ -78,10 +80,6 @@ void CudaRender::initGL()
         glDeleteBuffers(1, &PBO);
         glDeleteTextures(1, &m_texture);
     }
-
-
-
-
 
     // Create Pixel buffer object
     glGenBuffers(1, &PBO);
@@ -161,9 +159,6 @@ void CudaRender::initQuad()
 
 void CudaRender::initShader() 
 {
-    int success;
-    char infoLog[512];
-
     // Vertex Shader
     const char* vertexShaderCode =
         "#version 330 core\n"
@@ -187,9 +182,21 @@ void CudaRender::initShader()
         "   FragColor = texture(screenTexture, TexCoord);\n"
         "}\0";
 
+    shader = createShaderProgram(vertexShaderCode, fragShaderCode);
+
+    glUseProgram(shader);
+    glUniform1i(glGetUniformLocation(shader, "screenTexture"), 0);  // use texture unit 0
+    glUseProgram(0);
+}
+
+unsigned int CudaRender::createShaderProgram(const char* vert, const char* frag) 
+{
+    int success;
+    char infoLog[512];
+
     	// Bind vertex shader and compile
     GLuint vertShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertShader, 1, &vertexShaderCode, NULL);
+    glShaderSource(vertShader, 1, &vert, NULL);
     glCompileShader(vertShader);
 
     // Check for errors
@@ -198,11 +205,11 @@ void CudaRender::initShader()
     {
         glGetShaderInfoLog(vertShader, 512, NULL, infoLog);
         printf("OPENGL ERROR: vertex shader compilation failed: %s\n", infoLog);
-        return;
+        return 0;
     }
 
     GLuint fragShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragShader, 1, &fragShaderCode, NULL);
+    glShaderSource(fragShader, 1, &frag, NULL);
     glCompileShader(fragShader);
 
     // Check for errors
@@ -211,31 +218,235 @@ void CudaRender::initShader()
     {
         glGetShaderInfoLog(fragShader, 512, NULL, infoLog);
         printf("OPENGL ERROR: fragment shader compilation failed: %s\n", infoLog);
-        return;
+        return 0;
     }
 
     // link shaders
-    shader = glCreateProgram();
-    glAttachShader(shader, vertShader);
-    glAttachShader(shader, fragShader);
-    glLinkProgram(shader);
+    GLuint program = 0;
+    program = glCreateProgram();
+    glAttachShader(program, vertShader);
+    glAttachShader(program, fragShader);
+    glLinkProgram(program);
 
-    glUseProgram(shader);
-    glUniform1i(glGetUniformLocation(shader, "screenTexture"), 0);  // use texture unit 0
+    glUseProgram(program);
+    glUniform1i(glGetUniformLocation(program, "screenTexture"), 0);  // use texture unit 0
     glUseProgram(0);
 
     // Check for errors
-    glGetProgramiv(shader, GL_LINK_STATUS, &success);
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
     if (!success)
     {
-        glGetProgramInfoLog(shader, 512, NULL, infoLog);
+        glGetProgramInfoLog(program, 512, NULL, infoLog);
         printf("OPENGL ERROR: shader program linking failed: %s\n", infoLog);
-        return;
+        return 0;
     }
 
     // I don't need you anymore
     glDeleteShader(vertShader);
     glDeleteShader(fragShader);
+
+    return program;
+}
+
+void CudaRender::initOpenGLCUDAInterop(unsigned int finalFrameBuffer, unsigned int colorBuffer, int width, int height)
+{
+    m_width = width;
+    m_height = height;
+
+        // Shaders to write to the depth texture
+    m_SimpleVerShader =
+        "#version 330 core\n"
+        "layout (location = 0) in vec3 aPos;\n"
+        "out vec2 UV;\n"
+        "void main()\n"
+        "{\n"
+        "   gl_Position = vec4(aPos, 1.0);\n"
+        "	UV = aPos.xy;\n"
+        "}\0";
+
+    m_SimpleFragShader =
+        "#version 330 core\n"
+        "in vec2 UV;\n"
+        "out float outDepth;\n"
+        "uniform sampler2D depthTex;\n"
+        "uniform float near;\n"
+        "uniform float far;\n"
+
+        "float LinearizeDepth(float depth) \n"
+        "{\n"
+        "    float z = depth * 2.0 - 1.0; \n" // back to NDC 
+        "    return (2.0 * near * far) / (far + near - z * (far - near));\n"
+        "}\n"
+
+        "void main()\n"
+        "{\n"
+        "   outDepth = LinearizeDepth(texture(depthTex, ((UV + 1.0f) * 0.5f)).r);\n"
+        "}\0";
+
+    m_copyTargetShaderProgram = createShaderProgram(m_SimpleVerShader, m_SimpleFragShader);
+
+    // Check if our color buffer uses alpha
+    checkAlphaUse(colorBuffer);
+
+    // Check how depth was initialized in this FBO, so we can copy over the FBO correctly
+    checkDepthTypeOtherFBO(finalFrameBuffer);
+
+    // Initialize our FBO
+    glGenFramebuffers(1, &m_copyTargetFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_copyTargetFBO);
+
+    // Create our own depth texture to use for the FBO, it needs to match the input FBO's depth buffer
+    setDepthTexture(width, height);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cout << "FBO incomplete!" << std::endl;
+        __debugbreak();
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Create write target FBO
+    glGenFramebuffers(1, &m_writeTargetFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_writeTargetFBO);
+
+    // Create depth texture which we will connect to CUDA later on
+    setColorDepthTexture(width, height);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cout << "FBO incomplete!" << std::endl;
+        __debugbreak();
+    }
+
+    // Unbind
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+
+    // Regiser own FBO to CUDA resource
+    cudaGraphicsGLRegisterImage(&m_colorResource, colorBuffer, GL_TEXTURE_2D, cudaGraphicsMapFlagsReadOnly);
+
+    // Register own depth texture to be usable by CUDA
+    cudaGraphicsGLRegisterImage(&m_depthResource, m_writeTargetdepthTex, GL_TEXTURE_2D, cudaGraphicsMapFlagsReadOnly);
+
+    // Check errors
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+        __debugbreak();
+    }
+}
+
+unsigned int CudaRender::postRenderClouds(unsigned int finalFrameBuffer, unsigned int , int width, int height, float camNear, float camFar) 
+{ 
+    if (camFar >= 0 && camNear >= 0)
+    {
+        m_camNear = camNear;
+        m_camFar = camFar;
+        m_envData.camNear = camNear;
+        m_envData.camFar = camFar;
+    }
+
+    // 1.  -- Draw to depth texture from depth buffer --
+
+    // First copy over input FBO to own FBO in which we stored our depth texture as color attachment
+    copyFBOs(finalFrameBuffer);
+
+    // Draw into own FBO, filling depth texture
+    glDisable(GL_DEPTH_TEST);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_writeTargetFBO);
+    glViewport(0, 0, width, height);
+    glUseProgram(m_copyTargetShaderProgram);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_copyTargetDepthBuffer);
+    glUniform1i(glGetUniformLocation(m_copyTargetShaderProgram, "depthTex"), 0);  // use texture unit 0
+    glUniform1f(glGetUniformLocation(m_copyTargetShaderProgram, "near"), camNear);  // Set near
+    glUniform1f(glGetUniformLocation(m_copyTargetShaderProgram, "far"), camFar);  // Set Far
+    RenderQuad();
+    glUseProgram(0);
+
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR)
+    {
+        printf("Error in OpenGL draw: %i\n", error);
+    }
+
+
+    // 2.  -- Map finalFrameBuffer and depth Texture to CUDA --
+
+    cudaArray_t colorArray, depthArray;
+    // Map both resources at once
+    cudaGraphicsResource_t resources[2] = {m_colorResource, m_depthResource};
+    cudaGraphicsMapResources(2, resources, getStream()); 
+    cudaGraphicsSubResourceGetMappedArray(&colorArray, resources[0], 0, 0);
+    cudaGraphicsSubResourceGetMappedArray(&depthArray, resources[1], 0, 0);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+        __debugbreak();
+    }
+
+
+    // 3.  -- Pass arrays to textures --
+
+    createAndCopyToTextures(depthArray, colorArray);
+
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+        __debugbreak();
+    }
+
+
+    // 4.  -- Render cloud simulation --
+
+    render();
+
+    // 5.  -- Draw rendered PBO --
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, width, height);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+
+    // Copy from PBO to texture
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, PBO);
+    glBindTexture(GL_TEXTURE_2D, m_texture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+    // Draw quad on which we will show our output texture
+    glUseProgram(shader);
+    glBindVertexArray(VAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glUseProgram(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    error = glGetError();
+    if (error != GL_NO_ERROR)
+    {
+        printf("Error in OpenGL draw: %i\n", error);
+    }
+
+
+    // Unmap
+    cudaGraphicsUnmapResources(2, resources, getStream());
+
+
+    // Last error check
+    err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+        __debugbreak();
+    }
+
+    return PBO;
 }
 
 void CudaRender::cleanUp()
@@ -332,6 +543,193 @@ void CudaRender::render()
             __debugbreak();
         }
     }
+}
+
+void CudaRender::checkDepthTypeOtherFBO(unsigned int FBO) 
+{ 
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+
+    GLint depthType = 0;
+    // Get attachement type
+    glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER,
+                                          GL_DEPTH_ATTACHMENT,
+                                          GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
+                                          &depthType);
+    // If type is texture, we get the format of the texture
+    if (depthType == GL_TEXTURE)
+    {
+        GLint texName = 0;
+        glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER,
+                                              GL_DEPTH_ATTACHMENT,
+                                              GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
+                                              &texName);
+        glBindTexture(GL_TEXTURE_2D, texName);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &m_depthFormat);
+    }
+    else if (depthType == GL_RENDERBUFFER)
+    {
+        // If type is a renderbuffer, we get that format
+        GLint rBuffName = 0;
+        glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER,
+                                              GL_DEPTH_ATTACHMENT,
+                                              GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
+                                              &rBuffName);
+        glBindRenderbuffer(GL_RENDERBUFFER, rBuffName);
+        glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_INTERNAL_FORMAT, &m_depthFormat);
+    }
+
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR)
+    {
+        printf("Error in retrieving type: %i\n", error);
+    }
+}
+
+void CudaRender::checkAlphaUse(unsigned int colorBuffer) 
+{
+    // Assuming colorBuffer is a texture
+    glBindTexture(GL_TEXTURE_2D, colorBuffer);
+    GLint internalFormat = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &internalFormat);
+    // Check if alpha or not
+    switch (internalFormat)
+    {
+        case GL_RGB:
+        case GL_RGB8:
+            m_bufferUsesAlpha = false;
+            m_envData.useAlpha = false;
+            break;
+        case GL_RGBA:
+        case GL_RGBA8:
+            m_bufferUsesAlpha = true;
+            m_envData.useAlpha = true;
+            break;
+        default:
+            break;
+    }
+}
+
+void CudaRender::setDepthTexture(int width, int height)
+{
+    if (m_copyTargetDepthBuffer == 0) glGenTextures(1, &m_copyTargetDepthBuffer);
+    // Create the depth texture
+    glBindTexture(GL_TEXTURE_2D, m_copyTargetDepthBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, m_depthFormat, width, height, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);  // Set storage
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);                                        // Filtering
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);                                        // Filtering
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);                                     // Clamping
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);                                     // Clamping
+
+    // Attach to own FBO
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_copyTargetDepthBuffer, 0);
+    
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cout << "Error, Frambuffer is incomplete" << std::endl;
+        __debugbreak();
+    }
+}
+
+void CudaRender::setColorDepthTexture(int width, int height)
+{
+    if (m_writeTargetdepthTex == 0) glGenTextures(1, &m_writeTargetdepthTex);
+    // Create the depth texture
+    glBindTexture(GL_TEXTURE_2D, m_writeTargetdepthTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, width, height, 0, GL_RED, GL_FLOAT, nullptr);  // Set storage
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);                     // Filtering
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);                     // Filtering
+
+    // Attach to own FBO as color attachment
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_writeTargetdepthTex, 0);
+
+    GLenum drawBufs[1] = {GL_COLOR_ATTACHMENT0};
+    glDrawBuffers(1, drawBufs);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cout << "Error, Frambuffer is incomplete" << std::endl;
+        __debugbreak();
+    }
+}
+
+void CudaRender::copyFBOs(unsigned int FBO) 
+{ 
+    // Blit FBO to our own FBO
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, FBO);
+
+    GLint depthType = 0;
+    glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER,
+                                          GL_DEPTH_ATTACHMENT,
+                                          GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
+                                          &depthType);
+    if (depthType == GL_NONE)
+    {
+        std::cout << "WARNING: source FBO " << FBO << " has no depth attachment — depth blit will no-op!" << std::endl;
+    }
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_copyTargetFBO);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glBlitFramebuffer(0, 0, m_width, m_height, 0, 0, m_width, m_height, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+
+        GLenum err = glGetError();
+    if (err != GL_NO_ERROR)
+    {
+        std::cout << "Blit error: " << err << std::endl;
+    }
+}
+
+void CudaRender::createAndCopyToTextures(cudaArray* depthArray, cudaArray* colorArray)
+{
+    // Set correct settings
+    cudaTextureDesc texDesc{};
+    texDesc.filterMode = cudaFilterModePoint;
+    texDesc.normalizedCoords = false;
+    texDesc.addressMode[0] = cudaAddressModeClamp;
+    texDesc.readMode = cudaReadModeElementType;
+
+    cudaResourceDesc resDesc{};
+    resDesc.resType = cudaResourceTypeArray;
+
+    // Create 2 texture objects and save to stored values
+    resDesc.res.array.array = depthArray;
+    cudaCreateTextureObject(&m_envData.depthInformationTexture, &resDesc, &texDesc, NULL);
+    resDesc.res.array.array = colorArray;    
+    cudaCreateTextureObject(&m_envData.colorInformationTexture, &resDesc, &texDesc, NULL);
+}
+
+
+// Renders a 1x1 XY quad in NDC, Copied from BEE engine
+void RenderQuad()
+{
+    static unsigned int quadVAO = 0;
+    static unsigned int quadVBO = 0;
+
+    if (quadVAO == 0)
+    {
+        float quadVertices[] = {
+            // positions        // texture coordinates
+            -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+            1.0f,  1.0f, 0.0f, 1.0f, 1.0f, 1.0f,  -1.0f, 0.0f, 1.0f, 0.0f,
+        };
+        // setup plane VAO
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        // Linter warning "modernize-use-nullptr" does not make sense for this use case; we truly mean the value 0 here
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);  // NOLINT(modernize-use-nullptr)
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
 }
 
 void CudaRender::display() 

@@ -28,7 +28,7 @@ public:
 
 	bool playSettings(float& speed);
 
-	CudaRender& cudaRenderer() { return *m_cudaRenderObj; }
+	//CudaRender& cudaRenderer() { return *m_cudaRenderObj; }
 	environment& Environment() { return *m_environmentObj; }
 	readTable& ReadTable() { return *m_readTableObj; }
 	editor& Editor() { return *m_editorObj; }
@@ -41,7 +41,7 @@ public:
 	cloudFile& CloudFile() { return *m_cloudFileObj; }
 private:
 
-	CudaRender* m_cudaRenderObj = nullptr;
+	//CudaRender* m_cudaRenderObj = nullptr;
 	environment* m_environmentObj = nullptr;
 	readTable* m_readTableObj = nullptr;
 	editor* m_editorObj = nullptr;

@@ -78,7 +78,7 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                                          unsigned int height,
                                          int heightOffset);
 
-__device__ float intersectGrid(float3 dir, float3 origin, float3 recDir);
+__device__ float intersectGrid(float3 dir, float3 origin, float3 recDir, float& maxDist);
 
 __device__ float calculateCloudCoverage(float3& pos, environmentData& data);
 

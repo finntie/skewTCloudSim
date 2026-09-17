@@ -595,7 +595,7 @@ void editor::updateViewCloud(bool force)
 			else if (!m_visibleTypes[i]) cudaMemsetAsync(Game.CloudFile().typeToPointerGPU(i, output, nullptr, true), 0, GRIDSIZESKY * sizeof(float), getStream());
 		}
 
-		Game.cudaRenderer().setDataEnvironment(
+		bee::Engine.ECS().GetSystem<bee::Renderer>().getCudaRenderObj()->setDataEnvironment(
 			(*output).Qw,
 			(*output).Qc,
 			(*output).Qr,
@@ -606,6 +606,18 @@ void editor::updateViewCloud(bool force)
 			(*output).velfieldZ,
 			updateSDF,
 			getStream());
+
+		//Game.cudaRenderer().setDataEnvironment(
+		//	(*output).Qw,
+		//	(*output).Qc,
+		//	(*output).Qr,
+		//	(*output).Qs,
+		//	(*output).Qi,
+		//	(*output).velfieldX,
+		//	(*output).velfieldY,
+		//	(*output).velfieldZ,
+		//	updateSDF,
+		//	getStream());
 
 		// Forcing will not update time, since it is only meant to update values
 		if (force) break;
@@ -948,7 +960,8 @@ void editor::renderSettings()
 
 			if (ImGui::Button("Generate Noise"))
 			{
-				Game.cudaRenderer().setNoiseTexture(octaves, gridSize, lacunarity);
+				//Game.cudaRenderer().setNoiseTexture(octaves, gridSize, lacunarity);
+				bee::Engine.ECS().GetSystem<bee::Renderer>().getCudaRenderObj()->setNoiseTexture(octaves, gridSize, lacunarity);
 			}
 			ImGui::TreePop();
 		}
@@ -978,7 +991,8 @@ void editor::renderSettings()
 
 		if (changed)
 		{
-			Game.cudaRenderer().setExtraRenderInfo(noiseReduction, minQW, maxQW, multipleScattering, ambientLightStrength, rayRandomOffset, attenuation, contribution, eccentricityAttenuation, sunStrength, exposure, sunDir, sunColor);
+			//Game.cudaRenderer().setExtraRenderInfo(noiseReduction, minQW, maxQW, multipleScattering, ambientLightStrength, rayRandomOffset, attenuation, contribution, eccentricityAttenuation, sunStrength, exposure, sunDir, sunColor);
+			bee::Engine.ECS().GetSystem<bee::Renderer>().getCudaRenderObj()->setExtraRenderInfo(noiseReduction, minQW, maxQW, multipleScattering, ambientLightStrength, rayRandomOffset, attenuation, contribution, eccentricityAttenuation, sunStrength, exposure, sunDir, sunColor);
 		}
 
 		ImGui::TreePop();

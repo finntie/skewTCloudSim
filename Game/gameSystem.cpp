@@ -51,7 +51,9 @@ void gameSystem::Update(float dt)
 		{
 			m_currentState = SIMULATION;
 			// Set slower render speed in trade of higher simulation speed
-			Game.cudaRenderer().setOnlyRenderResource(false);
+			bee::Engine.ECS().GetSystem<bee::Renderer>().getCudaRenderObj()->setOnlyRenderResource(false);
+			//Game.cudaRenderer().setOnlyRenderResource(false);
+
 			Game.Editor().setMode(editor::SIMULATING);
 		}
 	}
@@ -389,11 +391,13 @@ void gameSystem::startMenu()
 						Game.Editor().setMode(editor::CLOUDVIEW);
 
 						// Set faster render speed
-						Game.cudaRenderer().setOnlyRenderResource(true);
+						bee::Engine.ECS().GetSystem<bee::Renderer>().getCudaRenderObj()->setOnlyRenderResource(true);
+						//Game.cudaRenderer().setOnlyRenderResource(true);
 
 						// Load viewer
 						m_currentState = VIEW_SIMULATION;
-						Game.cudaRenderer().initEnvironmentData(info.sizeX, info.sizeY, info.sizeZ, info.voxelSize, gridDim, blockDim);
+						bee::Engine.ECS().GetSystem<bee::Renderer>().getCudaRenderObj()->initEnvironmentData(info.sizeX, info.sizeY, info.sizeZ, info.voxelSize, gridDim, blockDim);
+						//Game.cudaRenderer().initEnvironmentData(info.sizeX, info.sizeY, info.sizeZ, info.voxelSize, gridDim, blockDim);
 					}
 				}
 				ImGui::TableNextColumn();

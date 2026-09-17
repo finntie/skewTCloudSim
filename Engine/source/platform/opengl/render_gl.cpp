@@ -19,6 +19,8 @@
 #include "tools/log.hpp"
 #include "tools/profiler.hpp"
 
+#include "platform/cuda/cuda_render_gl.h"
+
 #define DEBUG_UBO_LOCATION (UBO_LOCATION_COUNT + 1)
 #define SORT_MESH_RENDERERS TRUE
 
@@ -35,6 +37,8 @@ static int SamplerTypeToGL(Sampler::Wrap wrap);
 Renderer::Renderer()
 {
     Title = "Renderer";
+
+    m_cudaRenderObj = new CudaRender();
 
     m_forwardPass = Engine.Resources().Load<Shader>(FileIO::Directory::SharedAssets, "/shaders/uber.vert", "shaders/uber.frag");
     m_post = Engine.Resources().Load<Shader>(FileIO::Directory::SharedAssets, "shaders/post.vert", "shaders/post.frag");
@@ -85,6 +89,8 @@ Renderer::Renderer()
 
 Renderer::~Renderer()
 {
+    m_cudaRenderObj->cleanUp();
+    delete m_cudaRenderObj;
     delete m_cameraData;
     delete m_pointLightsData;
     delete m_transformsData;
@@ -157,6 +163,9 @@ void Renderer::CreateFrameBuffers()
     // Check that our framebuffer is OK
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) assert(false);
     BEE_DEBUG_ONLY(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+
+    // Initialize cloud renderer, using the resolved frame buffer
+    m_cudaRenderObj->initOpenGLCUDAInterop(m_resolvedFramebuffer, m_resolvedColorbuffer, m_width, m_height);
 
     // -- Final framebuffer --
     glGenFramebuffers(1, &m_finalFramebuffer);              // Create
@@ -535,26 +544,39 @@ void Renderer::Render()
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_resolvedFramebuffer);
     glReadBuffer(GL_COLOR_ATTACHMENT0);
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
-    glBlitFramebuffer(0, 0, m_width, m_height, 0, 0, m_width, m_height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBlitFramebuffer(0, 0, m_width, m_height, 0, 0, m_width, m_height, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 
+    // Retrieve near and far from camera
+    float camNear = 0.0f;
+    float camFar = 0.0f;
+    for (const auto& [e, camera, cameraTransform] : Engine.ECS().Registry.view<Camera, Transform>().each())
+    {
+        const mat4& proj = camera.Projection;
+        float A = proj[2][2];
+        float B = proj[3][2];
+        camNear = B / (A - 1.0f);
+        camFar = B / (A + 1.0f);
+    }
+    m_cudaRenderObj->postRenderClouds(m_resolvedFramebuffer, 0, m_width, m_height, camNear, camFar);
     // Final pass
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
-    glBindFramebuffer(GL_FRAMEBUFFER, m_finalFramebuffer);
-    glViewport(0, 0, m_width, m_height);
-    glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_resolvedColorbuffer);
-    m_post->Activate();
-    m_post->GetParameter("u_vignette")->SetValue(m_vignette);
-    RenderQuad();
+    //glDisable(GL_CULL_FACE);
+    //glDisable(GL_DEPTH_TEST);
+    //glBindFramebuffer(GL_FRAMEBUFFER, m_finalFramebuffer);
+    //glViewport(0, 0, m_width, m_height);
+    //glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+    //glClear(GL_COLOR_BUFFER_BIT);
+    //glActiveTexture(GL_TEXTURE0);
+    //glBindTexture(GL_TEXTURE_2D, m_resolvedColorbuffer);
+    //m_post->Activate();
+    //m_post->GetParameter("u_vignette")->SetValue(m_vignette);
+    //RenderQuad();
 
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, m_finalFramebuffer);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-    glReadBuffer(GL_COLOR_ATTACHMENT0);
-    glDrawBuffer(GL_BACK);
-    glBlitFramebuffer(0, 0, m_width, m_height, 0, 0, m_width, m_height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+    //glBindFramebuffer(GL_READ_FRAMEBUFFER, m_finalFramebuffer);
+    //glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    //glReadBuffer(GL_COLOR_ATTACHMENT0);
+    //glDrawBuffer(GL_BACK);
+    //glBlitFramebuffer(0, 0, m_width, m_height, 0, 0, m_width, m_height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 }
 
 void Renderer::ProcessObjectForRendering(const MeshRenderer& renderer, Transform& transform, int& instances)

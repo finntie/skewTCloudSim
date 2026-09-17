@@ -5,6 +5,7 @@
 
 struct dim3;
 struct float4;
+struct cudaArray;
 
 struct environmentData
 {
@@ -33,6 +34,8 @@ struct environmentData
     unsigned long long envSkyViewTexture;
     unsigned long long envAerialViewTexture;
 
+    unsigned long long depthInformationTexture;
+    unsigned long long colorInformationTexture;
 
     unsigned long long noiseTexture; 
     int resolution;
@@ -43,7 +46,10 @@ struct environmentData
     int fullSize;
     float voxelSize;
 
-
+    float camFar = 0.0f;
+    float camNear = 0.0f;
+    bool useAlpha = false;
+    
     // Extra Render info
     float noiseReduction = 0.45f;
     float minQw = 0.0001f;
@@ -64,26 +70,51 @@ struct environmentData
 class CudaRender
 {
 public:
-
-	// Highly inspired from https://github.com/BigNerd95/CUDASamples/blob/master/samples/2_Graphics/volumeRender/volumeRender.cpp
-
-	CudaRender();
+    // Highly inspired from
+    // https://github.com/BigNerd95/CUDASamples/blob/master/samples/2_Graphics/volumeRender/volumeRender.cpp
+    CudaRender();
     ~CudaRender();
 
-	void initGL();
-    void initQuad();
-    void initShader();
+    /// <summary>
+    /// Registers the framebuffer with CUDA for use later on. Also registers the depth texture.
+    /// </summary>
+    /// <param name="frameBuffer">OpenGL FrameBuffer used for the draw pass, will be used for the post cloud renderer.</param>
+    /// <param name="colorBuffer">OpenGL Color FrameBuffer used for the draw pass, will be used for the post cloud renderer.</param>
+    /// <param name="width height">Size of the screen </param>
+    void initOpenGLCUDAInterop(unsigned int frameBuffer, unsigned int colorBuffer, int width, int height);
 
-	void cleanUp();
+    /// <summary>
+    /// Maps OpenGL buffers to CUDA and renders clouds/atmosphere with respect to the depth.
+    /// <para> Depth frameBuffer will be rendered to a depth texture before it is able to be used by CUDA. </para>
+    /// </summary>
+    /// <param name="finalFrameBuffer">OpenGL FrameBuffer used for final draw pass, will be used for the post cloud renderer.</param>
+    /// <param name="colorBuffer">OpenGL Color frameBuffer</param>
+    /// <param name="width height">Size of the screen </param>
+    /// <returns></returns>
+    unsigned int postRenderClouds(unsigned int finalFrameBuffer, unsigned int colorBuffer, int width, int height, float camNear = -1, float camFar = -1);
 
-	void render();
+    void cleanUp();
 
-	void display();
+    void display();
 
     // Environment Simulation
-    void initEnvironmentData(const int _sizeX, const int _sizeY, const int _sizeZ, const float _voxelSize, dim3 gridDim, dim3 blockDim);
-    
-    void setDataEnvironment(float* Qw, float* Qc, float* Qr, float* Qs, float* Qi, float* velX, float* VelY, float* velZ, bool updateSDF, void* stream);
+    void initEnvironmentData(const int _sizeX,
+                             const int _sizeY,
+                             const int _sizeZ,
+                             const float _voxelSize,
+                             dim3 gridDim,
+                             dim3 blockDim);
+
+    void setDataEnvironment(float* Qw,
+                            float* Qc,
+                            float* Qr,
+                            float* Qs,
+                            float* Qi,
+                            float* velX,
+                            float* VelY,
+                            float* velZ,
+                            bool updateSDF,
+                            void* stream);
 
     void setNoiseTexture(int octaves, int gridSize, float lacunarity);
     void setExtraRenderInfo(float noiseReduction,
@@ -104,7 +135,22 @@ public:
     void setOnlyRenderResource(bool value) { m_allResourcesRender = value; }
 
 private:
+    void initGL();
+    void initQuad();
+    void initShader();
+    unsigned int createShaderProgram(const char* vert, const char* frag);
 
+    void render();
+
+    void checkDepthTypeOtherFBO(unsigned int FBO);
+    void checkAlphaUse(unsigned int colorBuffer);
+
+    void setDepthTexture(int width, int height);
+    void setColorDepthTexture(int width, int height);
+
+    void copyFBOs(unsigned int FBO);
+
+    void createAndCopyToTextures(cudaArray* depthArray, cudaArray* colorArray);
 
 	unsigned int VAO = 0;
     unsigned int VBO = 0;
@@ -112,7 +158,30 @@ private:
 	unsigned int PBO = 0; // Pixel Buffer Object
     unsigned int m_texture = 0; // Texture
 
+    unsigned int m_copyTargetFBO = 0;
+    unsigned int m_copyTargetShaderProgram = 0;
+    unsigned int m_copyTargetDepthBuffer = 0; // Depth buffer for own FBO
+    unsigned int m_writeTargetFBO = 0; // FBO to which we will write
+    unsigned int m_writeTargetdepthTex = 0;  // Depth texture which will be registered
+
+    const char* m_SimpleVerShader;
+    const char* m_SimpleFragShader;
+
+    float m_camNear = 0.0f;
+    float m_camFar = 0.0f;
+
+    // OpenGL CUDA Interop variables
+    struct cudaGraphicsResource* m_colorResource{};
+    struct cudaGraphicsResource* m_depthResource{};
+
+
 	struct cudaGraphicsResource* cudaPBOResource{};  // CUDA graphics resource to transfer PBO
+
+    int m_depthFormat = 0;
+    bool m_bufferUsesAlpha = false;
+
+    int m_width = 0;
+    int m_height = 0;
 
     float* tempArray;  // Malloced inside the creation function
 

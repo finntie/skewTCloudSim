@@ -448,12 +448,18 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                            mainR.D.y == 0.0f ? 0.0f : 1.0f / mainR.D.y,
                            mainR.D.z == 0.0f ? 0.0f : 1.0f / mainR.D.z);
     float t = 0.0f;
+    
+    // Get geometry depth
+    float geometryDepth = tex2D<float>(data.depthInformationTexture, x, y);
+    geometryDepth = geometryDepth >= data.camFar - 1.0f ? 1e34f : geometryDepth;
+
+        // uchar4 output = tex2D<uchar4>(data.colorInformationTexture, x, y);
+    // outputColor = make_float4(output.x, output.y, output.z, output.w);
+    // outputColor = outputColor / 255.0f;
+
 
     // Standard blue
-    float4 outputColor = make_float4(0.3f,//(float(x) / float(width)),
-                                     0.4f,//(float(y) / float(height)),
-                                     0.95f,//(float(x) / float(width)) * (float(y) / float(height)),
-                                     1.0f);
+    float4 outputColor = make_float4(0.3f, 0.4f, 0.95f, 1.0f);
     
     {
         // Full Atmospheric sky color:
@@ -466,9 +472,14 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
         outputColor = clamp4f(outputColor, 0.0f, 1.0f);
     }
 
+    // Cloud lighting data
     float4 cloudColor{};
     float accumulatedDensity = 0.0f;
     float lightAbsorption = 0.0f;
+
+    // Geometry lighting data
+    float4 geometryColor{};
+    geometryColor = make_float4(1.0f, 1.0f, 1.0f, 0.0f);
 
 
     // -------------------------------------------------------------------------------------
@@ -476,14 +487,21 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     // -------------------------------------------------------------------------------------
 
     // If ray is NOT in the grid
+    float maxGridDist = 0.0f;
     if (!(mainR.O.x >= gridMin.x && mainR.O.x <= gridMax.x && mainR.O.y >= gridMin.y && mainR.O.y <= gridMax.y &&
           mainR.O.z >= gridMin.z && mainR.O.z <= gridMax.z))
     {
-        t = intersectGrid(mainR.D, mainR.O, mainR.rD);
+        t = intersectGrid(mainR.D, mainR.O, mainR.rD, maxGridDist);
         //if (t > 1e33f);  // Did not intersect grid at all
     }
 
-    if (t < 1e33f)
+    if (geometryDepth < t && geometryDepth < data.camFar)
+    {
+        uchar4 output = tex2D<uchar4>(data.colorInformationTexture, x, y);
+        float4 outputGeometryColor = make_float4(output.x / 255.0f, output.y / 255.0f, output.z / 255.0f, output.w);
+        geometryColor = make_float4(outputGeometryColor.x, outputGeometryColor.y, outputGeometryColor.z, data.useAlpha ? outputGeometryColor.w : 1.0f);
+    }
+    else if (t < 1e33f)
     {
         // Convert reversed direction into 0 or 1
         float3 stepSign =
@@ -545,7 +563,20 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
         while (1)
         {
             if (isOutside(pos.x, pos.y, pos.z)) break;
+            // First act on geometry depth
+            if (t >= geometryDepth && geometryDepth < data.camFar)
+            {
+                uchar4 output = tex2D<uchar4>(data.colorInformationTexture, x, y);
+                float newAlpha = data.useAlpha ? 1 - (1 - output.w) * (1 - geometryColor.w) : 1.0f;
+                float3 outputGeometryColor = make_float3(output.x / 255.0f, output.y / 255.0f, output.z / 255.0f);
+                geometryColor = make_float4(outputGeometryColor.x * geometryColor.x,
+                            outputGeometryColor.y * geometryColor.y,
+                            outputGeometryColor.z * geometryColor.z,
+                            newAlpha);
 
+                // Alpha is thick enough
+                if (newAlpha >= 1.0f - 1e-3f) break;
+            }
             // Base stepsize on distance from camera
             float stepSize = nearStepSize + ((farStepSize * (t - startT)) / stepAdjustmentDistance) * data.rayRandomOffset * 25.0f;
 
@@ -703,16 +734,20 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
             //     tMax.z += tDelta.z;
             // }
         }
-
-
-        //cloudColor = make_float4(lightIntensity *  lightColor.x,
-        //                         lightIntensity *  lightColor.y,
-        //                         lightIntensity *  lightColor.z,
-        //                         1.0f);
-
+        
         cloudColor = lightColor * lightIntensity;
 
-
+        // Outside of grid
+        if (geometryDepth < data.camFar && geometryColor.w < 1.0f - 1e-3f)
+        {
+            uchar4 output = tex2D<uchar4>(data.colorInformationTexture, x, y);
+            float newAlpha = data.useAlpha ? 1 - (1 - output.w) * (1 - geometryColor.w) : 1.0f;
+            float3 outputGeometryColor = make_float3(output.x / 255.0f, output.y / 255.0f, output.z / 255.0f);
+            geometryColor = make_float4(outputGeometryColor.x * geometryColor.x,
+                                        outputGeometryColor.y * geometryColor.y,
+                                        outputGeometryColor.z * geometryColor.z,
+                                        newAlpha);
+        }
 
 
         // toneMap
@@ -736,7 +771,6 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
 
     }
 
-
     //float output = tex3D<float>(data.SDFTextureQw, float(x) / float(width), float(y) / float(height), 0.5f);
     //output = clampf(output, 0.0f, 0.95f);
     //outputColor = make_float4(output, output, output, 1.0f);
@@ -750,8 +784,12 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     // Firs make sure the background color is scaled correctly with gamma, exposure
     float4 skycolor = make_float4(powf(outputColor.x, 2.2f), powf(outputColor.y, 2.2f), powf(outputColor.z, 2.2f), 1.0f);
     const float4 skyLinear = (skycolor / (1.0f - skycolor)) / data.exposure;
-
-    outputColor = skyLinear * T + cloudColor;
+    
+    // Combine sky color with cloud
+    outputColor = 
+        skyLinear * T * (1 - geometryColor.w) + 
+        geometryColor * T * geometryColor.w + 
+        cloudColor;
 
     outputColor = make_float4(fmaxf(outputColor.x, 0.0f), fmaxf(outputColor.y, 0.0f), fmaxf(outputColor.z, 0.0f), 1.0f);
 
@@ -785,32 +823,53 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     //        lightAbsorption);
     //}
 
+
+    //uchar4 output = tex2D<uchar4>(data.colorInformationTexture, x, y);
+    //outputColor = make_float4(output.x, output.y, output.z, output.w);
+    //outputColor = outputColor / 255.0f;
+
+    //float output = tex2D<float>(data.depthInformationTexture, x, y);
+    //outputColor = make_float4(output, output, output, 1.0f);
+
     unsigned int outputColorI = rgbaFloatToInt(outputColor);
 
+    if (x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f))
+    {
+        printf("GeomCol: %f, %f, %f, %f GeomDepth %f, camNear %f, camFar %f\n",
+               geometryColor.x,
+               geometryColor.y,
+               geometryColor.z,
+               geometryColor.w, geometryDepth, data.camNear, data.camFar);
+    }
 
-    if (x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f)) dOutput[x + y * width] = 0.0f;
-    else dOutput[x + y * width] = outputColorI;
+    dOutput[x + y * width] = outputColorI;
 }
 
-__device__ float intersectGrid(float3 dir, float3 origin, float3 recDir)
+__device__ float intersectGrid(float3 dir, float3 origin, float3 recDir, float& maxDist)
 {
     // test if the ray intersects the cube
-
+    maxDist = 1e34f;
     float3 gridBounds[2] = {gridMin, gridMax};
 
     // Code from template IGAD version 3, IGAD/NHTV/UU - Jacco Bikker - 2006-2022
     const int signx = dir.x < 0, signy = dir.y < 0, signz = dir.z < 0;
     float tmin = (gridBounds[signx].x - origin.x) * recDir.x;
     float tmax = (gridBounds[1 - signx].x - origin.x) * recDir.x;
+
     const float tymin = (gridBounds[signy].y - origin.y) * recDir.y;
     const float tymax = (gridBounds[1 - signy].y - origin.y) * recDir.y;
     if (tmin > tymax || tymin > tmax) return 1e34f;
     tmin = fmaxf(tmin, tymin), tmax = fminf(tmax, tymax);
+
     const float tzmin = (gridBounds[signz].z - origin.z) * recDir.z;
     const float tzmax = (gridBounds[1 - signz].z - origin.z) * recDir.z;
     if (tmin > tzmax || tzmin > tmax) return 1e34f;
-    if ((tmin = fmaxf(tmin, tzmin)) > 0) return tmin;
+    tmin = fmaxf(tmin, tzmin), tmax = fminf(tmax, tzmax);
 
+    maxDist = tmax;
+    if (tmin > 0) return tmin;
+
+    maxDist = 1e34f;
     return 1e34f;
 }
 
@@ -907,7 +966,7 @@ __device__ float calculateDensity(float3& pos,
     const float velZ = tex3D<float>(data.velZTexture, normPos.x, normPos.y, normPos.z) / data.voxelSize;
 
 
-    const float resolutionIncrease = 16.0f;
+    const float resolutionIncrease = 1.0f;//16.0f;
     noise = tex3D<float>(data.noiseTexture,
                          pos.x * maxGrid * resolutionIncrease + velX,
                          pos.y * maxGrid * resolutionIncrease + velY,

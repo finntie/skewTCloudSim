@@ -29,6 +29,10 @@
 #include "game.h"
 
 
+#include "core/engine.hpp"
+#include "core/ecs.hpp"
+#include "rendering/render.hpp"
+
 // Constant simulation variables (extern in utils.cuh)
 __constant__ int simSizeX{ 64 };
 __constant__ int simSizeY{ 64 };
@@ -309,7 +313,8 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 	Game.Editor().initSimulation();
 
 	// Init renderer data
-	Game.cudaRenderer().initEnvironmentData(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ, VOXELSIZE, gridDim, blockDim);
+	//Game.cudaRenderer().initEnvironmentData(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ, VOXELSIZE, gridDim, blockDim);
+	bee::Engine.ECS().GetSystem<bee::Renderer>().getCudaRenderObj()->initEnvironmentData(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ, VOXELSIZE, gridDim, blockDim);
 
 	//Init sky
 	cudaMemcpyAsync(m_envGrid.potTemp, potTemps, GRIDSIZESKY * sizeof(float), cudaMemcpyHostToDevice, simStream);
@@ -672,8 +677,8 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 	if (m_time > 86400.0f) m_time = 0.0f;
 
 	Game.Editor().GPUSetEnv(&m_envGrid, &m_groundGrid, m_GHeight, m_envGrid.pressure, simStream);
-	Game.cudaRenderer().setDataEnvironment(m_envGrid.Qw, m_envGrid.Qc, m_envGrid.Qr, m_envGrid.Qs, m_envGrid.Qi, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ, true, simStream);
-
+	//Game.cudaRenderer().setDataEnvironment(m_envGrid.Qw, m_envGrid.Qc, m_envGrid.Qr, m_envGrid.Qs, m_envGrid.Qi, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ, true, simStream);
+	bee::Engine.ECS().GetSystem<bee::Renderer>().getCudaRenderObj()->setDataEnvironment(m_envGrid.Qw, m_envGrid.Qc, m_envGrid.Qr, m_envGrid.Qs, m_envGrid.Qi, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ, true, simStream);
 	m_groundChanged = false;
 	m_updatingSimulation = false;
 }

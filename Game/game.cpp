@@ -47,7 +47,7 @@ game::~game()
 	delete m_editorObj;
 	delete m_environmentObj;
 	delete m_readTableObj;
-	delete m_cudaRenderObj;
+	//delete m_cudaRenderObj;
 }
 
 void game::shutdown()
@@ -59,12 +59,13 @@ void game::shutdown()
 		simThread.join();
 	}
 
-	m_cudaRenderObj->cleanUp();
+
+	//m_cudaRenderObj->cleanUp();
 }
 
 void game::Initialize()
 {
-	m_cudaRenderObj = new CudaRender();
+	//m_cudaRenderObj = new CudaRender();
 	m_readTableObj = new readTable();
 #if USE_GPU
 	m_envGPUObj = new environmentGPU();
@@ -159,7 +160,7 @@ void game::Update(float dt)
 
 void game::Render()
 {
-	if (m_cudaRenderObj) m_cudaRenderObj->display();
+	//if (m_cudaRenderObj) m_cudaRenderObj->display();
 }
 
 
