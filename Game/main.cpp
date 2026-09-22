@@ -26,7 +26,7 @@ int main(int, char**)
         auto cameraEntity = Engine.ECS().CreateEntity();
         auto& transform = Engine.ECS().CreateComponent<Transform>(cameraEntity);
         transform.Name = "Camera";
-        Engine.ECS().CreateComponent<Camera>(cameraEntity).Projection = glm::perspective(glm::radians(60.0f), 1.77f, 0.01f, 500.0f);
+        Engine.ECS().CreateComponent<Camera>(cameraEntity).Projection = glm::perspective(glm::radians(60.0f), 1.77f, 0.2f, 100000.0f);
         auto view = glm::lookAt(glm::vec3(0, 0, 40), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
         transform.SetFromMatrix(glm::inverse(view));
         transform.SetTranslation(glm::vec3(10, 30, 70));

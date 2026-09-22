@@ -40,6 +40,8 @@ public:
     template <typename T>
     T& GetSystem();
     template <typename T>
+    bool SystemExists();
+    template <typename T>
     std::vector<T*> GetSystems();
 
 private:
@@ -82,6 +84,17 @@ T& EntityComponentSystem::GetSystem()
     }
     assert(false);
     return *dynamic_cast<T*>(m_systems[0].get());  // This line will always fail
+}
+
+template <typename T>
+bool EntityComponentSystem::SystemExists()
+{
+    for (auto& s : m_systems)
+    {
+        T* found = dynamic_cast<T*>(s.get());
+        if (found) return true;
+    }
+    return false;
 }
 
 template <typename T>

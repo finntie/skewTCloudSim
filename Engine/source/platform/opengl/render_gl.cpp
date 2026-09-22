@@ -335,11 +335,12 @@ void Renderer::SetVignette(float value) { m_vignette = glm::clamp<float>(value, 
 
 void bee::Renderer::setRenderSize(int width, int height)
 {
+    m_cudaRenderObj->unregisterResources();
     m_width = width;
     m_height = height;
 
     //Reset all buffers to be the new size.
-    glBindFramebuffer(GL_FRAMEBUFFER, m_msaa);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_msaaFramebuffer);
 
     glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, m_msaaColorbuffer);  // Bind
     glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, m_msaa, GL_RGB, m_width, m_height, GL_TRUE);  // Set storage
@@ -349,6 +350,8 @@ void bee::Renderer::setRenderSize(int width, int height)
     glRenderbufferStorageMultisample(GL_RENDERBUFFER, m_msaa, GL_DEPTH_COMPONENT, m_width, m_height);    // Set storage
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_msaaDepthbuffer);  // Attach it
 
+    glBindFramebuffer(GL_FRAMEBUFFER, m_finalFramebuffer);
+
     glBindTexture(GL_TEXTURE_2D, m_finalColorbuffer);  // Bind
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, m_width, m_height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);     // Set storage
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_finalColorbuffer, 0);  // Attach it
@@ -357,7 +360,35 @@ void bee::Renderer::setRenderSize(int width, int height)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
-    glBindRenderbuffer(GL_RENDERBUFFER, 0);      
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);    
+
+    glBindFramebuffer(GL_FRAMEBUFFER, m_resolvedFramebuffer);  // Bind FBO
+
+    // Color
+    glBindTexture(GL_TEXTURE_2D, m_resolvedColorbuffer);  // Bind
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, m_width, m_height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);        // Set storage
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_resolvedColorbuffer, 0);  // Attach it
+
+        // Depth buffer
+    glBindRenderbuffer(GL_RENDERBUFFER, m_resolvedDepthbuffer);  // Bind
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, m_width, m_height);                           // Set storage
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);                                                                  // Unbind
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_resolvedDepthbuffer);  // Attach it
+
+    unsigned int resolved_attachments[1] = {GL_COLOR_ATTACHMENT0};
+    glDrawBuffers(1, resolved_attachments);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) assert(false);
+
+
+    // Unbind
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);   
+
+    // Post cloud renderer update
+    m_cudaRenderObj->setNewRenderSize(width, height);
 }
 
 void bee::Renderer::setBackGroundColor(float R, float G, float B)
@@ -404,6 +435,22 @@ void Renderer::Render()
     m_forwardPass->GetParameter("u_resolution")->SetValue(resolution);
     if (m_iblSpecularMipCount != -1) m_forwardPass->GetParameter("u_ibl_specular_mip_count")->SetValue(m_iblSpecularMipCount);
     m_forwardPass->GetParameter("use_alpha_blending")->SetValue(m_useAlphaBlending);
+
+    if (m_cameraFar == 0.0f)
+    {
+        // Retrieve near and far from camera
+        for (const auto& [e, camera, cameraTransform] : Engine.ECS().Registry.view<Camera, Transform>().each())
+        {
+            const mat4& proj = camera.Projection;
+            float A = proj[2][2];
+            float B = proj[3][2];
+            m_cameraNear = B / (A - 1.0f);
+            m_cameraFar = B / (A + 1.0f);
+        }
+    }
+    // Set Far for both vertex and fragment
+    m_forwardPass->GetParameter("camFar")->SetValue(m_cameraFar);
+    m_forwardPass->GetParameter("camera_far")->SetValue(m_cameraFar);
 
     auto lights = Engine.ECS().Registry.view<Transform, Light>();
     int dirLightCount = 0;
@@ -546,18 +593,7 @@ void Renderer::Render()
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
     glBlitFramebuffer(0, 0, m_width, m_height, 0, 0, m_width, m_height, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 
-    // Retrieve near and far from camera
-    float camNear = 0.0f;
-    float camFar = 0.0f;
-    for (const auto& [e, camera, cameraTransform] : Engine.ECS().Registry.view<Camera, Transform>().each())
-    {
-        const mat4& proj = camera.Projection;
-        float A = proj[2][2];
-        float B = proj[3][2];
-        camNear = B / (A - 1.0f);
-        camFar = B / (A + 1.0f);
-    }
-    m_cudaRenderObj->postRenderClouds(m_resolvedFramebuffer, 0, m_width, m_height, camNear, camFar);
+    m_cudaRenderObj->postRenderClouds(m_resolvedFramebuffer, m_cameraNear, m_cameraFar);
     // Final pass
     //glDisable(GL_CULL_FACE);
     //glDisable(GL_DEPTH_TEST);

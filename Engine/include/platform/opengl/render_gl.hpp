@@ -115,6 +115,9 @@ private:
     std::shared_ptr<Shader> m_post = nullptr;
     std::shared_ptr<Shader> m_shadowPass = nullptr;
 
+    float m_cameraNear = 0.0f;
+    float m_cameraFar = 0.0f;
+
     unsigned int m_hdrTexture = 0;
     unsigned int m_envCubemap = 0;
     unsigned int m_diffuseIBL = 0;

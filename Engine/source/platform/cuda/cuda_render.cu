@@ -296,7 +296,9 @@ void fillLUTS(environmentData& data, void* skyViewLUT, void* aerialViewLUT, unsi
         initialized = true;
     }
 
-    const float3 lightDir = normalize(make_float3(data.sunDirection[0] + 1e-6f, data.sunDirection[1] + 1e-6f, data.sunDirection[2] + 1e-6f));
+    const float3 lightDir = normalize(make_float3(data.settings.sunDirection[0] + 1e-6f,
+                                                  data.settings.sunDirection[1] + 1e-6f,
+                                                  data.settings.sunDirection[2] + 1e-6f));
 
     int2 skyViewRes = make_int2(200, 100);
     int3 aerialViewRes = make_int3(32, 32, 32);
@@ -424,7 +426,9 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     // Calculation of fov and how this would effect the focalLength
     // With focalLength being the distance from the camera origin to the virtual image plane
     // The further away the focalLenght is, the more zoomed in the image
-    float aspectRatio = float(width) / float(height);
+
+    // For now done here, later need of setting it
+    float aspectRatio = float(1920) / float(1080);
     float fov = 60.0f;
     float focalLength = 1.0f / tanf(fov * 0.5f * 3.1415926f / 180.0f);
 
@@ -433,11 +437,13 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     float v = (((float(y) + 0.5f) / float(height)) * 2.0f - 1.0f);
 
     // Add a nice light direction
-    const float3 lightDir =
-        normalize(make_float3(data.sunDirection[0] + 1e-6f, data.sunDirection[1] + 1e-6f, data.sunDirection[2] + 1e-6f));
+    const float3 lightDir = normalize(make_float3(data.settings.sunDirection[0] + 1e-6f,
+                                                  data.settings.sunDirection[1] + 1e-6f,
+                                                  data.settings.sunDirection[2] + 1e-6f));
     // Color the light
-    const float4 lightColor = make_float4(data.sunColor[0], data.sunColor[1], data.sunColor[2], 1.0f);
-    const float sunStrength = data.sunStrength;
+    const float4 lightColor =
+        make_float4(data.settings.sunColor[0], data.settings.sunColor[1], data.settings.sunColor[2], 1.0f);
+    const float sunStrength = data.settings.sunStrength;
 
     // Create ray and set origin + direction
     Ray mainR;
@@ -447,11 +453,12 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     mainR.rD = make_float3(mainR.D.x == 0.0f ? 0.0f : 1.0f / mainR.D.x,
                            mainR.D.y == 0.0f ? 0.0f : 1.0f / mainR.D.y,
                            mainR.D.z == 0.0f ? 0.0f : 1.0f / mainR.D.z);
+    const float3 lightRDir = make_float3(lightDir.x == 0.0f ? 0.0f : 1.0f / lightDir.x,
+                                         lightDir.y == 0.0f ? 0.0f : 1.0f / lightDir.y,
+                                         lightDir.z == 0.0f ? 0.0f : 1.0f / lightDir.z);
     float t = 0.0f;
     
-    // Get geometry depth
-    float geometryDepth = tex2D<float>(data.depthInformationTexture, x, y);
-    geometryDepth = geometryDepth >= data.camFar - 1.0f ? 1e34f : geometryDepth;
+
 
         // uchar4 output = tex2D<uchar4>(data.colorInformationTexture, x, y);
     // outputColor = make_float4(output.x, output.y, output.z, output.w);
@@ -475,12 +482,22 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     // Cloud lighting data
     float4 cloudColor{};
     float accumulatedDensity = 0.0f;
-    float lightAbsorption = 0.0f;
+    float lightAbsorption = 1.0f;
 
     // Geometry lighting data
     float4 geometryColor{};
     geometryColor = make_float4(1.0f, 1.0f, 1.0f, 0.0f);
-
+    // Get geometry depth
+    float geometryDepth = tex2D<float>(data.depthInformationTexture, x, y);
+    geometryDepth = geometryDepth >= data.camFar - 1.0f ? 1e34f : geometryDepth;
+    // Make sure depth is based on camera XY and not only camera forward
+    {
+        float3 forward = normalize(make_float3(invView.m[0].z, invView.m[1].z, invView.m[2].z)) * -1.0f;
+        float cost = dot(mainR.D, forward);
+        // Change depth based on different directions, since coming from the center should be the same, 
+        // But offsetting towards the edge needs more correction.
+        geometryDepth = geometryDepth / cost; 
+    }
 
     // -------------------------------------------------------------------------------------
     // Code highly inspired from template IGAD version 3, IGAD/NHTV/UU - Jacco Bikker - 2006-2022
@@ -491,15 +508,40 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     if (!(mainR.O.x >= gridMin.x && mainR.O.x <= gridMax.x && mainR.O.y >= gridMin.y && mainR.O.y <= gridMax.y &&
           mainR.O.z >= gridMin.z && mainR.O.z <= gridMax.z))
     {
-        t = intersectGrid(mainR.D, mainR.O, mainR.rD, maxGridDist);
+        t = intersectGrid(mainR.D, mainR.O, mainR.rD, maxGridDist) + 1e-3f;
         //if (t > 1e33f);  // Did not intersect grid at all
     }
 
+    // Check if we hit geometry before hitting the grid
     if (geometryDepth < t && geometryDepth < data.camFar)
     {
+        // Check if lightmarch will even hit the grid
+        float3 geoPos = mainR.O + mainR.D * geometryDepth;
+        float dummy = 0.0f;
+        float geoLt = 0.0f;
+        if (!(geoPos.x >= gridMin.x && geoPos.x <= gridMax.x && geoPos.y >= gridMin.y && geoPos.y <= gridMax.y &&
+              geoPos.z >= gridMin.z && geoPos.z <= gridMax.z))
+        {
+            geoLt = intersectGrid(lightDir, geoPos, lightRDir, dummy) + 1e-3f;
+        }
+        //if (x == 0 && y == 0)
+        //{
+        //    printf(
+        //        "x %i y %i, t %f, geoPos x %f y %f z %f, geoLt %f geometryDepth %f,"
+        //        "lightTransmittance %f \n ",
+        //        x,y,t,geoPos.x,geoPos.y,geoPos.z,geoLt,geometryDepth);
+        //}
+        float lightDensity = 0.0f;
+        geoPos = geoPos + lightDir * geoLt;
+        if (geoLt < 1e33f)
+            lightDensity = lightMarch(geoPos, lightDir, data, data.voxelSize * 0.5f, heightOffset, make_int2(width, height));
+        const float lightTransmittance = exp(-lightDensity);
+
         uchar4 output = tex2D<uchar4>(data.colorInformationTexture, x, y);
-        float4 outputGeometryColor = make_float4(output.x / 255.0f, output.y / 255.0f, output.z / 255.0f, output.w);
+        float4 outputGeometryColor =
+            make_float4(output.x / 255.0f, output.y / 255.0f, output.z / 255.0f, output.w) * lightTransmittance;
         geometryColor = make_float4(outputGeometryColor.x, outputGeometryColor.y, outputGeometryColor.z, data.useAlpha ? outputGeometryColor.w : 1.0f);
+
     }
     else if (t < 1e33f)
     {
@@ -554,9 +596,9 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
 
         float transmittance = 0.0f;
 
-        const float nearStepSize = 0.1f;
-        const float farStepSize = 0.25f;
-        const float stepAdjustmentDistance = distance(make_float3(0, 0, 0), make_float3(data.sizeX, data.sizeY, data.sizeZ));
+        const float nearStepSize = 0.1f * data.voxelSize;
+        const float farStepSize = 0.25f * data.voxelSize;
+        const float stepAdjustmentDistance = distance(make_float3(0, 0, 0), make_float3(data.sizeX, data.sizeY, data.sizeZ) * data.voxelSize);
         const float startT = t;
 
 
@@ -566,9 +608,15 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
             // First act on geometry depth
             if (t >= geometryDepth && geometryDepth < data.camFar)
             {
+                // Check if lightmarch will even hit the grid
+                const float3 geoPos = mainR.O + mainR.D * geometryDepth;
+                float lightDensity = lightMarch(geoPos, lightDir, data, data.voxelSize * 0.5f, heightOffset, make_int2(width, height));
+                const float lightTransmittance = exp(-lightDensity);
+
                 uchar4 output = tex2D<uchar4>(data.colorInformationTexture, x, y);
                 float newAlpha = data.useAlpha ? 1 - (1 - output.w) * (1 - geometryColor.w) : 1.0f;
-                float3 outputGeometryColor = make_float3(output.x / 255.0f, output.y / 255.0f, output.z / 255.0f);
+                float3 outputGeometryColor =
+                    make_float3(output.x / 255.0f, output.y / 255.0f, output.z / 255.0f) * lightTransmittance;
                 geometryColor = make_float4(outputGeometryColor.x * geometryColor.x,
                             outputGeometryColor.y * geometryColor.y,
                             outputGeometryColor.z * geometryColor.z,
@@ -578,24 +626,24 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                 if (newAlpha >= 1.0f - 1e-3f) break;
             }
             // Base stepsize on distance from camera
-            float stepSize = nearStepSize + ((farStepSize * (t - startT)) / stepAdjustmentDistance) * data.rayRandomOffset * 25.0f;
-
+            float stepSize = (nearStepSize +
+                              ((farStepSize * (t - startT)) / stepAdjustmentDistance) * data.settings.rayRandomOffset * 25.0f);
             // Already compute distance to closest cloud
-            float distanceFieldValueQw = tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z);
-            float distanceFieldValueQr = tex3D<float>(data.SDFTextureQr, normPos.x, normPos.y, normPos.z);
-            float distanceFieldValueQs = tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z);
+            float distanceFieldValueQw = tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z) * data.voxelSize;
+            float distanceFieldValueQr = tex3D<float>(data.SDFTextureQr, normPos.x, normPos.y, normPos.z) * data.voxelSize;
+            float distanceFieldValueQs = tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) * data.voxelSize;
 
             // Randomize stepsize
             rSeed = randomHash(unsigned(pos.x), unsigned(pos.y), unsigned(pos.z), rSeed);
             const float uniformRand = (rSeed & 0xFFFF) / 65535.0f;
-            stepSize += (uniformRand - 0.5f) * data.rayRandomOffset * stepSize * 0.5f;
+            stepSize += (uniformRand - 0.5f) * data.settings.rayRandomOffset * stepSize * 0.5f;
             // Increase stepsize for less important mixing ratios
-            stepSize += distanceFieldValueQw > 1.0f ? 0.25f : 0.0f;
+            stepSize += distanceFieldValueQw > 1.0f * data.voxelSize ? 0.25f * data.voxelSize : 0.0f;
 
             // Start of Marching
-            float cloudCoverage = distanceFieldValueQw < 1.0f ? calculateCloudCoverage(pos, data) : 0.0f;
-            float rainCoverage = distanceFieldValueQr < 1.0f ? calculateRainCoverage(pos, data) : 0.0f;
-            float snowCoverage = distanceFieldValueQs < 1.0f ? calculateSnowCoverage(pos, data) : 0.0f;
+            float cloudCoverage = distanceFieldValueQw < 1.0f * data.voxelSize ? calculateCloudCoverage(pos, data) : 0.0f;
+            float rainCoverage = distanceFieldValueQr < 1.0f  * data.voxelSize? calculateRainCoverage(pos, data) : 0.0f;
+            float snowCoverage = distanceFieldValueQs < 1.0f  * data.voxelSize? calculateSnowCoverage(pos, data) : 0.0f;
 
             const float airDensity = 1.0f; // TODO: to be passed as variable or use hydrostatic calculation.
 
@@ -628,7 +676,7 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                 const float scattering = sigmaQw * albedoQw + sigmaQr * albedoQr + sigmaQs * albedoQs;
 
                 // Density is the ray length in world size multiplied by how much the ray is consumed per meter (extinction)
-                accumulatedDensity += extinction * stepSize * data.voxelSize;
+                accumulatedDensity += extinction * stepSize;
 
 
                 // At every step also march a ray towards the light source (sun) to check how much density is in between.
@@ -645,9 +693,9 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
 
                 for (int n = 0; n < octaves; n++)
                 {
-                    const float a = powf(data.attenuation, n);  // attenuation
-                    const float b = powf(data.contribution, n);  // Contribution
-                    const float c = powf(data.eccentricAttenuation, n);  // Eccentricity attenuation
+                    const float a = powf(data.settings.attenuation, n);  // attenuation
+                    const float b = powf(data.settings.contribution, n);  // Contribution
+                    const float c = powf(data.settings.eccentricAttenuation, n);  // Eccentricity attenuation
                     msValue += b * henyenGreenstein(lightAngle, g * c) * expf(-a * lightDirMarchDensity);
                 }
 
@@ -658,36 +706,41 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                 // Add all scattering together
                 //const float directScattering = (lightTransmittance * primScattering) + (msValue * secScattering);
 
-                const float ambientScattering = data.ambientLightStrength * 0.01f * expf(-accumulatedDensity * 0.5f);
+                const float ambientScattering = data.settings.ambientLightStrength * 0.01f * expf(-accumulatedDensity * 0.5f);
 
                 const float totalLight = msValue * sunStrength + ambientScattering;
 
 
                 // Calculate our final light intensity based on total light from scattering, our scattering coëfficient, 
                 // reducing with more light being absorbed, and finally make sure to map it to world size.
-                lightIntensity += totalLight * scattering * (lightAbsorption * (1 - lightAbsorption)) * stepSize * data.voxelSize;
+                lightIntensity += totalLight  * lightAbsorption * lightDirMarchDensity * extinction * stepSize;
 
                 if (x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f))
                 {
-                     printf(
-                         "x %i y %i, t %f, cloudDensity %f, rainCoverage %f msVolume %f, lightTransmittance %f, "
-                         "lightIntensity % f acumdDens % f lightDensity % f,directScat : % f, lightAbsorption: %f\n ",
-                         x,
-                         y,
-                         t,
-                         cloudDensity,
-                         rainCoverage,
-                         msValue,
-                        lightTransmittance,
-                         lightIntensity,
-                         accumulatedDensity,
-                         lightDirMarchDensity,
-                         0.0f,//directScattering,
-                         lightAbsorption);
+                //     printf(
+                //         "x %i y %i, t %f, cloudDensity %f, rainCoverage %f msVolume %f, lightTransmittance %f, "
+                //         "lightIntensity % f acumdDens % f lightDensity % f,directScat : % f, lightAbsorption: %f\n ",
+                //         x,
+                //         y,
+                //         t,
+                //         cloudDensity,
+                //         rainCoverage,
+                //         msValue,
+                //        lightTransmittance,
+                //         lightIntensity,
+                //         accumulatedDensity,
+                //         lightDirMarchDensity,
+                //         0.0f,//directScattering,
+                //         lightAbsorption);
+
+                    //printf("t %f, stepSize %f, voxelSize %f\n", t, stepSize, data.voxelSize);
                  }
-                if (lightAbsorption >= 1 - 0.01f)
+
+                lightAbsorption *= exp(-extinction * stepSize);
+
+                if (lightAbsorption <= 0.01f)
                 {
-                    //break;  // TODO: test out when cloud is full
+                    break;  // TODO: test out when cloud is full
                 }
             }
 
@@ -700,9 +753,9 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
             // We loop until distance to nearest cloud becomes too small and start normal stepping again
             while (!isOutside(pos.x, pos.y, pos.z))
             {
-                distanceFieldValueQw = fmaxf(tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f);
-                distanceFieldValueQr = fmaxf(tex3D<float>(data.SDFTextureQr, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f);
-                distanceFieldValueQs = fmaxf(tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f);
+                distanceFieldValueQw = fmaxf(tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * data.voxelSize;
+                distanceFieldValueQr = fmaxf(tex3D<float>(data.SDFTextureQr, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * data.voxelSize;
+                distanceFieldValueQs = fmaxf(tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * data.voxelSize;
                 const float closest = fminf(fminf(distanceFieldValueQw, distanceFieldValueQr), distanceFieldValueQs);
 
                 if (closest <= 1.0f) break;
@@ -737,16 +790,39 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
         
         cloudColor = lightColor * lightIntensity;
 
-        // Outside of grid
+        // Outside of grid to check geometry
         if (geometryDepth < data.camFar && geometryColor.w < 1.0f - 1e-3f)
         {
+            // Check if lightmarch will even hit the grid
+            float3 geoPos = mainR.O + mainR.D * geometryDepth;
+            float dummy = 0.0f;
+            float geoLt = 0.0f;
+            if (!(geoPos.x >= gridMin.x && geoPos.x <= gridMax.x && geoPos.y >= gridMin.y && geoPos.y <= gridMax.y &&
+                  geoPos.z >= gridMin.z && geoPos.z <= gridMax.z))
+            {
+                geoLt = intersectGrid(lightDir, geoPos, lightRDir, dummy) + 1e-3f;
+            }
+            float lightDensity = 0.0f;
+            geoPos = geoPos + lightDir * geoLt;
+            if (geoLt < 1e33f)
+                lightDensity =
+                    lightMarch(geoPos, lightDir, data, data.voxelSize * 0.5f, heightOffset, make_int2(width, height));
+            const float lightTransmittance = exp(-lightDensity);
+
             uchar4 output = tex2D<uchar4>(data.colorInformationTexture, x, y);
             float newAlpha = data.useAlpha ? 1 - (1 - output.w) * (1 - geometryColor.w) : 1.0f;
-            float3 outputGeometryColor = make_float3(output.x / 255.0f, output.y / 255.0f, output.z / 255.0f);
+            float3 outputGeometryColor =
+                make_float3(output.x / 255.0f, output.y / 255.0f, output.z / 255.0f) * lightTransmittance;
             geometryColor = make_float4(outputGeometryColor.x * geometryColor.x,
                                         outputGeometryColor.y * geometryColor.y,
                                         outputGeometryColor.z * geometryColor.z,
                                         newAlpha);
+
+            //if (x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f))
+            //{
+            //    printf("geometryDepth %f, geometryDepthNormalized %f, geoLt %f\n",
+            //           geometryDepth, geometryDepth / data.camFar, geoLt);
+            //}
         }
 
 
@@ -779,23 +855,27 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     //const float opacity = 1.0f - expf(-accumulatedDensity);
 
     
-    const float T = expf(-accumulatedDensity);
+    const float T = lightAbsorption;// expf(-accumulatedDensity);
     
     // Firs make sure the background color is scaled correctly with gamma, exposure
     float4 skycolor = make_float4(powf(outputColor.x, 2.2f), powf(outputColor.y, 2.2f), powf(outputColor.z, 2.2f), 1.0f);
-    const float4 skyLinear = (skycolor / (1.0f - skycolor)) / data.exposure;
+    const float4 skyLinear = (skycolor / (1.0f - skycolor)) / data.settings.exposure;
+    float4 geometryLinear = make_float4(powf(geometryColor.x, 2.2f), powf(geometryColor.y, 2.2f), powf(geometryColor.z, 2.2f), 1.0f);
+    geometryLinear = (geometryColor / (1.0f - geometryColor + 1e-6f)) / data.settings.exposure;
     
+
+
     // Combine sky color with cloud
     outputColor = 
         skyLinear * T * (1 - geometryColor.w) + 
-        geometryColor * T * geometryColor.w + 
+        geometryLinear * T * geometryColor.w + 
         cloudColor;
 
     outputColor = make_float4(fmaxf(outputColor.x, 0.0f), fmaxf(outputColor.y, 0.0f), fmaxf(outputColor.z, 0.0f), 1.0f);
 
     // Exposure   
 
-    outputColor = outputColor * data.exposure;
+    outputColor = outputColor * data.settings.exposure;
     outputColor = outputColor / (outputColor + 1.0f);
     outputColor =
         make_float4(powf(outputColor.x, 1.0f / 2.2f), powf(outputColor.y, 1.0f / 2.2f), powf(outputColor.z, 1.0f / 2.2f), 1.0f);
@@ -803,23 +883,24 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     outputColor = clamp4f(outputColor, 0.0f, 1.0f);
 
 
-    //if (x == 0 && y == 0)
+    //if (x == width - 1 && y == height - 1)
     //{
     //    printf(
-    //        "x %i y %i, t %f, cloudColor x %f y %f z %f, outputColor  x %f y %f z %f, lightColor: x %f y %f z %f lightAbsorption %f "
+    //        "x %i y %i, t %f, skyLinear x %f y %f z %f, outputColor  x %f y %f z %f, geometryColor: x %f y %f z %f "
+    //        "lightAbsorption %f "
     //        "\n ",
     //        x,
     //        y,
     //        t,
-    //        cloudColor.x,
-    //        cloudColor.y,
-    //        cloudColor.z,
+    //        skyLinear.x,
+    //        skyLinear.y,
+    //        skyLinear.z,
     //        outputColor.x,
     //        outputColor.y,
     //        outputColor.z,
-    //        lightColor.x,
-    //        lightColor.y,
-    //        lightColor.z,
+    //        geometryColor.x,
+    //        geometryColor.y,
+    //        geometryColor.z,
     //        lightAbsorption);
     //}
 
@@ -833,14 +914,14 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
 
     unsigned int outputColorI = rgbaFloatToInt(outputColor);
 
-    if (x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f))
-    {
-        printf("GeomCol: %f, %f, %f, %f GeomDepth %f, camNear %f, camFar %f\n",
-               geometryColor.x,
-               geometryColor.y,
-               geometryColor.z,
-               geometryColor.w, geometryDepth, data.camNear, data.camFar);
-    }
+    //if (x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f))
+    //{
+    //    printf("GeomCol: %f, %f, %f, %f GeomDepth %f, camNear %f, camFar %f\n",
+    //           geometryColor.x,
+    //           geometryColor.y,
+    //           geometryColor.z,
+    //           geometryColor.w, geometryDepth, data.camNear, data.camFar);
+    //}
 
     dOutput[x + y * width] = outputColorI;
 }
@@ -886,7 +967,7 @@ __device__ float calculateCloudCoverage(float3& pos, environmentData& data)
 
     //
 
-    if (QW > data.minQw)
+    if (QW > data.settings.minQw)
     {
         // Min and Max in terms of scud, values above will be more obvious densities
 
@@ -961,25 +1042,28 @@ __device__ float calculateDensity(float3& pos,
     float3 normPos = pos * maxGrid;
 
     // Offset from velocity
-    const float velX = tex3D<float>(data.velXTexture, normPos.x, normPos.y, normPos.z) / data.voxelSize;
-    const float velY = tex3D<float>(data.velYTexture, normPos.x, normPos.y, normPos.z) / data.voxelSize;
-    const float velZ = tex3D<float>(data.velZTexture, normPos.x, normPos.y, normPos.z) / data.voxelSize;
+    const float velX = tex3D<float>(data.velXTexture, normPos.x, normPos.y, normPos.z);
+    const float velY = tex3D<float>(data.velYTexture, normPos.x, normPos.y, normPos.z);
+    const float velZ = tex3D<float>(data.velZTexture, normPos.x, normPos.y, normPos.z);
 
 
-    const float resolutionIncrease = 1.0f;//16.0f;
+    const float resolutionIncrease = 8.0f;
     noise = tex3D<float>(data.noiseTexture,
-                         pos.x * maxGrid * resolutionIncrease + velX,
-                         pos.y * maxGrid * resolutionIncrease + velY,
-                         pos.z * maxGrid * resolutionIncrease + velZ);
+                         (pos.x + velX) * maxGrid * resolutionIncrease,
+                         (pos.y + velY) * maxGrid * resolutionIncrease,
+                         (pos.z + velZ) * maxGrid * resolutionIncrease);
 
-    const float coverage = clampf((logf(cloudCoverage) - logf(data.minQw)) / (logf(data.maxQw) - logf(data.minQw)), 0.0f, 1.0f);
+    const float coverage =
+        clampf((logf(cloudCoverage) - logf(data.settings.minQw)) / (logf(data.settings.maxQw) - logf(data.settings.minQw)),
+               0.0f,
+               1.0f);
 
 
     const float edgeFactor = 1.0f - coverage;
-    const float eLo = 0.5f * edgeFactor * data.noiseReduction;
+    const float eLo = 0.5f * edgeFactor * data.settings.noiseReduction;
     // Calculate erosion based on coverage, remapped with the noise, edgefactor and variable reduction
-    float eroded = remap(coverage, noise * edgeFactor * data.noiseReduction, 1.0f, 0.0f, 1.0f);
-    float fullEroded = remap(1.0f, noise * edgeFactor * data.noiseReduction, 1.0f, 0.0f, 1.0f);
+    float eroded = remap(coverage, noise * edgeFactor * data.settings.noiseReduction, 1.0f, 0.0f, 1.0f);
+    float fullEroded = remap(1.0f, noise * edgeFactor * data.settings.noiseReduction, 1.0f, 0.0f, 1.0f);
 
     // Normalize with full coverage
     eroded = clampf((eroded) / fmaxf(fullEroded, 1e-3f), 0.0f, 1.0f);
@@ -989,7 +1073,7 @@ __device__ float calculateDensity(float3& pos,
 
     //float value = clampf(pow(noise - (1.0f - cloudCoverage), data.noiseReduction), 0.0f, 1.0f);
     //eroded = eroded >= data.noiseCutoffValue ? 1.0f : 0.0f; // Cut off at value and set remaining to 1
-    return fmaxf(coverage - noise * edgeFactor * data.noiseReduction, 0.0f) * cloudCoverage;
+    return fmaxf(coverage - noise * edgeFactor * data.settings.noiseReduction, 0.0f) * cloudCoverage;
 }
 
 __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData& data, float stepSize, int heightOffset, int2 size)
@@ -1009,8 +1093,8 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
     float distanceFieldValueQw = 0.0f;
     float distanceFieldValueQs = 0.0f;
     // Already check distance field for first step
-    distanceFieldValueQw = fmaxf(tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f);
-    distanceFieldValueQs = fmaxf(tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f);
+    distanceFieldValueQw = fmaxf(tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * data.voxelSize;
+    distanceFieldValueQs = fmaxf(tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * data.voxelSize;
     bool closeQw = false;
     bool closeQs = false;
     //float prevDFieldValueQw = 0.0f;
@@ -1039,7 +1123,7 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
         lightStepSize = standardStepSize;
         rSeed = randomHash(unsigned(pos.x), unsigned(pos.y), unsigned(pos.z), rSeed);
         const float uniformRand = (rSeed & 0xFFFF) / 65535.0f;
-        lightStepSize += (uniformRand - 0.5f) * data.rayRandomOffset * lightStepSize * 0.5f;
+        lightStepSize += (uniformRand - 0.5f) * data.settings.rayRandomOffset * lightStepSize * 0.5f;
 
         if (distanceFieldValueQw <= lightStepSize) closeQw = true;
         if (distanceFieldValueQs <= lightStepSize) closeQs = true;
@@ -1063,11 +1147,12 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
         const float extinction = sigmaQw + sigmaQr + sigmaQs;
 
         // Density is the ray length in world size multiplied by how much the ray is consumed per meter (extinction)
-        density += extinction * lightStepSize * data.voxelSize;
+        density += extinction * lightStepSize;
 
         samples++;
 
-        if (samples >= maxSamples || density >= data.multipleScatteringDepthPower) break;  // Full opacity, dont need to trace anymore
+        if (samples >= maxSamples || density >= data.settings.multipleScatteringDepthPower)
+            break;  // Full opacity, dont need to trace anymore
 
 
         //pos = pos + lightDir * lightStepSize;
@@ -1089,11 +1174,12 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
             normPos = make_float3(pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
 
             // Get Distance Field Value to check if we are out of the cloud and how far away we can move freely
-            distanceFieldValueQw = fmaxf(tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f);
-            distanceFieldValueQs = fmaxf(tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f);
+            distanceFieldValueQw = fmaxf(tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * data.voxelSize;
+            distanceFieldValueQs = fmaxf(tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * data.voxelSize;
 
             // Increase stepsize if no cloud is nearby
-            standardStepSize = distanceFieldValueQw < 0.5f ? stepSize : (stepSize + 0.5f) * 5.0f;
+            standardStepSize =
+                distanceFieldValueQw < 1.0f * data.voxelSize ? stepSize : (stepSize + 0.5f * data.voxelSize) * 5.0f;
 
 
             // If going out of the cloud in the next step
@@ -1133,24 +1219,24 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
             if (distanceFieldValueQw <= lightStepSize || distanceFieldValueQs <= lightStepSize) break;
         }
 
-        //if (x == halfSize.x && y == halfSize.y)
-        //{
-        //    printf(
-        //        "x %f y %f z %f, t %f, cloudCoverage %f, cloudDens %f, density %f, DFQw %f, DFQr %f, samples: %i, "
-        //        "standardStepSize %f, stepsize: %f\n ",
-        //        pos.x,
-        //        pos.y,
-        //        pos.z,
-        //        t,
-        //        cloudCoverage,
-        //        cloudDens,
-        //        density,
-        //        distanceFieldValueQw,
-        //        0.0f,
-        //        samples,
-        //        standardStepSize,
-        //        stepSize);
-        //}
+        if (x == halfSize.x && y == halfSize.y)
+        {
+            printf(
+                "x %f y %f z %f, t %f, cloudCoverage %f, cloudDens %f, density %f, DFQw %f, DFQr %f, samples: %i, "
+                "standardStepSize %f, stepsize: %f\n ",
+                pos.x,
+                pos.y,
+                pos.z,
+                t,
+                cloudCoverage,
+                cloudDens,
+                density,
+                distanceFieldValueQw,
+                0.0f,
+                samples,
+                standardStepSize,
+                stepSize);
+        }
 
         if (isOutside(pos.x, pos.y, pos.z)) break;
     }

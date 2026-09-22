@@ -16,12 +16,14 @@ const int MAX_BONES = 50;
 const int MAX_BONE_INFLUENCE = 4;
 uniform mat4 finalBonesMatrices[MAX_BONES];
 uniform bool hasAnimation;
+uniform float camFar;
 
 out vec3 v_position;
 out vec3 v_normal;
 out vec3 v_tangent;
 out vec2 v_texture0;	
 out vec2 v_texture1;
+out float f_flogz;
 
 void main()
 {   
@@ -71,4 +73,6 @@ void main()
 		v_tangent = normalize((world * vec4(totalTangent.xyz, 0.0)).xyz);
 	}
     gl_Position = wvp * totalPosition;
+    gl_Position.z = log2(max(1e-6, 1.0 + gl_Position.w)) * (2.0 / log2(camFar + 1.0)) - 1.0;
+    f_flogz = 1.0 + gl_Position.w;
 }

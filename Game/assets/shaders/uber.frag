@@ -10,6 +10,7 @@ in vec3 v_normal;
 in vec3 v_tangent;
 in vec2 v_texture0;
 in vec2 v_texture1;
+in float f_flogz;
 
 layout(location = BASE_COLOR_SAMPLER_LOCATION) uniform sampler2D s_base_color;
 layout(location = NORMAL_SAMPLER_LOCATION)     uniform sampler2D s_normal;
@@ -38,6 +39,7 @@ uniform bool use_alpha_blending;
 uniform vec4 base_color_factor;
 uniform float metallic_factor;
 uniform float roughness_factor;
+uniform float camera_far;
 
 uniform bool debug_base_color;
 uniform bool debug_normals;
@@ -251,6 +253,9 @@ void main()
     if(!use_alpha_blending && mat.albedo.a < 0.2f) // TODO: Bring this from material
         discard;
         
+    // Correct depth
+    gl_FragDepth = log2(f_flogz) * 0.5 * (2.0 / log2(camera_far + 1.0));
+
     if(is_unlit)
     {
         frag_color = vec4(linear_to_sRGB(mat.albedo.rgb), mat.albedo.a);

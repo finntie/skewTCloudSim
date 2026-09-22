@@ -14,9 +14,14 @@ using namespace bee;
 static void ErrorCallback(int, const char* description) { fputs(description, stderr); }
 static void ResizeCallBack(GLFWwindow*, int width, int height) 
 {
+    if (height < 10) return;
+
     bee::Engine.Device().setSize(width, height); 
 
-    Engine.ECS().GetSystem<Renderer>().setRenderSize(width, height);
+    if (Engine.ECS().SystemExists<Renderer>())
+    {
+        Engine.ECS().GetSystem<Renderer>().setRenderSize(width, height);
+    }
 }
 
 void LogOpenGLVersionInfo()

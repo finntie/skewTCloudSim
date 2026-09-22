@@ -7,6 +7,59 @@ struct dim3;
 struct float4;
 struct cudaArray;
 
+struct renderSettings
+{
+    // Extra Render Settings
+
+    renderSettings() = default;
+    renderSettings(float _noiseReduction, float _minQW, float _maxQW, float _multipleScattering,
+        float _ambientLightStrength, float _rayRandomOffset, float _attenuation, float _contribution,
+        float _eccentricityAttenuation, float _sunStrength, float _exposure, float* _sunDir, float* _sunColor)
+    {
+        noiseReduction = _noiseReduction;
+        minQw = _minQW;
+        maxQw = _maxQW;
+        multipleScatteringDepthPower = _multipleScattering;
+        ambientLightStrength = _ambientLightStrength;
+        rayRandomOffset = _rayRandomOffset;
+        attenuation = _attenuation;
+        contribution = _contribution;
+        eccentricAttenuation = _eccentricityAttenuation;
+        sunStrength = _sunStrength;
+        exposure = _exposure;
+        memcpy(sunDirection, _sunDir, 3 * sizeof(float));
+        memcpy(sunColor, _sunColor, 3 * sizeof(float));
+    }
+    ~renderSettings() = default;
+
+    // How much is erased from the cloud to sculp the noise texture into the cloud
+    float noiseReduction = 0.45f;
+    // Minimal Cloud value for clouds to appear
+    float minQw = 0.0001f;
+    // Maximum Cloud value before capping clouds
+    float maxQw = 0.005f;
+    // Strength of the sun, multiplying color
+    float sunStrength = 40.0f;
+    // Direction of the sun as a vector
+    float sunDirection[3] = {1, 1, 1};
+    // Color of the sun as a vector
+    float sunColor[3] = {1, 1, 1};
+    // Exposure of the clouds
+    float exposure = 1.0f;
+    // Attenuation of clouds which will decrease light passing through clouds
+    float attenuation = 0.8f;
+    // Contribution of the multi scattering approximation
+    float contribution = 0.5f;
+    // How much influence looking at the sun has (sunspot)
+    float eccentricAttenuation = 0.5f;
+    // Random offset of the rays to gain more randomness
+    float rayRandomOffset = 0.5f;
+    // How much density will accumulate during the light march before quitting the march
+    float multipleScatteringDepthPower = 1.0f;
+    // Ambient light of clouds
+    float ambientLightStrength = 0.1f;
+};
+
 struct environmentData
 {
     //float* Qv;       //  Mixing Ratio of Water Vapor
@@ -50,21 +103,7 @@ struct environmentData
     float camNear = 0.0f;
     bool useAlpha = false;
     
-    // Extra Render info
-    float noiseReduction = 0.45f;
-    float minQw = 0.0001f;
-    float maxQw = 0.005f;
-    float noisePlateauValue = 0.32f;
-    float sunStrength = 40.0f;
-    float sunDirection[3] = {1, 1, 1};
-    float sunColor[3] = {1, 1, 1};
-    float exposure = 1.0f;
-    float attenuation = 0.8f;
-    float contribution = 0.5f;
-    float eccentricAttenuation = 0.5f;
-    float rayRandomOffset = 0.05f;
-    float multipleScatteringDepthPower = 1.0f;
-    float ambientLightStrength = 0.1f;
+    renderSettings settings;
 };
 
 class CudaRender
@@ -89,9 +128,21 @@ public:
     /// </summary>
     /// <param name="finalFrameBuffer">OpenGL FrameBuffer used for final draw pass, will be used for the post cloud renderer.</param>
     /// <param name="colorBuffer">OpenGL Color frameBuffer</param>
-    /// <param name="width height">Size of the screen </param>
     /// <returns></returns>
-    unsigned int postRenderClouds(unsigned int finalFrameBuffer, unsigned int colorBuffer, int width, int height, float camNear = -1, float camFar = -1);
+    unsigned int postRenderClouds(unsigned int finalFrameBuffer, float camNear = -1, float camFar = -1);
+
+    /// <summary>
+    /// Function to set the new render size for all textures, should be called when change in window size happens
+    /// </summary>
+    /// <param name="width">width of screen</param>
+    /// <param name="height">height of screen</param>
+    void setNewRenderSize(int width, int height);
+
+    /// <summary>
+    /// Unregisters all CUDA resources, Call before setting new render size
+    /// </summary>
+    void unregisterResources();
+
 
     void cleanUp();
 
@@ -117,25 +168,14 @@ public:
                             void* stream);
 
     void setNoiseTexture(int octaves, int gridSize, float lacunarity);
-    void setExtraRenderInfo(float noiseReduction,
-                            float minQW,
-                            float maxQw,
-                            float multipleScattering,
-                            float ambientLightStrength,
-                            float rayRandomOffset,
-                            float attenuation,
-                            float contribution,
-                            float eccentricattenuation,
-                            float sunStrength,
-                            float exposure,
-                            float* sunDir,
-                            float* sunColor);
+
+    void setExtraRenderInfo(renderSettings settings);
 
     // Remove delay of renderer to improve render time, will decrease resources towards other GPU functions (such as simulating)
     void setOnlyRenderResource(bool value) { m_allResourcesRender = value; }
 
 private:
-    void initGL();
+    void initGL(int width, int height);
     void initQuad();
     void initShader();
     unsigned int createShaderProgram(const char* vert, const char* frag);
@@ -155,14 +195,18 @@ private:
 	unsigned int VAO = 0;
     unsigned int VBO = 0;
 	unsigned int shader = 0;
-	unsigned int PBO = 0; // Pixel Buffer Object
-    unsigned int m_texture = 0; // Texture
+	unsigned int m_finalPBO = 0; // Pixel Buffer Object
+    unsigned int m_finalTexture = 0; // Texture
+
+    // Test
+    bool m_mapped = false;
 
     unsigned int m_copyTargetFBO = 0;
     unsigned int m_copyTargetShaderProgram = 0;
     unsigned int m_copyTargetDepthBuffer = 0; // Depth buffer for own FBO
     unsigned int m_writeTargetFBO = 0; // FBO to which we will write
     unsigned int m_writeTargetdepthTex = 0;  // Depth texture which will be registered
+    unsigned int m_outsideColorBuffer = 0;
 
     const char* m_SimpleVerShader;
     const char* m_SimpleFragShader;

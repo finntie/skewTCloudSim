@@ -71,7 +71,7 @@ private:
 	void setView();
 	void setSlice();
 	void editModeParams();
-	void renderSettings();
+	void setRenderSettings();
 	void editModeParamsSun();
 	int chooseDateDay();
 	void vectorArrow();

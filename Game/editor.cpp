@@ -427,8 +427,8 @@ void editor::cameraControl()
 			else if (bee::Engine.Input().GetMouseButton(bee::Input::MouseButton::Left))
 			{
 				glm::vec3 offset = (SaveMousePos - MousePos3D);
-				const float limit = 50; // Set limit to not move infinite amount
-				if (offset.x + offset.y + offset.z > limit) offset = glm::normalize(offset) * limit;
+				const float limit = 500; // Set limit to not move infinite amount
+				if (abs(offset.x) + abs(offset.y) + abs(offset.z) > limit) offset = glm::normalize(offset) * limit;
 
 				transform.SetTranslation(transform.GetTranslation() + offset);
 			}
@@ -843,7 +843,7 @@ void editor::editModeParams()
 		ImGui::SliderFloat("Simulation Speed", &m_simulationSpeed, 0.1f, 100.0f);
 		if (ImGui::Button("Reset Speed")) m_simulationSpeed = 1.0f;
 
-		renderSettings();
+		setRenderSettings();
 
 		if (ImGui::TreeNode("Diurnal Cycle"))
 		{
@@ -927,26 +927,13 @@ void editor::editModeParams()
 	}
 }
 
-void editor::renderSettings()
+void editor::setRenderSettings()
 {
 	if (ImGui::TreeNode("Render Info"))
 	{
 		bool changed = false;
-		static float noiseReduction = 0.45f;
-		static float maxQW = 0.005f;
-		static float minQW = 0.0001f;
 
-		static float multipleScattering = 1.0f;
-		static float ambientLightStrength = 0.1f;
-		static float rayRandomOffset = 0.05f;
-		static float attenuation = 0.8f;
-		static float contribution = 0.5f;
-		static float eccentricityAttenuation = 0.5f;
-
-		static float sunStrength = 40.0f;
-		static float exposure = 1.0f;
-		static float sunDir[3] = { 1,1,1 };
-		static float sunColor[3] = { 1, 1, 1 };
+		static renderSettings settings;
 
 		static int octaves = 6;
 		static int gridSize = 2;
@@ -970,21 +957,21 @@ void editor::renderSettings()
 
 		if (ImGui::TreeNode("Visual settings"))
 		{
-			if (ImGui::SliderFloat("NoiseReduction", &noiseReduction, 0.0f, 5.0f)) changed = true;
-			if (ImGui::SliderFloat("MinQw", &minQW, 0.0f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic)) changed = true;
-			if (ImGui::SliderFloat("MaxQw", &maxQW, 0.0f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic)) changed = true;
+			if (ImGui::SliderFloat("NoiseReduction", &settings.noiseReduction, 0.0f, 5.0f)) changed = true;
+			if (ImGui::SliderFloat("MinQw", &settings.minQw, 0.0f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic)) changed = true;
+			if (ImGui::SliderFloat("MaxQw", &settings.maxQw, 0.0f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic)) changed = true;
 			ImGui::Separator();
-			if (ImGui::SliderFloat("multipleScattering", &multipleScattering, 0.0f, 10.0f)) changed = true;
-			if (ImGui::SliderFloat("Ambient Light Strength", &ambientLightStrength, 0.0f, 1.0f)) changed = true;
-			if (ImGui::SliderFloat("rayRandomOffset", &rayRandomOffset, 0.0f, 1.0f)) changed = true;
-			if (ImGui::SliderFloat("MS attenuation", &attenuation, 0.0f, 1.0f)) changed = true;
-			if (ImGui::SliderFloat("MS contribution", &contribution, 0.0f, 1.0f)) changed = true;
-			if (ImGui::SliderFloat("MS eccentricity attenuation", &eccentricityAttenuation, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("multipleScattering", &settings.multipleScatteringDepthPower, 0.0f, 10.0f)) changed = true;
+			if (ImGui::SliderFloat("Ambient Light Strength", &settings.ambientLightStrength, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("rayRandomOffset", &settings.rayRandomOffset, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("MS attenuation", &settings.attenuation, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("MS contribution", &settings.contribution, 0.0f, 1.0f)) changed = true;
+			if (ImGui::SliderFloat("MS eccentricity attenuation", &settings.eccentricAttenuation, 0.0f, 1.0f)) changed = true;
 			ImGui::Separator();
-			if (ImGui::SliderFloat("Sun Strength", &sunStrength, 1.0f, 255.0f)) changed = true;
-			if (ImGui::SliderFloat("Light Exposure", &exposure, 0.0f, 10.0f)) changed = true;
-			if (ImGui::SliderFloat3("Sun Direction", sunDir, -1.0f, 1.0f)) changed = true;
-			if (ImGui::ColorEdit3("Sun Color", sunColor)) changed = true;
+			if (ImGui::SliderFloat("Sun Strength", &settings.sunStrength, 1.0f, 255.0f)) changed = true;
+			if (ImGui::SliderFloat("Light Exposure", &settings.exposure, 0.0f, 10.0f)) changed = true;
+			if (ImGui::SliderFloat3("Sun Direction", settings.sunDirection, -1.0f, 1.0f)) changed = true;
+			if (ImGui::ColorEdit3("Sun Color", settings.sunColor)) changed = true;
 
 			ImGui::TreePop();
 		}
@@ -992,7 +979,7 @@ void editor::renderSettings()
 		if (changed)
 		{
 			//Game.cudaRenderer().setExtraRenderInfo(noiseReduction, minQW, maxQW, multipleScattering, ambientLightStrength, rayRandomOffset, attenuation, contribution, eccentricityAttenuation, sunStrength, exposure, sunDir, sunColor);
-			bee::Engine.ECS().GetSystem<bee::Renderer>().getCudaRenderObj()->setExtraRenderInfo(noiseReduction, minQW, maxQW, multipleScattering, ambientLightStrength, rayRandomOffset, attenuation, contribution, eccentricityAttenuation, sunStrength, exposure, sunDir, sunColor);
+			bee::Engine.ECS().GetSystem<bee::Renderer>().getCudaRenderObj()->setExtraRenderInfo(settings);
 		}
 
 		ImGui::TreePop();
@@ -1342,7 +1329,7 @@ void editor::cloudViewMenu()
 	ImGui::SetItemTooltip("Show or hide different types of choosing");
 
 	// Render info
-	renderSettings();
+	setRenderSettings();
 
 
 	ImGui::End();

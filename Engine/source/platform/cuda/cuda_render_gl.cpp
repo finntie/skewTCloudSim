@@ -1,18 +1,14 @@
 #include "platform/cuda/cuda_render_gl.h"
 
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 
-#include "platform/opengl/image_gl.hpp"
 #include "platform/opengl/mesh_gl.hpp"
 #include "platform/opengl/open_gl.hpp"
-#include "platform/opengl/shader_gl.hpp"
 
 #include <cuda_runtime.h>
 #include <cuda_gl_interop.h>
-#include <cuda_profiler_api.h>
 
 // To get width and height
 #include "core/device.hpp"
@@ -23,6 +19,8 @@
 
 #include "platform/cuda/cuda_render.cuh"
 #include "platform/cuda/LUTs.cuh"
+
+#include "math/cudaMath.cuh"
 
 
 // Highly inspired from https://github.com/BigNerd95/CUDASamples/blob/master/samples/2_Graphics/volumeRender/volumeRender.cpp
@@ -35,9 +33,6 @@ static void RenderQuad();
 
 CudaRender::CudaRender() 
 {
-    initShader();
-    initQuad();
-    initGL();
 }
 
 CudaRender::~CudaRender() 
@@ -69,34 +64,55 @@ CudaRender::~CudaRender()
 
 inline int iDivUp(int a, int b) { return (a % b != 0) ? (a / b + 1) : (a / b); }
 
-void CudaRender::initGL() 
+void CudaRender::initGL(int width, int height) 
 {
 
-    if (PBO)
+    if (m_finalPBO)
     {
-        cudaGraphicsUnregisterResource(cudaPBOResource);
+        if (cudaPBOResource) cudaGraphicsUnregisterResource(cudaPBOResource), cudaPBOResource = nullptr;
+
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+            __debugbreak();
+        }
 
         // Delete old resource
-        glDeleteBuffers(1, &PBO);
-        glDeleteTextures(1, &m_texture);
+        //glDeleteBuffers(1, &PBO);
+        //glDeleteTextures(1, &m_texture);
     }
 
     // Create Pixel buffer object
-    glGenBuffers(1, &PBO);
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, PBO);
-    glBufferData(GL_PIXEL_UNPACK_BUFFER,
-                 bee::Engine.Device().GetWidth() * bee::Engine.Device().GetHeight() * sizeof(GLbyte) * 4, 0, GL_STREAM_DRAW);
+    if (!m_finalPBO) glGenBuffers(1, &m_finalPBO);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_finalPBO);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * sizeof(GLbyte) * 4, 0, GL_STREAM_DRAW);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
 
     // Check if the PBO is valid
-    if (PBO == 0)
+    if (m_finalPBO == 0)
     {
         printf("PBO not initialized!\n");
         return;
     }
+
+    // Create texture
+    if (!m_finalTexture) glGenTextures(1, &m_finalTexture);
+    glBindTexture(GL_TEXTURE_2D, m_finalTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+
+        GLenum error = glGetError();
+    if (error != GL_NO_ERROR)
+    {
+        printf("Error in OpenGL draw: %i\n", error);
+    }
     // Register with CUDA
-    cudaGraphicsGLRegisterBuffer(&cudaPBOResource, PBO, cudaGraphicsMapFlagsWriteDiscard);
+    cudaGraphicsGLRegisterBuffer(&cudaPBOResource, m_finalPBO, cudaGraphicsMapFlagsWriteDiscard);
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)
@@ -104,22 +120,6 @@ void CudaRender::initGL()
         std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
         __debugbreak();
     }
-
-    // Create texture
-    glGenTextures(1, &m_texture);
-    glBindTexture(GL_TEXTURE_2D, m_texture);
-    glTexImage2D(GL_TEXTURE_2D,
-                 0,
-                 GL_RGBA8,
-                 bee::Engine.Device().GetWidth(),
-                 bee::Engine.Device().GetHeight(),
-                 0,
-                 GL_RGBA,
-                 GL_UNSIGNED_BYTE,
-                 NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void CudaRender::initQuad() 
@@ -252,6 +252,13 @@ void CudaRender::initOpenGLCUDAInterop(unsigned int finalFrameBuffer, unsigned i
 {
     m_width = width;
     m_height = height;
+    m_outsideColorBuffer = colorBuffer;
+
+    // First initialize own drawing PBO GL
+    initShader();
+    initQuad();
+    initGL(width, height);
+
 
         // Shaders to write to the depth texture
     m_SimpleVerShader =
@@ -278,9 +285,16 @@ void CudaRender::initOpenGLCUDAInterop(unsigned int finalFrameBuffer, unsigned i
         "    return (2.0 * near * far) / (far + near - z * (far - near));\n"
         "}\n"
 
+        "float LinearizeLogDepth(float logDepth) \n" // Instead of mapping for parabolic, map from log
+        "{\n"
+        // Inverse of applied log to vertex
+        "    return exp2(logDepth * log2(far + 1.0)) - 1.0;\n"
+        "}\n"
+
         "void main()\n"
         "{\n"
-        "   outDepth = LinearizeDepth(texture(depthTex, ((UV + 1.0f) * 0.5f)).r);\n"
+        // TODO: switch between parabolix and log
+        "   outDepth = LinearizeLogDepth(texture(depthTex, ((UV + 1.0f) * 0.5f)).r);\n"
         "}\0";
 
     m_copyTargetShaderProgram = createShaderProgram(m_SimpleVerShader, m_SimpleFragShader);
@@ -338,8 +352,9 @@ void CudaRender::initOpenGLCUDAInterop(unsigned int finalFrameBuffer, unsigned i
     }
 }
 
-unsigned int CudaRender::postRenderClouds(unsigned int finalFrameBuffer, unsigned int , int width, int height, float camNear, float camFar) 
+unsigned int CudaRender::postRenderClouds(unsigned int finalFrameBuffer, float camNear, float camFar) 
 { 
+    // Update variables
     if (camFar >= 0 && camNear >= 0)
     {
         m_camNear = camNear;
@@ -356,7 +371,7 @@ unsigned int CudaRender::postRenderClouds(unsigned int finalFrameBuffer, unsigne
     // Draw into own FBO, filling depth texture
     glDisable(GL_DEPTH_TEST);
     glBindFramebuffer(GL_FRAMEBUFFER, m_writeTargetFBO);
-    glViewport(0, 0, width, height);
+    glViewport(0, 0, m_width, m_height);
     glUseProgram(m_copyTargetShaderProgram);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_copyTargetDepthBuffer);
@@ -409,14 +424,14 @@ unsigned int CudaRender::postRenderClouds(unsigned int finalFrameBuffer, unsigne
     // 5.  -- Draw rendered PBO --
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, width, height);
+    glViewport(0, 0, m_width, m_height);
     glClear(GL_COLOR_BUFFER_BIT);
     glDisable(GL_DEPTH_TEST);
 
     // Copy from PBO to texture
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, PBO);
-    glBindTexture(GL_TEXTURE_2D, m_texture);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_finalPBO);
+    glBindTexture(GL_TEXTURE_2D, m_finalTexture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_width, m_height, GL_RGBA, GL_UNSIGNED_BYTE, 0);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
     // Draw quad on which we will show our output texture
@@ -446,17 +461,30 @@ unsigned int CudaRender::postRenderClouds(unsigned int finalFrameBuffer, unsigne
         __debugbreak();
     }
 
-    return PBO;
+    return m_finalPBO;
+}
+
+void CudaRender::unregisterResources() 
+{
+    if (m_colorResource) cudaGraphicsUnregisterResource(m_colorResource), m_colorResource = nullptr;;
+    if (m_depthResource) cudaGraphicsUnregisterResource(m_depthResource), m_depthResource = nullptr;;
+    if (cudaPBOResource) cudaGraphicsUnregisterResource(cudaPBOResource), cudaPBOResource = nullptr;;
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+        __debugbreak();
+    }
 }
 
 void CudaRender::cleanUp()
 {
 
-    if (PBO)
+    if (m_finalPBO)
     {
         cudaGraphicsUnregisterResource(cudaPBOResource);
-        glDeleteBuffers(1, &PBO);
-        glDeleteTextures(1, &m_texture);
+        glDeleteBuffers(1, &m_finalPBO);
+        glDeleteTextures(1, &m_finalTexture);
     }
 
     glDeleteVertexArrays(1, &VAO);
@@ -480,11 +508,12 @@ void CudaRender::render()
         size_t numBytes;
 
         // Map PBO to get CUDA device pointer
+        m_mapped = true;
         cudaGraphicsMapResources(1, &cudaPBOResource, stream);
         cudaGraphicsResourceGetMappedPointer((void**)&dOutput, &numBytes, cudaPBOResource);
 
         // Clear image
-        cudaMemsetAsync(dOutput, 0, bee::Engine.Device().GetWidth() * bee::Engine.Device().GetHeight() * 4, stream);
+        cudaMemsetAsync(dOutput, 0, m_width * m_height * 4, stream);
 
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess)
@@ -496,15 +525,14 @@ void CudaRender::render()
         // TODO: move to somewhere else
         dim3 blockSize(16, 16);
         dim3 gridSize;
-        gridSize =
-            dim3(iDivUp(bee::Engine.Device().GetWidth(), blockSize.x), iDivUp(bee::Engine.Device().GetHeight(), blockSize.y));
+        gridSize = dim3(iDivUp(m_width, blockSize.x), iDivUp(m_height, blockSize.y));
 
         // Set over the view matrix
         for (const auto& [e, camera, cameraTransform] : bee::Engine.ECS().Registry.view<bee::Camera, bee::Transform>().each())
         {
             const glm::mat4& view = glm::transpose((cameraTransform.World()));
-            float3 gridMin = make_float3(0, 0, 0);
-            float3 gridMax = make_float3(float(m_envData.sizeX), float(m_envData.sizeY), float(m_envData.sizeZ));
+            float3 gridMin = make_float3(0, 0, 0) * m_envData.voxelSize;
+            float3 gridMax = make_float3(float(m_envData.sizeX), float(m_envData.sizeY), float(m_envData.sizeZ)) * m_envData.voxelSize;
             gridMax = make_float3(gridMin.x + gridMax.x, gridMin.y + gridMax.y, gridMin.z + gridMax.z);
             initConstants(glm::value_ptr(view), sizeof(float4) * 3, gridMin, gridMax);
         }
@@ -512,8 +540,8 @@ void CudaRender::render()
         fillLUTS(m_envData,
                  m_envSkyViewTextureStorage,
                  m_envAerialViewTextureStorage,
-                 bee::Engine.Device().GetWidth(),
-                 bee::Engine.Device().GetHeight(),
+                 m_width,
+                 m_height,
                  false);
 
         cudaStreamSynchronize(stream);
@@ -525,15 +553,9 @@ void CudaRender::render()
         }
 
         // Actual rendering function, writing into dOutput
-        renderEnvironmentCUDA(gridSize,
-                              blockSize,
-                              dOutput,
-                              m_envData,
-                              m_allResourcesRender,
-                              bee::Engine.Device().GetWidth(),
-                              bee::Engine.Device().GetHeight());
+        renderEnvironmentCUDA(gridSize, blockSize, dOutput, m_envData, m_allResourcesRender, m_width, m_height);
 
-
+        m_mapped = true;
         cudaGraphicsUnmapResources(1, &cudaPBOResource, stream);
 
         err = cudaGetLastError();
@@ -655,6 +677,60 @@ void CudaRender::setColorDepthTexture(int width, int height)
     }
 }
 
+void CudaRender::setNewRenderSize(int width, int height) 
+{
+    cudaStreamSynchronize(getStream());
+    glFinish();
+
+    // UnRegister from CUDA
+    if (m_colorResource) cudaGraphicsUnregisterResource(m_colorResource), m_colorResource = nullptr;
+    if (m_depthResource) cudaGraphicsUnregisterResource(m_depthResource), m_depthResource = nullptr;
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
+        __debugbreak();
+    }
+
+
+    // Bind with buffer
+    glBindFramebuffer(GL_FRAMEBUFFER, m_copyTargetFBO);
+
+    // Update depth texture
+    setDepthTexture(width, height);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cout << "Error, copy FBO incomplete" << std::endl;
+        __debugbreak();
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Bind with writing FBO
+    glBindFramebuffer(GL_FRAMEBUFFER, m_writeTargetFBO);
+
+    // Update color depth texture
+    setColorDepthTexture(width, height);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cout << "Error, copy FBO 2 incomplete" << std::endl;
+        __debugbreak();
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Register again with new scaled textures
+    cudaGraphicsGLRegisterImage(&m_colorResource, m_outsideColorBuffer, GL_TEXTURE_2D, cudaGraphicsMapFlagsReadOnly);
+    cudaGraphicsGLRegisterImage(&m_depthResource, m_writeTargetdepthTex, GL_TEXTURE_2D, cudaGraphicsMapFlagsReadOnly);
+
+    // Do the same for PBO
+    initGL(width, height);
+
+    m_width = width;
+    m_height = height;
+}
+
 void CudaRender::copyFBOs(unsigned int FBO) 
 { 
     // Blit FBO to our own FBO
@@ -671,8 +747,6 @@ void CudaRender::copyFBOs(unsigned int FBO)
     }
 
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_copyTargetFBO);
-    glReadBuffer(GL_COLOR_ATTACHMENT0);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
     glBlitFramebuffer(0, 0, m_width, m_height, 0, 0, m_width, m_height, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 
         GLenum err = glGetError();
@@ -738,15 +812,15 @@ void CudaRender::display()
     render();
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, bee::Engine.Device().GetWidth(), bee::Engine.Device().GetHeight());
+    glViewport(0, 0, m_width, m_height);
    
     glClear(GL_COLOR_BUFFER_BIT);
     glDisable(GL_DEPTH_TEST);
 
     // Copy from PBO to texture
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, PBO);
-    glBindTexture(GL_TEXTURE_2D, m_texture);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, bee::Engine.Device().GetWidth(), bee::Engine.Device().GetHeight(), GL_RGBA, GL_UNSIGNED_BYTE, 0);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_finalPBO);
+    glBindTexture(GL_TEXTURE_2D, m_finalTexture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_width, m_height, GL_RGBA, GL_UNSIGNED_BYTE, 0);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
 
@@ -851,34 +925,9 @@ void CudaRender::setNoiseTexture(int octaves, int gridSize, float lacunarity)
     }
 }
 
-void CudaRender::setExtraRenderInfo(float noiseReduction,
-                                    float minQW,
-                                    float maxQW,
-                                    float multipleScattering,
-                                    float ambientLightStrength,
-                                    float rayRandomOffset,
-                                    float attenuation,
-                                    float contribution,
-                                    float eccentricattenuation,
-                                    float sunStrength,
-                                    float exposure,
-                                    float* sunDir,
-                                    float* sunColor)
+void CudaRender::setExtraRenderInfo(renderSettings settings)
 {
-
-    m_envData.noiseReduction = noiseReduction;
-    m_envData.minQw = minQW;
-    m_envData.maxQw = maxQW;
-    m_envData.multipleScatteringDepthPower = multipleScattering;
-    m_envData.ambientLightStrength = ambientLightStrength;
-    m_envData.rayRandomOffset = rayRandomOffset;
-    m_envData.attenuation = attenuation;
-    m_envData.contribution = contribution;
-    m_envData.eccentricAttenuation = eccentricattenuation;
-    m_envData.sunStrength = sunStrength;
-    m_envData.exposure = exposure;
-    memcpy(m_envData.sunDirection, sunDir, 3 * sizeof(float));
-    memcpy(m_envData.sunColor, sunColor, 3 * sizeof(float));
+    m_envData.settings = settings;
 }
 
 template <typename T>
