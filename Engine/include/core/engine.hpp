@@ -3,6 +3,8 @@
 
 #define BEE_VERSION "2425.C.1"
 
+class cloudHub; // Cloud simulation library
+
 namespace bee
 {
 
@@ -37,6 +39,7 @@ public:
     inline const std::string& GetVersionString() { return m_versionString; }
 
 private:
+
     bee::FileIO* m_fileIO = nullptr;
     bee::Resources* m_resources = nullptr;
     bee::Device* m_device = nullptr;

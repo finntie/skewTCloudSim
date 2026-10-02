@@ -185,8 +185,8 @@
       <AdditionalOptions>/Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
       <FloatingPointModel>Precise</FloatingPointModel>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <PrecompiledHeader>Use</PrecompiledHeader>
-      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -214,65 +214,15 @@
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="cloudFile.cu">
-      <FileType>Document</FileType>
-    </CudaCompile>
-    <ClCompile Include="config.cpp" />
-    <ClCompile Include="editor.cpp" />
-    <ClCompile Include="environment.cpp" />
-    <ClCompile Include="game.cpp" />
-    <ClCompile Include="gameSystem.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="microPhys.cpp" />
-    <ClCompile Include="pch.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="readTable.cpp" />
-    <ClCompile Include="skewTer.cpp" />
-    <ClCompile Include="skewTMaker.cpp" />
-    <ClCompile Include="skewTFile.cpp" />
-    <ClCompile Include="tracing.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="cloudFile.cuh" />
-    <ClInclude Include="config.h" />
-    <ClInclude Include="dataClass.cuh" />
-    <ClInclude Include="editor.h" />
-    <ClInclude Include="environment.cuh" />
-    <ClInclude Include="environment.h" />
     <ClInclude Include="external\odeint.hpp" />
-    <ClInclude Include="game.h" />
-    <ClInclude Include="gameSystem.h" />
-    <ClInclude Include="kernelGround.cuh" />
-    <ClInclude Include="kernelMaths.cuh" />
-    <ClInclude Include="kernelSky.cuh" />
-    <ClInclude Include="kernelTest.cuh">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
-    </ClInclude>
-    <ClInclude Include="meteoconstants.cuh" />
-    <ClInclude Include="meteoformulas.cuh" />
-    <ClInclude Include="microPhys.h" />
-    <ClInclude Include="microPhysics.cuh" />
-    <ClInclude Include="pch.h" />
-    <ClInclude Include="readTable.h" />
-    <ClInclude Include="skewTer.h" />
-    <ClInclude Include="skewTMaker.h" />
-    <ClInclude Include="skewTFile.h" />
-    <ClInclude Include="tracing.h" />
-    <ClInclude Include="utils.cuh" />
-    <ClInclude Include="zip_file.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="dataClass.cu" />
-    <CudaCompile Include="environment.cu" />
-    <CudaCompile Include="kernelGround.cu" />
-    <CudaCompile Include="kernelMaths.cu" />
-    <CudaCompile Include="kernelSky.cu" />
-    <CudaCompile Include="kernelTest.cu">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
-    </CudaCompile>
-    <CudaCompile Include="meteoformulas.cu" />
-    <CudaCompile Include="microPhysics.cu" />
+    <ProjectReference Include="..\Engine\bee.vcxproj">
+      <Project>{a5d06fec-7fcb-4af8-b043-6d92d6b99695}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

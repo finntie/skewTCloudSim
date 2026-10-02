@@ -19,7 +19,10 @@
 #include "tools/log.hpp"
 #include "tools/profiler.hpp"
 
-#include "platform/cuda/cuda_render_gl.h"
+#include "outside/cloud_hub.hpp"
+#include "outside/rendering/render_hub.hpp"
+#include "outside/camera.hpp"
+
 
 #define DEBUG_UBO_LOCATION (UBO_LOCATION_COUNT + 1)
 #define SORT_MESH_RENDERERS TRUE
@@ -38,7 +41,7 @@ Renderer::Renderer()
 {
     Title = "Renderer";
 
-    m_cudaRenderObj = new CudaRender();
+    CloudHub.initialize();
 
     m_forwardPass = Engine.Resources().Load<Shader>(FileIO::Directory::SharedAssets, "/shaders/uber.vert", "shaders/uber.frag");
     m_post = Engine.Resources().Load<Shader>(FileIO::Directory::SharedAssets, "shaders/post.vert", "shaders/post.frag");
@@ -89,8 +92,7 @@ Renderer::Renderer()
 
 Renderer::~Renderer()
 {
-    m_cudaRenderObj->cleanUp();
-    delete m_cudaRenderObj;
+    CloudHub.destruct();
     delete m_cameraData;
     delete m_pointLightsData;
     delete m_transformsData;
@@ -165,7 +167,7 @@ void Renderer::CreateFrameBuffers()
     BEE_DEBUG_ONLY(glBindFramebuffer(GL_FRAMEBUFFER, 0));
 
     // Initialize cloud renderer, using the resolved frame buffer
-    m_cudaRenderObj->initOpenGLCUDAInterop(m_resolvedFramebuffer, m_resolvedColorbuffer, m_width, m_height);
+    CloudHub.CloudRender().init(m_resolvedFramebuffer, m_resolvedColorbuffer);
 
     // -- Final framebuffer --
     glGenFramebuffers(1, &m_finalFramebuffer);              // Create
@@ -335,7 +337,6 @@ void Renderer::SetVignette(float value) { m_vignette = glm::clamp<float>(value, 
 
 void bee::Renderer::setRenderSize(int width, int height)
 {
-    m_cudaRenderObj->unregisterResources();
     m_width = width;
     m_height = height;
 
@@ -387,8 +388,8 @@ void bee::Renderer::setRenderSize(int width, int height)
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindRenderbuffer(GL_RENDERBUFFER, 0);   
 
-    // Post cloud renderer update
-    m_cudaRenderObj->setNewRenderSize(width, height);
+    // Post cloud renderer updateInput
+    CloudHub.CloudRender().resize(width, height);
 }
 
 void bee::Renderer::setBackGroundColor(float R, float G, float B)
@@ -436,18 +437,23 @@ void Renderer::Render()
     if (m_iblSpecularMipCount != -1) m_forwardPass->GetParameter("u_ibl_specular_mip_count")->SetValue(m_iblSpecularMipCount);
     m_forwardPass->GetParameter("use_alpha_blending")->SetValue(m_useAlphaBlending);
 
-    if (m_cameraFar == 0.0f)
+    for (const auto& [e, camera, cameraTransform] : Engine.ECS().Registry.view<Camera, Transform>().each())
     {
-        // Retrieve near and far from camera
-        for (const auto& [e, camera, cameraTransform] : Engine.ECS().Registry.view<Camera, Transform>().each())
+        if (m_cameraFar == 0)
         {
-            const mat4& proj = camera.Projection;
-            float A = proj[2][2];
-            float B = proj[3][2];
+            glm::mat4& projection = camera.Projection;
+            float A = projection[2][2];
+            float B = projection[3][2];
             m_cameraNear = B / (A - 1.0f);
             m_cameraFar = B / (A + 1.0f);
+
+            CloudHub.CameraObj().initialize(Engine.Device().GetWindow(),
+                                            cameraTransform.GetTranslation(),
+                                            cameraTransform.GetRotation(),
+                                            camera.Projection, false);
         }
     }
+
     // Set Far for both vertex and fragment
     m_forwardPass->GetParameter("camFar")->SetValue(m_cameraFar);
     m_forwardPass->GetParameter("camera_far")->SetValue(m_cameraFar);
@@ -593,8 +599,7 @@ void Renderer::Render()
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
     glBlitFramebuffer(0, 0, m_width, m_height, 0, 0, m_width, m_height, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 
-    m_cudaRenderObj->postRenderClouds(m_resolvedFramebuffer, m_cameraNear, m_cameraFar);
-    // Final pass
+    //// Final pass
     //glDisable(GL_CULL_FACE);
     //glDisable(GL_DEPTH_TEST);
     //glBindFramebuffer(GL_FRAMEBUFFER, m_finalFramebuffer);

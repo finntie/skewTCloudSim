@@ -8,7 +8,6 @@
 #include "core/ecs.hpp"
 #include "platform/opengl/shader_gl.hpp"
 #include "platform/opengl/open_gl.hpp"
-#include "rendering/colors.hpp"
 
 using namespace bee;
 using namespace glm;
@@ -47,7 +46,6 @@ bee::DebugRenderer::DebugRenderer()
                       DebugCategory::AINavigation | DebugCategory::AIDecision | DebugCategory::Editor;
 
     m_impl = std::make_unique<Impl>();
-    m_colorSchemeObj = std::make_unique<colorScheme>();
 }
 
 DebugRenderer::~DebugRenderer() = default;

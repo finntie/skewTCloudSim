@@ -4,6 +4,7 @@
 #include "core/device.hpp"
 #include "core/input.hpp"
 
+
 using namespace bee;
 
 class Input::Impl
@@ -38,7 +39,7 @@ float mousewheel = 0;
 // NOLINTBEGIN(readability-convert-member-functions-to-static, misc-unused-parameters)
 // disable lints because platforms have functions behaving differently
 
-void cursor_position_callback(GLFWwindow*, double xpos, double ypos)
+void cursor_pos_callback(GLFWwindow*, double xpos, double ypos)
 {
     mousepos.x = (float)xpos;
     mousepos.y = (float)ypos;
@@ -61,7 +62,7 @@ Input::Input()
     auto* window = static_cast<GLFWwindow*>(Engine.Device().GetWindow());
 
     // glfwSetJoystickCallback(joystick_callback);
-    glfwSetCursorPosCallback(window, cursor_position_callback);
+    glfwSetCursorPosCallback(window, cursor_pos_callback);
     glfwSetKeyCallback(window, key_callback);
     glfwSetMouseButtonCallback(window, mousebutton_callback);
     glfwSetScrollCallback(window, scroll_callback);
@@ -74,13 +75,13 @@ Input::~Input()
     auto* window = static_cast<GLFWwindow*>(Engine.Device().GetWindow());
 
     // TODO: Remove
-    // glfwSetJoystickCallback(NULL);
     glfwSetCursorPosCallback(window, nullptr);
+
 }
 
 void Input::Update()
 {
-    // update keyboard key states
+    // updateInput keyboard key states
     for (int i = 0; i < nr_keys; ++i)
     {
         prev_keys_down[i] = keys_down[i];
@@ -93,7 +94,7 @@ void Input::Update()
         keys_action[i] = KeyAction::None;
     }
 
-    // update mouse button states
+    // updateInput mouse button states
     for (int i = 0; i < nr_mousebuttons; ++i)
     {
         prev_mousebuttons_down[i] = mousebuttons_down[i];
@@ -106,7 +107,7 @@ void Input::Update()
         mousebuttons_action[i] = KeyAction::None;
     }
 
-    // update gamepad states
+    // updateInput gamepad states
     for (int i = 0; i < max_nr_gamepads; ++i)
     {
         prev_gamepad_state[i] = gamepad_state[i];

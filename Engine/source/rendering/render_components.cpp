@@ -4,7 +4,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <memory>
 
-#include "math/geometry.hpp"
+#include "outside/math/geometry.hpp"
 #include "tools/tools.hpp"
 #include "rendering/model.hpp"
 

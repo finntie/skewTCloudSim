@@ -1,12 +1,13 @@
-#include "pch.h"
-
 #define _CRTDBG_MAP_ALLOC
 
 //Game includes
-#include "gameSystem.h"
-#include "environment.h"
+#include "core/engine.hpp"
+#include "core/ecs.hpp"
+#include "core/transform.hpp"
+#include "rendering/render.hpp"
 #include "rendering/model.hpp"
 
+#include <glm/glm.hpp>
 using namespace bee;
 using namespace std;
 
@@ -19,7 +20,6 @@ int main(int, char**)
      
     //Create systems
     Engine.ECS().CreateSystem<Renderer>(); //<-- bee renderer
-    Engine.ECS().CreateSystem<gameSystem>();
    
     //Quick setup of camera and light
     {

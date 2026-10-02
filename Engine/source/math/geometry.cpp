@@ -1,17 +1,13 @@
-#include "math/geometry.hpp"
-#include "core/ecs.hpp"
-#include "core/engine.hpp"
+#include "outside/math/geometry.hpp"
 
-#include "tools/inspector.hpp"
-#include "core/transform.hpp"
-#include "rendering/render.hpp"
-#include "core/device.hpp"
+#include "outside/cloud_hub.hpp"
+#include "outside/camera.hpp"
+
 #include <random>
 
 using namespace glm;
-using namespace bee;
 
-std::pair<glm::vec3, glm::vec3> bee::ComputeAABB(const std::vector<glm::vec3>& pts)
+std::pair<glm::vec3, glm::vec3> ComputeAABB(const std::vector<glm::vec3>& pts)
 {
     glm::vec3 min = pts[0], max = pts[0];
     for (const auto& pt : pts)
@@ -26,15 +22,15 @@ std::pair<glm::vec3, glm::vec3> bee::ComputeAABB(const std::vector<glm::vec3>& p
     return {min, max};
 }
 
-glm::vec3 bee::mouseRayDirection(glm::vec2 screenPos, const glm::quat& cameraRot, const glm::mat4& cameraProjection)
+glm::vec3 mouseRayDirection(glm::vec2 screenPos, const glm::quat& cameraRot, const glm::mat4& cameraProjection)
 { 
     glm::vec4 deviceCoords;
-    deviceCoords.x = (2 * (screenPos.x) / Engine.Device().GetWidth()) - 1;
-    deviceCoords.y = 1 - (2 * (screenPos.y) / Engine.Device().GetHeight());
+    deviceCoords.x = (2 * (screenPos.x) / CloudHub.CameraObj().getScrWidth()) - 1;
+    deviceCoords.y = 1 - (2 * (screenPos.y) / CloudHub.CameraObj().getScrHeight());
     deviceCoords.z = -1;
     deviceCoords.w = 1;
 
-    glm::mat invCam = inverse(cameraProjection);
+    glm::mat invCam = glm::inverse(cameraProjection);
     // Multiply by inverse matrix
     glm::vec4 transformed = (invCam * deviceCoords);
 
@@ -45,107 +41,69 @@ glm::vec3 bee::mouseRayDirection(glm::vec2 screenPos, const glm::quat& cameraRot
     return cameraRot * glm::normalize(pos3D - glm::vec3(0));
 }
 
-glm::vec3 bee::getCameraBottomLeftDir()
+glm::vec3 getCameraBottomLeftDir(glm::quat& camRotation, glm::mat4& projection)
 {
-    glm::vec3 dir = glm::vec3(0);
-    for (const auto& [CameraEntity, camera, transform] : Engine.ECS().Registry.view<Camera, Transform>().each())
-    {
-        dir = mouseRayDirection(glm::vec2(0, 0), transform.GetRotation(), camera.Projection);
-    }
-    return dir;
+    return mouseRayDirection(glm::vec2(0, 0), camRotation, projection);
 }
-glm::vec3 bee::getCameraBottomRightDir()
+glm::vec3 getCameraBottomRightDir(glm::quat& camRotation, glm::mat4& projection)
 {
-    glm::vec3 dir = glm::vec3(0);
-    for (const auto& [CameraEntity, camera, transform] : Engine.ECS().Registry.view<Camera, Transform>().each())
-    {
-        dir = mouseRayDirection(glm::vec2(Engine.Device().GetWidth(), 0), transform.GetRotation(), camera.Projection);
-    }
-    return dir;
+    return mouseRayDirection(glm::vec2(CloudHub.CameraObj().getScrWidth(), 0), camRotation, projection);
 }
-glm::vec3 bee::getCameraTopRightDir() 
+glm::vec3 getCameraTopRightDir(glm::quat& camRotation, glm::mat4& projection)
 {
-    glm::vec3 dir = glm::vec3(0);
-    for (const auto& [CameraEntity, camera, transform] : Engine.ECS().Registry.view<Camera, Transform>().each())
-    {
-        dir = mouseRayDirection(glm::vec2(Engine.Device().GetWidth(), Engine.Device().GetHeight()), transform.GetRotation(), camera.Projection);
-    }
-    return dir;
+    return mouseRayDirection(glm::vec2(CloudHub.CameraObj().getScrWidth(), CloudHub.CameraObj().getScrHeight()),
+                             camRotation,
+                             projection);
 }
-glm::vec3 bee::getCameraTopLeftDir()
+glm::vec3 getCameraTopLeftDir(glm::quat& camRotation, glm::mat4& projection)
 {
-    glm::vec3 dir = glm::vec3(0);
-    for (const auto& [CameraEntity, camera, transform] : Engine.ECS().Registry.view<Camera, Transform>().each())
-    {
-        dir = mouseRayDirection(glm::vec2(0, Engine.Device().GetHeight()), transform.GetRotation(), camera.Projection);
-    }
-    return dir;
+    return mouseRayDirection(glm::vec2(0, CloudHub.CameraObj().getScrHeight()), camRotation, projection);
 }
 
-glm::vec3 bee::screenToGround(glm::vec2 screenPos)
+glm::vec3 screenToGround(glm::vec2 screenPos, glm::vec3 camPos, const glm::quat& camRotation, const glm::mat4& projection)
 {
-    glm::quat camRot;
-    glm::vec3 camPos = glm::vec3(0);
     // Convert screenpos from -1 to 1;
     // If ImGui windows show up
 
     glm::vec3 worldDir{};
 
     // Calculate the 3D point.
-    for (const auto& [CameraEntity, camera, transform] : Engine.ECS().Registry.view<Camera, Transform>().each())
-    {
-        camPos = transform.GetTranslation();
-        camRot = (transform.GetRotation());
-
-        worldDir = mouseRayDirection(screenPos, camRot, camera.Projection);
-    }
-
+    worldDir = mouseRayDirection(screenPos, camRotation, projection);
     float t = 0.0f;
 
     // Ray formula:
     // P = O + D * t
 
     t = -camPos.y / worldDir.y;  // Direct intersection calculation for y=0 plane
-
     return camPos + worldDir * t;
 }
 
-glm::vec2 bee::PosToScreen(glm::vec3 pos3D)
+glm::vec2 PosToScreen(glm::vec3 pos3D, glm::vec3 camPos, glm::quat& camRotation, glm::mat4& projection)
 {
     glm::vec2 screenPos{0.0f};
 
     // CHATGPT generated code:
-    for (const auto& [CameraEntity, camera, transform] : Engine.ECS().Registry.view<Camera, Transform>().each())
-    {
-        // Construct the view matrix from the camera's position and rotation
-        glm::mat4 viewMatrix =
-            glm::inverse(glm::translate(glm::mat4(1.0f), transform.GetTranslation()) * glm::mat4_cast(transform.GetRotation()));
 
-        // Combine the projection and view matrix
-        glm::mat4 mvpMatrix = camera.Projection * viewMatrix;
+    // Construct the view matrix from the camera's position and rotation
+    glm::mat4 viewMatrix = glm::inverse(glm::translate(glm::mat4(1.0f), camPos) * glm::mat4_cast(camRotation));
 
-        // Transform the 3D world position into clip space (after applying view and projection matrices)
-        glm::vec4 clipSpacePos = mvpMatrix * glm::vec4(pos3D, 1.0f);
+    // Combine the projection and view matrix
+    glm::mat4 mvpMatrix = projection * viewMatrix;
 
-        // Perform the perspective divide to get normalized device coordinates (NDC)
-        glm::vec3 ndcPos = glm::vec3(clipSpacePos) / clipSpacePos.w;
+    // Transform the 3D world position into clip space (after applying view and projection matrices)
+    glm::vec4 clipSpacePos = mvpMatrix * glm::vec4(pos3D, 1.0f);
 
-        // Convert from NDC [-1, 1] to screen space (0, screenWidth) for x and (0, screenHeight) for y
-        int screenWidth = 0;
-        int screenHeight = 0;
+    // Perform the perspective divide to get normalized device coordinates (NDC)
+    glm::vec3 ndcPos = glm::vec3(clipSpacePos) / clipSpacePos.w;
 
-        
-        screenWidth = Engine.Device().GetWidth();
-        screenHeight = Engine.Device().GetHeight();
-        
-        screenPos.x = (ndcPos.x + 1.0f) * 0.5f * screenWidth;   // Map x from [-1, 1] to [0, screenWidth]
-        screenPos.y = (1.0f - ndcPos.y) * 0.5f * screenHeight;  // Map y from [-1, 1] to [0, screenHeight]
-    }
+    // Convert from NDC [-1, 1] to screen space (0, screenWidth) for x and (0, screenHeight) for y
+    screenPos.x = (ndcPos.x + 1.0f) * 0.5f * CloudHub.CameraObj().getScrWidth();  // Map x from [-1, 1] to [0, screenWidth]
+    screenPos.y = (1.0f - ndcPos.y) * 0.5f * CloudHub.CameraObj().getScrHeight();  // Map y from [-1, 1] to [0, screenHeight]
 
     return screenPos;
 }
 
-glm::vec2 bee::rotateAroundPoint2D(glm::vec2 point, glm::vec2 centerpoint, float rotation)
+glm::vec2 rotateAroundPoint2D(glm::vec2 point, glm::vec2 centerpoint, float rotation)
 {
     // Quat for roll
     glm::quat qRoll = glm::angleAxis(glm::radians(rotation), glm::vec3(0, 0, 1));

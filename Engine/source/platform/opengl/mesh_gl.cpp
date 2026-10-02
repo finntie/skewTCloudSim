@@ -6,6 +6,7 @@
 
 using namespace bee;
 using namespace std;
+using namespace glm;
 
 static uint32_t CalculateDataTypeSize(tinygltf::Accessor const& accessor) noexcept;
 

@@ -102,9 +102,15 @@
   </ItemDefinitionGroup>
   <!-- Shared -->
   <ItemGroup>
-    <ClInclude Include="include\math\cudaMath.cuh" />
-    <ClInclude Include="include\platform\cuda\cuda_render.cuh" />
-    <ClInclude Include="include\platform\cuda\cuda_render_gl.h" />
+    <CudaCompile Include="include\outside\math\cudaMath.cuh" />
+    <ClInclude Include="include\outside\cloud_hub.hpp" />
+    <ClInclude Include="include\outside\cloud_menu_hub.hpp" />
+    <ClInclude Include="include\outside\config.h" />
+    <ClInclude Include="include\outside\external\zip_file.hpp" />
+    <ClInclude Include="include\outside\math\simplemath.hpp" />
+    <ClInclude Include="include\outside\rendering\cuda\cloudFile.cuh" />
+    <ClInclude Include="include\outside\rendering\cuda\cuda_render.cuh" />
+    <ClInclude Include="include\outside\rendering\cuda\cuda_render_gl.h" />
     <ClInclude Include="external\clipper\include\clipper2\clipper.core.h" />
     <ClInclude Include="external\clipper\include\clipper2\clipper.engine.h" />
     <ClInclude Include="external\clipper\include\clipper2\clipper.export.h" />
@@ -112,7 +118,15 @@
     <ClInclude Include="external\clipper\include\clipper2\clipper.minkowski.h" />
     <ClInclude Include="external\clipper\include\clipper2\clipper.offset.h" />
     <ClInclude Include="external\clipper\include\clipper2\clipper.rectclip.h" />
-    <ClCompile Include="source\platform\cuda\cuda_render_gl.cpp" />
+    <ClCompile Include="include\outside\camera.hpp" />
+    <ClCompile Include="include\outside\rendering\render_hub.hpp" />
+    <ClCompile Include="source\outside\camera.cpp" />
+    <ClCompile Include="source\outside\cloud_hub.cpp" />
+    <ClCompile Include="source\outside\cloud_menu_hub.cpp" />
+    <ClCompile Include="source\outside\config.cpp" />
+    <ClCompile Include="source\outside\new_input.cpp" />
+    <ClCompile Include="source\outside\rendering\render_hub.cpp" />
+    <ClCompile Include="source\outside\rendering\cuda\cuda_render_gl.cpp" />
     <ClCompile Include="external\clipper\src\clipper.engine.cpp" />
     <ClCompile Include="external\clipper\src\clipper.offset.cpp" />
     <ClCompile Include="external\clipper\src\clipper.rectclip.cpp" />
@@ -166,16 +180,34 @@
     <ClInclude Include="include\graph\graph.hpp" />
     <ClInclude Include="include\graph\graph_search.hpp" />
     <ClInclude Include="include\math\constants.hpp" />
-    <ClInclude Include="include\math\geometry.hpp" />
+    <ClInclude Include="include\outside\math\geometry.hpp" />
     <ClInclude Include="include\math\math.hpp" />
     <ClInclude Include="include\math\meteoformulas.h" />
+    <ClInclude Include="include\outside\new_input.hpp" />
+    <ClInclude Include="include\outside\simulating\cuda\environment.cuh" />
+    <ClInclude Include="include\outside\simulating\cuda\kernelSky.cuh" />
+    <ClInclude Include="include\outside\simulating\cuda\microPhysics.cuh" />
+    <ClInclude Include="include\outside\simulating\readTable.h" />
+    <ClInclude Include="include\outside\simulating\environment.hpp" />
+    <ClInclude Include="include\outside\math\meteoconstants.cuh" />
+    <ClInclude Include="include\outside\math\meteoformulas.cuh" />
+    <ClInclude Include="include\outside\simulating\simulationEditor.hpp" />
+    <ClInclude Include="include\outside\simulating\simulation_hub.hpp" />
+    <ClInclude Include="include\outside\simulating\skewTer.h" />
+    <ClInclude Include="include\outside\simulating\skewTFile.h" />
+    <ClInclude Include="include\outside\simulating\skewTMaker.h" />
+    <ClInclude Include="include\outside\simulating\tracing.h" />
+    <ClInclude Include="include\outside\utils.cuh" />
     <ClInclude Include="include\physics\jolt_physics_system.hpp" />
     <ClInclude Include="include\physics\physics_components.hpp" />
     <ClInclude Include="include\physics\world.hpp" />
-    <ClInclude Include="include\platform\cuda\LUTs.cuh" />
-    <ClInclude Include="include\platform\cuda\texture_noise.cuh" />
-    <ClInclude Include="include\platform\opengl\draw_image.hpp" />
-    <ClInclude Include="include\rendering\colors.hpp" />
+    <ClInclude Include="include\outside\rendering\cuda\LUTs.cuh" />
+    <ClInclude Include="include\outside\rendering\cuda\texture_noise.cuh" />
+    <ClInclude Include="include\outside\rendering\draw_image.hpp" />
+    <ClInclude Include="include\outside\rendering\helper_open_gl.hpp" />
+    <ClInclude Include="include\outside\rendering\new_open_gl.hpp" />
+    <ClInclude Include="include\outside\rendering\shapes_gl.hpp" />
+    <ClInclude Include="include\outside\rendering\colors.hpp" />
     <ClInclude Include="include\rendering\debug_render.hpp" />
     <ClInclude Include="include\rendering\image.hpp" />
     <ClInclude Include="include\rendering\mesh.hpp" />
@@ -207,11 +239,20 @@
     <ClCompile Include="source\graph\graph_search.cpp" />
     <ClCompile Include="source\math\geometry.cpp" />
     <ClCompile Include="source\math\meteoformulas.cpp" />
+    <ClCompile Include="source\outside\simulating\readTable.cpp" />
+    <ClCompile Include="source\outside\simulating\simulationEditor.cpp" />
+    <ClCompile Include="source\outside\simulating\simulation_hub.cpp" />
+    <ClCompile Include="source\outside\simulating\skewTer.cpp" />
+    <ClCompile Include="source\outside\simulating\skewTFile.cpp" />
+    <ClCompile Include="source\outside\simulating\skewTMaker.cpp" />
+    <ClCompile Include="source\outside\simulating\tracing.cpp" />
     <ClCompile Include="source\physics\jolt_physics_system.cpp" />
     <ClCompile Include="source\physics\physics_components.cpp" />
     <ClCompile Include="source\physics\world.cpp" />
-    <ClCompile Include="source\platform\opengl\draw_image.cpp" />
-    <ClCompile Include="source\rendering\colors.cpp" />
+    <ClCompile Include="source\outside\rendering\draw_image.cpp" />
+    <ClCompile Include="source\outside\rendering\helper_open_gl.cpp" />
+    <ClCompile Include="source\outside\rendering\shapes_gl.cpp" />
+    <ClCompile Include="source\outside\rendering\colors.cpp" />
     <ClCompile Include="source\rendering\debug_render.cpp" />
     <ClCompile Include="source\rendering\model.cpp" />
     <ClCompile Include="source\rendering\render_components.cpp" />
@@ -222,6 +263,7 @@
     <ClCompile Include="source\tools\thread_pool.cpp" />
     <ClCompile Include="source\tools\tools.cpp" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="include\outside\simulating\cuda\dataClass.cuh" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="external\entt\natvis\entt\config.natvis" />
@@ -280,8 +322,14 @@
     <ResourceCompile Include="bee.rc" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="source\platform\cuda\cuda_render.cu" />
-    <CudaCompile Include="source\platform\cuda\LUTS.cu" />
+    <CudaCompile Include="source\outside\math\cudaMath.cu" />
+    <CudaCompile Include="source\outside\simulating\cuda\dataClass.cu" />
+    <CudaCompile Include="source\outside\rendering\cuda\cuda_render.cu" />
+    <CudaCompile Include="source\outside\rendering\cuda\LUTS.cu" />
+    <CudaCompile Include="source\outside\rendering\cuda\cloudFile.cu" />
+    <CudaCompile Include="source\outside\simulating\cuda\environment.cu" />
+    <CudaCompile Include="source\outside\simulating\cuda\kernelSky.cu" />
+    <CudaCompile Include="source\outside\simulating\cuda\microPhysics.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

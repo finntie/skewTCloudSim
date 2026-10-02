@@ -15,6 +15,8 @@
 #include "tools/log.hpp"
 #include "tools/thread_pool.hpp"
 
+#include "outside/cloud_hub.hpp"
+
 using namespace bee;
 
 // Make the engine a global variable on free store memory.
@@ -63,6 +65,7 @@ void EngineClass::Run()
         m_ECS->RemovedDeleted();
         m_device->BeginFrame();
         m_ECS->RenderSystems();
+        CloudHub.updateMain();
         m_debugRenderer->Render();
         m_inspector->Inspect(dt);
         m_device->EndFrame();

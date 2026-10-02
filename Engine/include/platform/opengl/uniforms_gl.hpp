@@ -14,3 +14,11 @@ namespace bee
 {
 #include "../../../assets/shaders/uniforms.glsl"
 }
+
+#undef vec2
+#undef vec3
+#undef vec4
+#undef mat4
+#undef mat3
+#undef uniform
+#undef layout

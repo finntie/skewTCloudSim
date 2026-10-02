@@ -27,7 +27,6 @@ struct DebugCategory
     };
 };
 
-class colorScheme;
 /// <summary>
 /// Renders debug lines and shapes. It can be called from any place in the code.
 /// </summary>
@@ -137,13 +136,10 @@ public:
     /// </summary>
     unsigned int GetCategoryFlags() const { return m_categoryFlags; }
 
-    colorScheme& GetColorScheme() { return *m_colorSchemeObj; }
-
 private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
     unsigned int m_categoryFlags;
-    std::unique_ptr<colorScheme> m_colorSchemeObj = nullptr;
 };
 
 }  // namespace bee
