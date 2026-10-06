@@ -1,0 +1,11 @@
+Model Information:
+* title:	Volgar Village
+* source:	https://sketchfab.com/3d-models/volgar-village-ea38b75764834b77b791d51d49677cf2
+* author:	novusod (https://sketchfab.com/novusod)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Volgar Village" (https://sketchfab.com/3d-models/volgar-village-ea38b75764834b77b791d51d49677cf2) by novusod (https://sketchfab.com/novusod) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

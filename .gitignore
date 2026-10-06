@@ -1,3 +1,6 @@
 Game/executable/
 Images/Showcase2D_Compressed.mp4
 /Game/assets/output
+/CloudWeatherSimulation/cloudWeatherSim/.vs
+/CloudWeatherSimulation/cloudWeatherSim/cloudWeatherSim/x64
+/CloudWeatherSimulation/Game/x64

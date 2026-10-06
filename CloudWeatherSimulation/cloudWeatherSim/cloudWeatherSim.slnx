@@ -1,0 +1,8 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="../Game/Game.vcxproj" Id="ecaba9ea-9a2c-427f-8754-db87fd4a5325" />
+  <Project Path="cloudWeatherSim.vcxproj" Id="b53495c5-7ac9-498f-9119-857801761cab" />
+</Solution>

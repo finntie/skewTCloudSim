@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{b53495c5-7ac9-498f-9119-857801761cab}</ProjectGuid>
+    <RootNamespace>cloudWeatherSim</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.3.props" />
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions);DLLEXPORTS</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(SolutionDir)include;$(SolutionDir)external/glad/include;$(SolutionDir)external;$(CUDA_PATH)\include</AdditionalIncludeDirectories>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <AdditionalOptions>/Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64;$(SolutionDir)external/glfw;$(SolutionDir)external</AdditionalLibraryDirectories>
+      <AdditionalDependencies>glfw3.lib;cudart.lib;cudadevrt.lib;gdi32.lib</AdditionalDependencies>
+      <AdditionalOptions>/NODEFAULTLIB:"MSVCRT" %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
+    <CudaCompile>
+      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
+      <FastMath>true</FastMath>
+      <Include>
+      </Include>
+      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" -allow-unsupported-compiler %(AdditionalOptions)</AdditionalOptions>
+    </CudaCompile>
+    <CudaLink>
+      <UseHostLibraryDirectories>false</UseHostLibraryDirectories>
+    </CudaLink>
+    <CudaLink>
+      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
+    </CudaLink>
+    <CudaLink>
+      <UseHostLibraryDependencies>false</UseHostLibraryDependencies>
+    </CudaLink>
+    <PostBuildEvent>
+      <Command>xcopy /y /d "$(TargetPath)"  "$(OutDir)"</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions);DLLEXPORTS</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(SolutionDir)include;$(SolutionDir)external/glad/include;$(SolutionDir)external;$(CUDA_PATH)\include</AdditionalIncludeDirectories>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <AdditionalOptions>/Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64;$(SolutionDir)external/glfw;$(SolutionDir)external</AdditionalLibraryDirectories>
+      <AdditionalDependencies>glfw3.lib;cudart.lib;cudadevrt.lib;gdi32.lib</AdditionalDependencies>
+    </Link>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
+    <CudaCompile>
+      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
+      <FastMath>true</FastMath>
+      <Include>
+      </Include>
+      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" -allow-unsupported-compiler %(AdditionalOptions)</AdditionalOptions>
+    </CudaCompile>
+    <CudaLink>
+      <UseHostLibraryDirectories>false</UseHostLibraryDirectories>
+    </CudaLink>
+    <CudaLink>
+      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
+    </CudaLink>
+    <CudaLink>
+      <UseHostLibraryDependencies>false</UseHostLibraryDependencies>
+    </CudaLink>
+    <PostBuildEvent>
+      <Command>xcopy /y /d "$(TargetPath)"  "$(OutDir)"</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="external\glad\src\glad.c" />
+    <ClCompile Include="external\imgui\imgui.cpp" />
+    <ClCompile Include="external\imgui\ImGuizmo.cpp" />
+    <ClCompile Include="external\imgui\imgui_demo.cpp" />
+    <ClCompile Include="external\imgui\imgui_draw.cpp" />
+    <ClCompile Include="external\imgui\imgui_impl.cpp" />
+    <ClCompile Include="external\imgui\imgui_impl_glfw.cpp" />
+    <ClCompile Include="external\imgui\imgui_impl_opengl3.cpp" />
+    <ClCompile Include="external\imgui\imgui_tables.cpp" />
+    <ClCompile Include="external\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="external\imgui\implot.cpp" />
+    <ClCompile Include="external\imgui\implot_demo.cpp" />
+    <ClCompile Include="external\imgui\implot_items.cpp" />
+    <ClCompile Include="source\camera.cpp" />
+    <ClCompile Include="source\cloud_hub.cpp" />
+    <ClCompile Include="source\cloud_menu_hub.cpp" />
+    <ClCompile Include="source\config.cpp" />
+    <ClCompile Include="source\math\geometry.cpp" />
+    <ClCompile Include="source\new_input.cpp" />
+    <ClCompile Include="source\rendering\colors.cpp" />
+    <ClCompile Include="source\rendering\cuda\cuda_render_gl.cpp" />
+    <ClCompile Include="source\rendering\draw_image.cpp" />
+    <ClCompile Include="source\rendering\helper_open_gl.cpp" />
+    <ClCompile Include="source\rendering\render_hub.cpp" />
+    <ClCompile Include="source\rendering\shapes_gl.cpp" />
+    <ClCompile Include="source\simulating\readTable.cpp" />
+    <ClCompile Include="source\simulating\simulationEditor.cpp" />
+    <ClCompile Include="source\simulating\simulation_hub.cpp" />
+    <ClCompile Include="source\simulating\skewTer.cpp" />
+    <ClCompile Include="source\simulating\skewTFile.cpp" />
+    <ClCompile Include="source\simulating\skewTMaker.cpp" />
+    <ClCompile Include="source\simulating\tracing.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\camera.hpp" />
+    <ClInclude Include="include\cloud_hub.hpp" />
+    <ClInclude Include="include\cloud_menu_hub.hpp" />
+    <ClInclude Include="include\config.h" />
+    <ClInclude Include="include\external\zip_file.hpp" />
+    <CudaCompile Include="include\simulating\cuda\dataClass.cuh" />
+    <CudaCompile Include="include\simulating\cuda\environment.cuh" />
+    <CudaCompile Include="include\simulating\cuda\kernelSky.cuh" />
+    <CudaCompile Include="include\simulating\cuda\microPhysics.cuh" />
+    <CudaCompile Include="include\rendering\cuda\cloudFile.cuh" />
+    <CudaCompile Include="include\rendering\cuda\cuda_render.cuh" />
+    <CudaCompile Include="include\rendering\cuda\LUTs.cuh" />
+    <CudaCompile Include="include\rendering\cuda\texture_noise.cuh" />
+    <CudaCompile Include="include\math\cudaMath.cuh" />
+    <ClInclude Include="include\math\geometry.hpp" />
+    <CudaCompile Include="include\math\meteoformulas.cuh" />
+    <ClInclude Include="include\math\simplemath.hpp" />
+    <ClInclude Include="include\new_input.hpp" />
+    <ClInclude Include="include\rendering\colors.hpp" />
+    <ClInclude Include="include\rendering\cuda\cuda_render_gl.h" />
+    <ClInclude Include="include\rendering\draw_image.hpp" />
+    <ClInclude Include="include\rendering\helper_open_gl.hpp" />
+    <ClInclude Include="include\rendering\new_open_gl.hpp" />
+    <ClInclude Include="include\rendering\render_hub.hpp" />
+    <ClInclude Include="include\rendering\shapes_gl.hpp" />
+    <ClInclude Include="include\simulating\environment.hpp" />
+    <ClInclude Include="include\simulating\readTable.h" />
+    <ClInclude Include="include\simulating\simulationEditor.hpp" />
+    <ClInclude Include="include\simulating\simulation_hub.hpp" />
+    <ClInclude Include="include\simulating\skewTer.h" />
+    <ClInclude Include="include\simulating\skewTFile.h" />
+    <ClInclude Include="include\simulating\skewTMaker.h" />
+    <ClInclude Include="include\simulating\tracing.h" />
+    <CudaCompile Include="source\math\cudaMath.cu" />
+    <CudaCompile Include="source\rendering\cuda\cloudFile.cu" />
+    <CudaCompile Include="source\rendering\cuda\cuda_render.cu" />
+    <CudaCompile Include="source\rendering\cuda\LUTS.cu" />
+    <CudaCompile Include="source\rendering\cuda\texture_noise.cu" />
+    <CudaCompile Include="source\simulating\cuda\dataClass.cu" />
+    <CudaCompile Include="source\simulating\cuda\environment.cu" />
+    <CudaCompile Include="source\simulating\cuda\kernelSky.cu" />
+    <CudaCompile Include="source\simulating\cuda\microPhysics.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="include\utils.cuh" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.3.targets" />
+  </ImportGroup>
+</Project>
