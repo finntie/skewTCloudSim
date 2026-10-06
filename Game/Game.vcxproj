@@ -19,9 +19,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <VCProjectVersion>17.0</VCProjectVersion>
+    <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{530ddd89-e8e2-482f-bd31-8cb9fd2080ee}</ProjectGuid>
+    <ProjectGuid>{ecaba9ea-9a2c-427f-8754-db87fd4a5325}</ProjectGuid>
     <RootNamespace>Game</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
@@ -44,7 +44,6 @@
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
-    <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -52,7 +51,6 @@
     <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
-    <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -68,25 +66,9 @@
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\Engine\properties\bee.props" />
-    <Import Project="..\Engine\properties\bee_debug.props" />
-    <Import Project="..\Engine\properties\game.props" />
-    <Import Project="..\Engine\properties\game_pc.props" />
-    <Import Project="..\Engine\properties\bee_pc.props" />
-    <Import Project="..\Engine\properties\bee_pc_debug.props" />
-    <Import Project="..\Engine\properties\bee_pc_gl.props" />
-    <Import Project="properties\demo.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\Engine\properties\bee.props" />
-    <Import Project="..\Engine\properties\bee_release.props" />
-    <Import Project="..\Engine\properties\game.props" />
-    <Import Project="..\Engine\properties\game_pc.props" />
-    <Import Project="..\Engine\properties\bee_pc.props" />
-    <Import Project="..\Engine\properties\bee_pc_release.props" />
-    <Import Project="..\Engine\properties\bee_pc_gl.props" />
-    <Import Project="properties\demo.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -95,22 +77,15 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp17</LanguageStandard>
-      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
-    <CudaCompile>
-      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
-      <AdditionalOptions>--std=c++17 %(AdditionalOptions)</AdditionalOptions>
-      <Warning>InheritFromHost</Warning>
-    </CudaCompile>
-    <CudaLink>
-      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64</AdditionalLibraryDirectories>
-    </CudaLink>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -120,108 +95,69 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp17</LanguageStandard>
-      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <CudaCompile>
-      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
-      <AdditionalOptions>--std=c++17 %(AdditionalOptions)</AdditionalOptions>
-      <Warning>InheritFromHost</Warning>
-    </CudaCompile>
-    <CudaLink>
-      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(CUDA_PATH)\lib\x64</AdditionalLibraryDirectories>
-    </CudaLink>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalOptions>/Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
-      <FloatingPointModel>Precise</FloatingPointModel>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(SolutionDir)include;$(ProjectDir)external;$(ProjectDir)external/glad/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(OutputPath);$(ProjectDir)external;$(ProjectDir)external/GLFW;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>cloudWeatherSim.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <CudaCompile>
-      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
-      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" %(AdditionalOptions)</AdditionalOptions>
-      <Warning>InheritFromHost</Warning>
-      <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120;%(CodeGeneration)</CodeGeneration>
-      <GenerateLineInfo>true</GenerateLineInfo>
-      <FastMath>true</FastMath>
-    </CudaCompile>
-    <CudaLink>
-      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
-      <AdditionalDependencies>cudagl.lib</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
-      <UseHostLibraryDirectories>false</UseHostLibraryDirectories>
-      <UseHostLibraryDependencies>false</UseHostLibraryDependencies>
-    </CudaLink>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <TreatWarningAsError>true</TreatWarningAsError>
-      <LanguageStandard>stdcpp17</LanguageStandard>
-      <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalOptions>/Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
-      <FloatingPointModel>Precise</FloatingPointModel>
-      <WholeProgramOptimization>true</WholeProgramOptimization>
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(SolutionDir)include;$(ProjectDir)external;$(ProjectDir)external/glad/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <LinkTimeCodeGeneration>UseFastLinkTimeCodeGeneration</LinkTimeCodeGeneration>
-      <ShowProgress>NotSet</ShowProgress>
+      <AdditionalLibraryDirectories>$(OutputPath);$(ProjectDir)external;$(ProjectDir)external/GLFW;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>cloudWeatherSim.lib;glfw3.lib;ucrt.lib;vcruntime.lib;msvcrt.lib;msvcprt.lib;imm32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/NODEFAULTLIB %(AdditionalOptions)</AdditionalOptions>
     </Link>
-    <CudaCompile>
-      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
-      <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" %(AdditionalOptions)</AdditionalOptions>
-      <Warning>InheritFromHost</Warning>
-      <CodeGeneration>compute_75,sm_75;compute_86,sm_86;compute_120,sm_120;%(CodeGeneration)</CodeGeneration>
-      <GenerateLineInfo>true</GenerateLineInfo>
-      <FastMath>true</FastMath>
-    </CudaCompile>
-    <CudaLink>
-      <AdditionalDependencies>cudadevrt.lib</AdditionalDependencies>
-      <AdditionalDependencies>cudagl.lib</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
-      <UseHostLibraryDirectories>false</UseHostLibraryDirectories>
-      <UseHostLibraryDependencies>false</UseHostLibraryDependencies>
-    </CudaLink>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="device.cpp" />
+    <ClCompile Include="game.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="external\odeint.hpp" />
+    <ClInclude Include="device.h" />
+    <ClInclude Include="game.h" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Engine\bee.vcxproj">
-      <Project>{a5d06fec-7fcb-4af8-b043-6d92d6b99695}</Project>
+    <ProjectReference Include="..\cloudWeatherSim\cloudWeatherSim.vcxproj">
+      <Project>{b53495c5-7ac9-498f-9119-857801761cab}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

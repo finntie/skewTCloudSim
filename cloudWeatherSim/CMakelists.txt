@@ -1,0 +1,116 @@
+cmake_minimum_required(VERSION "3.23")
+
+# Set project with languages for C++ and CUDA
+project(cloudWeatherSim LANGUAGES CXX CUDA)
+
+# Add 'd' suffix to the end of the debug configurations, so both libs can live in the same folder
+set(CMAKE_DEBUG_POSTFIX d)
+
+# Create static library, including all source files manually
+add_library(cloudWeatherSim STATIC 
+    source/math/cudaMath.cu
+    source/math/geometry.cpp
+    source/rendering/cuda/cloudFile.cu
+    source/rendering/cuda/cuda_render.cu
+    source/rendering/cuda/cuda_render_gl.cpp
+    source/rendering/cuda/LUTS.cu
+    source/rendering/cuda/texture_noise.cu
+    source/rendering/colors.cpp
+    source/rendering/draw_image.cpp
+    source/rendering/helper_open_gl.cpp
+    source/rendering/render_hub.cpp
+    source/rendering/shapes_gl.cpp
+    source/simulating/cuda/dataClass.cu
+    source/simulating/cuda/environment.cu
+    source/simulating/cuda/kernelSky.cu
+    source/simulating/cuda/microPhysics.cu
+    source/simulating/readTable.cpp
+    source/simulating/simulationEditor.cpp
+    source/simulating/simulation_hub.cpp
+    source/simulating/skewTer.cpp
+    source/simulating/skewTFile.cpp
+    source/simulating/skewTMaker.cpp
+    source/simulating/tracing.cpp
+    source/camera.cpp
+    source/cloud_hub.cpp
+    source/cloud_menu_hub.cpp
+    source/cloud_weather_sim.cpp
+    source/config.cpp
+    source/new_input.cpp
+)
+
+# Build GLFW library from their github
+include(FetchContent)
+FetchContent_Declare(glfw 
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG 3.4
+)
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_SHARED_LIBS OFF CACHE BOOL "" FORCE) # Use static lib
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE) # No need for glfw install since we do it ourself
+FetchContent_MakeAvailable(glfw)
+
+# Find cuda toolkit and openGL mandetory
+find_package(CUDAToolkit REQUIRED)
+find_package(OpenGL REQUIRED)
+
+# Include directories from the /include path, but also from external paths
+# When installing, the path is likely to be different
+target_include_directories(cloudWeatherSim 
+    PUBLIC 
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/glad/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/external
+)
+
+# Now link the libraries, Private since developer does not need to have them accessing the public header
+target_link_libraries(cloudWeatherSim
+    PRIVATE
+        CUDA::cudart # TODO: later match with SCALE
+        OpenGL::GL
+        glfw
+)
+
+
+# C++ version, PRIVATE since only this lib needs it, consumers maybe not
+target_compile_features(cloudWeatherSim PRIVATE cxx_std_17 cuda_std_17)
+
+# Create macro to gain assets directory
+target_compile_definitions(cloudWeatherSim PRIVATE
+    CLOUD_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets"
+)
+
+# Enable seperable compilation for CUDA for device kernels to have seperate declarations and definitions
+set_target_properties(cloudWeatherSim PROPERTIES 
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_RESOLVE_DEVICE_SYMBOLS OFF)
+
+
+# Set public header
+target_sources(cloudWeatherSim PUBLIC 
+    FILE_SET HEADERS 
+    BASE_DIRS include 
+    FILES include/cloudWeatherSim/cloud_weather_sim.hpp
+)
+
+
+# Install the public header
+install(TARGETS cloudWeatherSim 
+    EXPORT cloudWeatherSimTargets 
+    ARCHIVE DESTINATION lib 
+    FILE_SET HEADERS
+)
+
+# Install glfw static lib
+install(TARGETS cloudWeatherSim glfw
+    EXPORT cloudWeatherSimTargets 
+    ARCHIVE DESTINATION lib 
+    FILE_SET HEADERS
+)
+
+# Install the imgui assets, so the ImGui font can be used
+install(DIRECTORY assets/ImGui/ DESTINATION assets/ImGui)

@@ -1,5 +1,0 @@
-#pragma once
-
-#if defined(BEE_PLATFORM_PC) && defined(BEE_GRAPHICS_OPENGL)
-#include "platform/opengl/render_gl.hpp"
-#endif
