@@ -22,50 +22,42 @@
 #include <filesystem>
 
 
-cloudMenu::cloudMenu(simulationHub* simHubObj, cloudRenderer* renderHubObj)
+cloudMenu::cloudMenu(simulationHub* simHubObj, cloudRenderer* renderHubObj, bool customStyle)
 {
     m_simHubObj = simHubObj;
     m_renderHubObj = renderHubObj;
-
-    // Try to initialize, but likely we don't have window yet, so we will retry in the update
-    initializeImGui();
+    if (customStyle) initializeImGuiStyle();
 }
 
 cloudMenu::~cloudMenu()
 {
-    setImGuiContext();
 
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyPlatformWindows();
-    ImPlot::DestroyContext(m_ImPlotContext);
-    ImGui::DestroyContext(m_ImGuiContext);
-
-    unsetImGuiContext();
 }
 
 
-bool cloudMenu::initializeImGui()
+void cloudMenu::initializeImGuiStyle()
 {
-    GLFWwindow* window = CloudHub.CameraObj().getWindow();
-    if (window == nullptr) return false;  // Failed
-
-    // Check if context already exists
-    bool contextExists = ImGui::GetCurrentContext() != nullptr;
-    m_ImPlotContext = ImPlot::CreateContext();
-    m_ImGuiContext = ImGui::CreateContext();
-
-    setImGuiContext();
-
     // Initialize fonts and style
+
+    if (ImGui::GetCurrentContext() == nullptr)
+    {
+        printf("CLOUDLIB MESSAGE: Unable to set custom ImGui style; no ImGui context found, is ImGui already setup before calling this library's init?\n");
+        return;
+    }
 
     ImGuiIO& io = ImGui::GetIO();
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-    // TODO: This does not work when compiling for different builds
-    std::string parentPath = CLOUD_ASSET_DIR;
+    // Check if the files actually exists
+    std::filesystem::path checkPath = std::filesystem::current_path() / "assets/ImGui/ImGui.ini";
 
-    std::string filePath = parentPath + "/assets/ImGui/ImGui.ini";
+    if (!std::filesystem::exists(checkPath)) { printf("CLOUDLIB WARNING: could not find the path: %s\n", checkPath.string().c_str()); return; }
+    checkPath = std::filesystem::current_path() / "assets/ImGui/fonts/DroidSans.ttf";
+    if (!std::filesystem::exists(checkPath)) { printf("CLOUDLIB WARNING: could not find the path: %s\n", checkPath.string().c_str()); return; }
+    checkPath = std::filesystem::current_path() / "assets/ImGui/fonts/FontAwesome5FreeSolid900.otf";
+    if (!std::filesystem::exists(checkPath)) { printf("CLOUDLIB WARNING: could not find the path: %s\n", checkPath.string().c_str()); return; }
+
+    std::string filePath = "assets/ImGui/ImGui.ini";
     const char* constStr = filePath.c_str();
     char* str = new char[filePath.size() + 1];
     strcpy_s(str, filePath.size() + 1, constStr);
@@ -74,7 +66,7 @@ bool cloudMenu::initializeImGui()
     const float fontSize = 14.0f;
     const float iconSize = 14.0f;
 
-    filePath = parentPath + "/assets/ImGui/fonts/DroidSans.ttf";
+    filePath = "assets/ImGui/fonts/DroidSans.ttf";
     ImFontConfig config;
     config.OversampleH = 8;
     config.OversampleV = 8;
@@ -85,46 +77,24 @@ bool cloudMenu::initializeImGui()
 
     static const ImWchar icon_ranges[] = {ICON_MIN_FA, ICON_MAX_FA, 0};
 
-    filePath = parentPath + "/assets/ImGui/fonts/FontAwesome5FreeSolid900.otf";
+    filePath = "assets/ImGui/fonts/FontAwesome5FreeSolid900.otf";
     io.Fonts->AddFontFromFileTTF(filePath.c_str(), iconSize, &config, icon_ranges);
 
     imguiStyle();
-
-    //if (!contextExists)
-    {
-        ImGui_ImplGlfw_InitForOpenGL(window, false);
-        ImGui_ImplOpenGL3_Init();
-    }
-
-    unsetImGuiContext();
-
-    m_ImGuiInitialized = true;
-    return true;
 }
 
 
 void cloudMenu::update() 
 {
     // Check if ImGui is set up correctly
-    if (!m_ImGuiInitialized)
+    if (ImGui::GetCurrentContext() == nullptr)
     {
-        if (!initializeImGui()) return;
+        printf("CLOUDLIB ERROR: Unable to use ImGui; no ImGui context found, is ImGui setup correctly?\n");
+        return;
     }
 
     bool changedState = false;
 
-    setImGuiContext();
-
-    // TODO: possibly add flag where we just call ImGui::begin(), the user then has to call newframe and render around our update.
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    // This may create an error when a previous ImGui::NewFrame was called without being closed with ImGui::Render()
-    // Fix: do not call this library's update in between ImGui::NewFrame() and ImGui::Render()
-    ImGui::NewFrame();
-
-    ImGuiIO& io = ImGui::GetIO();
-    printf("MousePos: %.1f, %.1f | MouseDown[0]: %d | WantCaptureMouse: %d\n",
-        io.MousePos.x, io.MousePos.y, io.MouseDown[0], io.WantCaptureMouse);
     switch (m_currentState)
     {
         case gameStates::MAINMENU:
@@ -148,71 +118,6 @@ void cloudMenu::update()
     }
 
     m_gameInitStateChange = changedState;
-
-
-    // Render ImGui
-    // This may create an error when a previous ImGui::NewFrame was called without being closed with ImGui::Render()
-    // Fix: do not call this library's update in between ImGui::NewFrame() and ImGui::Render()
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-    unsetImGuiContext();
-}
-
-void cloudMenu::callbackImGuiCursorPos(GLFWwindow* win, double xpos, double ypos) 
-{
-    if (!m_ImGuiContext) return;
-    ImGuiContext* prevContext = ImGui::GetCurrentContext();
-    ImGui::SetCurrentContext(m_ImGuiContext);
-
-    ImGui_ImplGlfw_CursorPosCallback(win, xpos, ypos);
-
-    if (prevContext) ImGui::SetCurrentContext(prevContext);
-}
-
-void cloudMenu::callbackImGuiScroll(GLFWwindow* win, double xoffset, double yoffset) 
-{
-    if (!m_ImGuiContext) return;
-    ImGuiContext* prevContext = ImGui::GetCurrentContext();
-    ImGui::SetCurrentContext(m_ImGuiContext);
-
-    ImGui_ImplGlfw_ScrollCallback(win, xoffset, yoffset);
-
-    if (prevContext) ImGui::SetCurrentContext(prevContext);
-}
-
-void cloudMenu::callbackImGuiKey(GLFWwindow* win, int key, int scan, int action, int mods) 
-{
-    if (!m_ImGuiContext) return;
-    ImGuiContext* prevContext = ImGui::GetCurrentContext();
-    ImGui::SetCurrentContext(m_ImGuiContext);
-
-    ImGui_ImplGlfw_KeyCallback(win, key, scan, action, mods);
-
-    if (prevContext) ImGui::SetCurrentContext(prevContext);
-}
-
-
-void cloudMenu::callbackImGuiChar(GLFWwindow* win, unsigned int codepoint) 
-{
-    if (!m_ImGuiContext) return;
-    ImGuiContext* prevContext = ImGui::GetCurrentContext();
-    ImGui::SetCurrentContext(m_ImGuiContext);
-
-    ImGui_ImplGlfw_CharCallback(win, codepoint);
-
-    if (prevContext) ImGui::SetCurrentContext(prevContext);
-}
-
-void cloudMenu::callbackImGuiMouseButton(GLFWwindow* win, int button, int action, int mods) 
-{
-    if (!m_ImGuiContext) return;
-    ImGuiContext* prevContext = ImGui::GetCurrentContext();
-    ImGui::SetCurrentContext(m_ImGuiContext);
-
-    ImGui_ImplGlfw_MouseButtonCallback(win, button, action, mods);
-
-    if (prevContext) ImGui::SetCurrentContext(prevContext);
 }
 
 void cloudMenu::otherMenus(const bool initState, bool& setInitState)

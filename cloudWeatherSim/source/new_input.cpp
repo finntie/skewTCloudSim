@@ -2,7 +2,6 @@
 
 #include "cloud_hub.hpp"
 #include "camera.hpp"
-#include "cloud_menu_hub.hpp"
 
 #include <GLFW/glfw3.h>
 
@@ -12,7 +11,6 @@ GLFWcursorposfun cursorOldCallback = nullptr;
 GLFWkeyfun keyOldCallback = nullptr;
 GLFWmousebuttonfun mousebuttonOldCallback = nullptr;
 GLFWscrollfun scrollOldCallback = nullptr;
-GLFWcharfun charOldCallback = nullptr;
 
 glm::vec2 m_mousepos;
 float m_mousewheel = 0;
@@ -31,18 +29,12 @@ void cursorPosCallback(GLFWwindow* win, double xpos, double ypos)
     m_mousepos.x = (float)xpos;
     m_mousepos.y = (float)ypos;
 
-    // ImGui Callback
-    CloudHub.cloudMenuObj().callbackImGuiCursorPos(win, xpos, ypos);
-
     if (cursorOldCallback) cursorOldCallback(win, xpos, ypos);
 }
 
 void scrollCallback(GLFWwindow* win, double xoffset, double yoffset) 
 { 
     m_mousewheel += (float)yoffset; 
-
-    // ImGui Callback
-    CloudHub.cloudMenuObj().callbackImGuiScroll(win, xoffset, yoffset);
 
     if (scrollOldCallback) scrollOldCallback(win, xoffset, yoffset);
 }
@@ -51,25 +43,12 @@ void keyCallback(GLFWwindow* win, int key, int scan, int action, int mods)
 {
     if (action == GLFW_PRESS || action == GLFW_RELEASE) keysDown[key] = static_cast<KeyAction>(action);
 
-    // ImGui Callback
-    CloudHub.cloudMenuObj().callbackImGuiKey(win, key, scan, action, mods);
-
     if (keyOldCallback) keyOldCallback(win, key, scan, action, mods);
-}
-
-void charCallBack(GLFWwindow* win, unsigned int codePoint)
-{
-    CloudHub.cloudMenuObj().callbackImGuiChar(win, codePoint);
-
-    if (charOldCallback) charOldCallback(win, codePoint);
 }
 
 void mousebuttonCallback(GLFWwindow* win, int button, int action, int mods)
 {
     if (action == GLFW_PRESS || action == GLFW_RELEASE) mouseButDown[button] = static_cast<KeyAction>(action);
-
-    // ImGui Callback
-    CloudHub.cloudMenuObj().callbackImGuiMouseButton(win, button, action, mods);
 
     if (mousebuttonOldCallback) mousebuttonOldCallback(win, button, action, mods);
 }
@@ -84,7 +63,6 @@ void newInput::initialize()
     keyOldCallback = glfwSetKeyCallback(window, keyCallback);
     mousebuttonOldCallback = glfwSetMouseButtonCallback(window, mousebuttonCallback);
     scrollOldCallback = glfwSetScrollCallback(window, scrollCallback);
-    charOldCallback = glfwSetCharCallback(window, charCallBack);
 
     glfwGetWindowSize(window, &m_initialScrWidth, &m_initialScrHeight);
     m_scrWidth = m_initialScrHeight;

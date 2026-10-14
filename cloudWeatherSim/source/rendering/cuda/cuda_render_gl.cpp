@@ -42,30 +42,34 @@ CudaRender::CudaRender()
 CudaRender::~CudaRender() 
 {
     fillLUTS(m_envData, nullptr, nullptr, 0, 0, true);
-    //cudaFree(m_envData.Qw);
-    cudaFree(m_SDFClosestTarget);
-    cudaFree(m_SDFDistanceNeigh);
-    cudaDestroyTextureObject(m_envData.QwTexture);
-    cudaFree(m_envData.Qc);
-    cudaDestroyTextureObject(m_envData.QrTexture);
-    cudaDestroyTextureObject(m_envData.QsTexture);
-    cudaFree(m_envData.Qi);
-    cudaDestroyTextureObject(m_envData.velXTexture);
-    cudaDestroyTextureObject(m_envData.velYTexture);
-    cudaDestroyTextureObject(m_envData.velZTexture);
-    //cudaFree(m_envData.noiseTexture); Already done
-    cudaDestroyTextureObject(m_envData.noiseTexture);
-    if (m_envData.depthInformationTexture != 0) cudaDestroyTextureObject(m_envData.depthInformationTexture);
-    if (m_envData.colorInformationTexture != 0) cudaDestroyTextureObject(m_envData.colorInformationTexture);
-    cudaFreeArray(static_cast<cudaArray_t>(m_velZTextureStorage));
-    cudaFreeArray(static_cast<cudaArray_t>(m_velYTextureStorage));
-    cudaFreeArray(static_cast<cudaArray_t>(m_velXTextureStorage));
-    cudaFreeArray(static_cast<cudaArray_t>(m_SDFTextureStorageQw));
-    cudaFreeArray(static_cast<cudaArray_t>(m_noiseTextureStorage));
-    cudaFreeArray(static_cast<cudaArray_t>(m_QSTextureStorage));
-    cudaFreeArray(static_cast<cudaArray_t>(m_QRTextureStorage));
-    cudaFreeArray(static_cast<cudaArray_t>(m_QWTextureStorage));
-    cudaFree(tempArray);
+
+    if (m_envInitialized)
+    {
+        //cudaFree(m_envData.Qw);
+        cudaFree(m_SDFClosestTarget);
+        cudaFree(m_SDFDistanceNeigh);
+        cudaDestroyTextureObject(m_envData.QwTexture);
+        cudaFree(m_envData.Qc);
+        cudaDestroyTextureObject(m_envData.QrTexture);
+        cudaDestroyTextureObject(m_envData.QsTexture);
+        cudaFree(m_envData.Qi);
+        cudaDestroyTextureObject(m_envData.velXTexture);
+        cudaDestroyTextureObject(m_envData.velYTexture);
+        cudaDestroyTextureObject(m_envData.velZTexture);
+        //cudaFree(m_envData.noiseTexture); Already done
+        cudaDestroyTextureObject(m_envData.noiseTexture);
+        if (m_envData.depthInformationTexture != 0) cudaDestroyTextureObject(m_envData.depthInformationTexture);
+        if (m_envData.colorInformationTexture != 0) cudaDestroyTextureObject(m_envData.colorInformationTexture);
+        cudaFreeArray(static_cast<cudaArray_t>(m_velZTextureStorage));
+        cudaFreeArray(static_cast<cudaArray_t>(m_velYTextureStorage));
+        cudaFreeArray(static_cast<cudaArray_t>(m_velXTextureStorage));
+        cudaFreeArray(static_cast<cudaArray_t>(m_SDFTextureStorageQw));
+        cudaFreeArray(static_cast<cudaArray_t>(m_noiseTextureStorage));
+        cudaFreeArray(static_cast<cudaArray_t>(m_QSTextureStorage));
+        cudaFreeArray(static_cast<cudaArray_t>(m_QRTextureStorage));
+        cudaFreeArray(static_cast<cudaArray_t>(m_QWTextureStorage));
+        cudaFree(tempArray);
+    }
 
     if (m_gridDim) delete m_gridDim;
     if (m_blockDim) delete m_blockDim;
@@ -278,7 +282,7 @@ void CudaRender::initOpenGLCUDAInterop(unsigned int finalFrameBuffer, unsigned i
     // Check if width and height are set, if not we will retry later during the update
     if (m_width == 0 && m_height == 0)
     {
-        if (m_initializeAgain) printf("CLOUDLIB INFO: unable to initialize OpenGL due to screen size not being set.");
+        if (m_initializeAgain) printf("CLOUDLIB INFO: unable to initialize OpenGL due to screen size not being set.\n");
         m_initializeAgain = true;
         return;
     }
@@ -436,6 +440,7 @@ unsigned int CudaRender::postRenderClouds()
     // Skip first 3 steps if we have no geometry we want to draw.
     if (m_framebuffer != 0)
     {
+
         // 1.  -- Draw to depth texture from depth buffer --
 
         // First copy over input FBO to own FBO in which we stored our depth texture as color attachment
@@ -487,32 +492,39 @@ unsigned int CudaRender::postRenderClouds()
             std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
             __debugbreak();
         }
+
     }
 
     // 4.  -- Render cloud simulation --
 
     render();
 
-    // 5.  -- Draw rendered PBO --
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, m_width, m_height);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glDisable(GL_DEPTH_TEST);
+        // 5.  -- Draw rendered PBO --
 
-    // Copy from PBO to texture
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_finalPBO);
-    glBindTexture(GL_TEXTURE_2D, m_finalTexture);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_width, m_height, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
-    // Draw quad on which we will show our output texture
-    glUseProgram(shader);
-    glBindVertexArray(VAO);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
-    glUseProgram(0);
-    glBindTexture(GL_TEXTURE_2D, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, m_width, m_height);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glDisable(GL_DEPTH_TEST);
+
+        // Copy from PBO to texture
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_finalPBO);
+        glBindTexture(GL_TEXTURE_2D, m_finalTexture);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_width, m_height, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+    if (m_drawFinalResult)
+    {
+        // Draw quad on which we will show our output texture
+        glUseProgram(shader);
+        glBindVertexArray(VAO);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glBindVertexArray(0);
+        glUseProgram(0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
 
     error = glGetError();
     if (error != GL_NO_ERROR)
@@ -533,7 +545,7 @@ unsigned int CudaRender::postRenderClouds()
         __debugbreak();
     }
 
-    return m_finalPBO;
+    return m_finalTexture;
 }
 
 void CudaRender::unregisterResources() 

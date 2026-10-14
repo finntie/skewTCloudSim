@@ -27,11 +27,11 @@ cloudHub::cloudHub()
     m_cloudCameraObj = new cameraControl();
 }
 
-void cloudHub::initialize()
+void cloudHub::initialize(bool customImGuiStyle)
 {
     m_cloudRenderObj = new cloudRenderer();
     m_simulationHubObj = new simulationHub;
-    m_cloudMenuHubObj = new cloudMenu(m_simulationHubObj, m_cloudRenderObj);
+    m_cloudMenuHubObj = new cloudMenu(m_simulationHubObj, m_cloudRenderObj, customImGuiStyle);
 }
 
 void cloudHub::destruct()
@@ -62,8 +62,7 @@ void cloudHub::updateMain(bool onlyView)
     // Render
     m_cloudRenderObj->render(dt);
 
-    // UI (render)
-    if (!onlyView) m_cloudMenuHubObj->update();
+    // UI (render) is done by user
 
 
 	time = ctime;

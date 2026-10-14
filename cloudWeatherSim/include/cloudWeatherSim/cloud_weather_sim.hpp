@@ -12,7 +12,9 @@ namespace cloudWeatherSim
 	{
 		initFlag_None = 0 << 0,
 		initFlag_UseLibInput = 1 << 0, // Use the library's input instead of own when moving around the clouds. If using own input, you will need to call initCamera() and afterwards updateCamera() each frame.
-		initFlag_NoUIOnlyCloud = 1 << 1 // Only view the clouds after loading it yourself using loadCloudFile()
+		initFlag_NoUIOnlyCloud = 1 << 1, // Only view the clouds after loading it yourself using loadCloudFile()
+		initFlag_LibImGuiStyle = 1 << 2, // Use the ImGui style which the library uses, else it will not be set/used
+		initFlag_DontDrawFinalResult = 1 << 3 // Hold off on drawing the final result inside the library and possibly use the final texture; 'getRenderFinalTexture()' to draw yourself
 	};
 
 
@@ -59,6 +61,13 @@ namespace cloudWeatherSim
 	void updateCamera(float* pos, float* rotation);
 
 	/// <summary>
+	/// Renders the UI from this library using ImGui. 
+	/// ImGui has to be set up correctly and this function needs to be called in between ImGui::NewFrame() and ImGui::Render(). 
+	/// To get the correct ImGui style, use the 'initFlag_LibImGuiStyle' flag in the init
+	/// </summary>
+	void updateUIImGui();
+
+	/// <summary>
 	/// Loads a cloud file, also makes sure that when updating, it will only update to view and not any UI.
 	/// </summary>
 	/// <param name="file">File name only to saved cloud file, assumes location assets/output/</param>
@@ -69,5 +78,11 @@ namespace cloudWeatherSim
 	/// </summary>
 	/// <param name="file">File name only of a render settings file, assumes location assets/output/</param>
 	void loadRenderSettingsFile(const char* file);
+
+	/// <summary>
+	/// Retrieve the render output in a form of 2D image texture. 
+	/// </summary>
+	/// <returns></returns>
+	unsigned int getRenderFinalTexture();
 
 } // Namespace cloudWeatherSim

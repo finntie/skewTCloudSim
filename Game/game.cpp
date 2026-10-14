@@ -10,13 +10,16 @@
 #include <imgui/IconsFontAwesome.h>
 
 #include <string>
+
+#include <filesystem>
+#include <iostream>
 game::game()
 {
 
 	m_deviceObj = new device();
 
-	imguiInitTest();
-	cloudWeatherSim::init(m_deviceObj->getWindow(), cloudWeatherSim::initFlag_UseLibInput);
+	imguiInit();
+	cloudWeatherSim::init(m_deviceObj->getWindow(), cloudWeatherSim::initFlag_UseLibInput | cloudWeatherSim::initFlag_LibImGuiStyle);
 }
 
 game::~game()
@@ -27,21 +30,22 @@ game::~game()
 
 void game::core()
 {
-
-	//cloudWeatherSim::loadCloudFile("singleCloudFile2.bin");
+	cloudWeatherSim::loadCloudFile("singleCloudFile2.bin");
 	//cloudWeatherSim::loadRenderSettingsFile("32Settings.bin");
 
 	while (!m_deviceObj->windowShouldClose())
 	{
+		m_deviceObj->renderInit();
 
+		cloudWeatherSim::update();
+		imguiUpdate();
 
-		m_deviceObj->render();
-
+		m_deviceObj->renderFinish();
 	}
 
 }
 
-void game::imguiInitTest()
+void game::imguiInit()
 {
     ImGuiContext* cont =  ImGui::CreateContext();
 	ImGui::SetCurrentContext(cont);
@@ -53,4 +57,18 @@ void game::imguiInitTest()
 
 	ImGuiIO& io = ImGui::GetIO();
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+}
+
+void game::imguiUpdate()
+{
+	ImGui_ImplOpenGL3_NewFrame();
+	ImGui_ImplGlfw_NewFrame();
+	ImGui::NewFrame();
+
+	ImGui::Begin("Game");
+	cloudWeatherSim::updateUIImGui();
+	ImGui::End();
+
+	ImGui::Render();
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }

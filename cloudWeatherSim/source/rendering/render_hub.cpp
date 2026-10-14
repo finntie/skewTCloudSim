@@ -40,7 +40,11 @@ cloudRenderer::~cloudRenderer()
 void cloudRenderer::init(unsigned int framebuffer, unsigned int colorbuffer) 
 { 
     // Initialize Cloud Rendering OpenGLxCUDA
-    m_cudaRenderObj->initOpenGLCUDAInterop(framebuffer, colorbuffer);
+    if (m_cudaRenderObj)
+    {
+        m_cudaRenderObj->initOpenGLCUDAInterop(framebuffer, colorbuffer);
+    }
+    else printf("CLOUDLIB WARNING: tried to initialize the frame and color buffer, but m_cudaRenderObj was not initialized yet, did you call initialize() before setting the buffers?\n");
 }
 
 void cloudRenderer::render(float dt)

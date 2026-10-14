@@ -10,11 +10,6 @@
 #include <cloudWeatherSim/cloud_weather_sim.hpp>
 
 
-#include <imgui/imgui.h>
-#include <imgui/implot.h>
-#include <imgui/imgui_impl_glfw.h>
-#include <imgui/imgui_impl_opengl3.h>
-
 // GLFW error callback
 void error_callback(int error, const char* description)
 {
@@ -65,9 +60,9 @@ device::~device()
 {
 	glfwTerminate();
 	glfwDestroyWindow(m_window);
-}	
+}
 
-void device::render()
+void device::renderInit()
 {
 	glfwGetFramebufferSize(m_window, &m_width, &m_height);
 
@@ -75,21 +70,11 @@ void device::render()
 
 	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
-
-	// GL render loop
-	cloudWeatherSim::update();
-	// Main game loop
-	ImGui_ImplOpenGL3_NewFrame();
-	ImGui_ImplGlfw_NewFrame();
-	ImGui::NewFrame();
-	ImGui::Begin("test");
-	ImGui::End();
-	ImGui::Render();
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-	
+}
 
 
+void device::renderFinish()
+{
 	glfwSwapBuffers(m_window);
 	glfwPollEvents();
 }

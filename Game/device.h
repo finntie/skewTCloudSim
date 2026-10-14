@@ -10,8 +10,8 @@ public:
 	device();
 	~device();
 
-
-	void render();
+	void renderInit();
+	void renderFinish();
 
 	bool windowShouldClose();
 

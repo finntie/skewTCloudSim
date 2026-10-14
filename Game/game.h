@@ -11,7 +11,9 @@ public:
 	
 	void core();
 
-	void imguiInitTest();
+	void imguiInit();
+
+	void imguiUpdate();
 
 	device& getDevice() { return *m_deviceObj; }
 

@@ -46,7 +46,7 @@ enum class gameStates
 class cloudMenu
 {
 public:
-    cloudMenu(simulationHub* simHubObj, cloudRenderer* renderHubObj);
+    cloudMenu(simulationHub* simHubObj, cloudRenderer* renderHubObj, bool customStyle = false);
 
     ~cloudMenu();
 
@@ -56,17 +56,10 @@ public:
     // Getters
     bool getIsPanelSelected() { return m_panelSelected; }
 
-    // We need to handle ImGui callbacks ourself due to possibly having multiple contexts
-    void callbackImGuiCursorPos(GLFWwindow* win, double xpos, double ypos);
-    void callbackImGuiScroll(GLFWwindow* win, double xoffset, double yoffset);
-    void callbackImGuiKey(GLFWwindow* win, int key, int scan, int action, int mods);
-    void callbackImGuiChar(GLFWwindow* win, unsigned int codepoint);
-    void callbackImGuiMouseButton(GLFWwindow* win, int button, int action, int mods);
-
 
 private:
 
-    bool initializeImGui();
+    void initializeImGuiStyle();
 
     void otherMenus(const bool initState, bool& setInitState);
 
@@ -86,7 +79,6 @@ private:
     bool m_gameInitStateChange = true; // When state changes goes to true, calling initial values, after one pass will be false
 
     // ImGui 
-    bool m_ImGuiInitialized{false};
     bool m_panelHovered{false};
     bool m_panelSelected{false};
     ImGuiContext* m_ImGuiContext{nullptr};

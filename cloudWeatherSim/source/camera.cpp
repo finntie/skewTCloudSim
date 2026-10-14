@@ -90,7 +90,7 @@ void cameraControl::initUserCamera(glm::mat4 projection)
     }
     else
     {
-        printf("CLOUDLIB MESSAGE: camera is set to not be updated by the user, yet initUserCamera is called, note cloudWeatherSim::init()");
+        printf("CLOUDLIB MESSAGE: camera is set to not be updated by the user, yet initUserCamera is called, note cloudWeatherSim::init()\n");
         return;
     }
 }
@@ -103,14 +103,14 @@ void cameraControl::updateCamera(glm::vec3 pos, glm::quat rotation)
     {
         if (m_cameraObj->m_cameraNear == 0.0f && m_cameraObj->m_cameraFar == 0)
         {
-            printf("CLOUDLIB MESSAGE: updateCamera() is called without near or far being set correctly, likely due to not having called initUserCamera() yet.");
+            printf("CLOUDLIB MESSAGE: updateCamera() is called without near or far being set correctly, likely due to not having called initUserCamera() yet.\n");
         }
         m_cameraObj->m_cameraPos = pos;
         m_cameraObj->m_cameraRotation = rotation;
     }
     else
     {
-        printf("CLOUDLIB MESSAGE: camera is set to not be updated by the user, yet updateCamera is called, note cloudWeatherSim::init()");
+        printf("CLOUDLIB MESSAGE: camera is set to not be updated by the user, yet updateCamera is called, note cloudWeatherSim::init()\n");
         return;
     }
 }
@@ -310,6 +310,6 @@ void cameraControl::checkWindowUpdate()
         // This could be a problem, since it seems like our callback has been overwritten
         printf("CLOUDLIB WARNING: Window size was not correctly updated, "
             "was cameraObj().initialize() called before own resize callback, "
-            "which may has overwritten this library's callback?");
+            "which may has overwritten this library's callback?\n");
     }
 }

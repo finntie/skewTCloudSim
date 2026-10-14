@@ -15,13 +15,10 @@ skewTer::skewTer()
 
 skewTer::~skewTer()
 {
-	delete[] m_skewT.temps;
-	delete[] m_skewT.dewPoints;
-	delete[] m_skewT.pressures;
-	if (skewTImage)
-	{
-		delete skewTImage;
-	}
+	if (m_skewT.temps) delete[] m_skewT.temps;
+	if (m_skewT.dewPoints) delete[] m_skewT.dewPoints;
+	if (m_skewT.pressures) delete[] m_skewT.pressures;
+	if (skewTImage) delete skewTImage;
 }
 
 void skewTer::setSkewT(skewTInfo skewT)

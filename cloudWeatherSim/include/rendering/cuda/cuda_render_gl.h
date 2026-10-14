@@ -136,7 +136,7 @@ public:
     /// Maps OpenGL buffers to CUDA and renders clouds/atmosphere with respect to the depth.
     /// <para> Depth frameBuffer will be rendered to a depth texture before it is able to be used by CUDA. </para>
     /// </summary>
-    /// <param name="finalFrameBuffer">OpenGL FrameBuffer used for final draw pass, will be used for the post cloud renderer.</param>
+    /// <param name="finalFrameBuffer">OpenGL 2D image texture containing the final result.</param>
     /// <returns></returns>
     unsigned int postRenderClouds();
 
@@ -184,6 +184,11 @@ public:
     void updateCameraSettings(glm::mat4& view, float camNear, float camFar);
 
     void updateOnlyBuffers(unsigned int framebuffer, unsigned int colorbuffer);
+
+    // We possibly want to turn off drawing the final result and let the user handle it
+    void setDrawFinalResult(bool drawResult) { m_drawFinalResult = drawResult; }
+
+    unsigned int getFinalTexture() { return m_finalTexture; }
 
 private:
     void initGL(int width, int height);
@@ -271,6 +276,7 @@ private:
     bool m_initializeAgain{false}; // If unable to initialize due to no screen sizes being set
 
     bool m_allResourcesRender{false};
+    bool m_drawFinalResult{true};
 
     dim3* m_gridDim{};
     dim3* m_blockDim{};

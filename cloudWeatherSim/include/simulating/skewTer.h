@@ -35,9 +35,9 @@ public:
 			std::memcpy(dewPoints, D, size * sizeof(float));
 			std::memcpy(pressures, Ps, size * sizeof(float));
 		}
-		float* temps;
-		float* dewPoints; //TODO: this data may get deleted due to it being a normal pointer
-		float* pressures;
+		float* temps{ nullptr };
+		float* dewPoints{ nullptr }; //TODO: this data may get deleted due to it being a normal pointer
+		float* pressures{ nullptr };
 		int size = 0;
 		int heightPos = 0;
 

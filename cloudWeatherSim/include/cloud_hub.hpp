@@ -21,7 +21,7 @@ public:
     /// Needs openGL context to be created.
     /// Don't forget to call destruct after finishing with the library
     /// </summary>
-    void initialize();
+    void initialize(bool customImGuiStyle);
 
     /// <summary>
     /// Destructs the library.

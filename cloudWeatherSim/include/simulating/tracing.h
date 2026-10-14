@@ -25,7 +25,7 @@ public:
 
 private:
 
-	bool* gridVoxels;
+	bool* gridVoxels{ nullptr };
 	glm::vec3 gridMin{};
 	glm::vec3 gridMax{};
 
