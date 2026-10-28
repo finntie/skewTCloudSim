@@ -1,6 +1,6 @@
 #include "simulating/readTable.h"
 
-#include "math/meteoconstants.cuh"
+#include "meteoconstants.hpp"
 #include "math/meteoformulas.cuh"
 
 #include "cloud_hub.hpp"
@@ -10,7 +10,7 @@
 #include "rendering/colors.hpp"
 
 #include "simulating/simulation_hub.hpp"
-#include "simulating/cuda/environment.cuh"
+#include "simulating/environment.cuh"
 
 #include "utils.cuh"
 
@@ -86,11 +86,11 @@ void readTable::initEnvironment()
 		int Pidx = idx == 0 ? 0 : idx - 1;
 		int Pi = i == 0 ? 0 : i - 1;
 		// Sin for X and cos for Y to get previous and current values
-		const float partPI = ConstantsCPU::PI / 180.0f;
-		float velFieldValueX = std::sinf((skewTData.data.windDir[idx] - 180.0f) * partPI) * skewTData.data.windSpeed[idx];
-		const float prevVelFieldValueX = std::sinf((skewTData.data.windDir[Pidx] - 180.0f) * partPI) * skewTData.data.windSpeed[Pidx];
-		float velFieldValueZ = std::cosf((skewTData.data.windDir[idx] - 180.0f) * partPI) * skewTData.data.windSpeed[idx];
-		const float prevVelFieldValueZ = std::cosf((skewTData.data.windDir[Pidx] - 180.0f) * partPI) * skewTData.data.windSpeed[Pidx];
+		const float partPI = Constants::PI / 180.0f;
+		float velFieldValueX = std::sin((skewTData.data.windDir[idx] - 180.0f) * partPI) * skewTData.data.windSpeed[idx];
+		const float prevVelFieldValueX = std::sin((skewTData.data.windDir[Pidx] - 180.0f) * partPI) * skewTData.data.windSpeed[Pidx];
+		float velFieldValueZ = std::cos((skewTData.data.windDir[idx] - 180.0f) * partPI) * skewTData.data.windSpeed[idx];
+		const float prevVelFieldValueZ = std::cos((skewTData.data.windDir[Pidx] - 180.0f) * partPI) * skewTData.data.windSpeed[Pidx];
 		// Now lerp
 		velFieldValueX = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, prevVelFieldValueX, velFieldValueX);
 		velFieldValueZ = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, prevVelFieldValueZ, velFieldValueZ);

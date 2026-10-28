@@ -1,7 +1,7 @@
 #include "simulating/skewTMaker.h"
 
 #include "math/meteoformulas.cuh"
-#include "math/meteoconstants.cuh"
+#include "meteoconstants.hpp"
 
 #include "cloud_hub.hpp"
 #include "new_input.hpp"
@@ -15,7 +15,7 @@
 #include "rendering/shapes_gl.hpp"
 #include "rendering/colors.hpp"
 
-#include "math/geometry.hpp"
+#include "geometry.hpp"
 #include "math/simplemath.hpp"
 
 #include <imgui/imgui.h>
@@ -1326,7 +1326,7 @@ void skewTMaker::confirmSkewT()
     {
         altitude.push_back(MForms::getStandardHeightAtPressure(temps[0], pressure[i], 1000));
         // Change windDir to single float
-        windDirFloat.push_back(atan2(windDir[i].x, windDir[i].y) * (180 / ConstantsCPU::PI) + 180.0f);
+        windDirFloat.push_back(atan2(windDir[i].x, windDir[i].y) * (180 / Constants::PI) + 180.0f);
         windSpeed[i] *= 0.51444f;  // Knots to m/s
     }
 

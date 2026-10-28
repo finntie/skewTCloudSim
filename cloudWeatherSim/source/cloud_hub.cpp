@@ -6,13 +6,14 @@
 #include "new_input.hpp"                    // Handling Input
 #include "camera.hpp"                       // Handling the Camera
 
+#include "simulating/environment.cuh"
+#include "rendering/render_hub.hpp"
+#include "rendering/cuda_render_gl.hpp"
+
 #include <chrono>
 #include <iostream>
 #include <mutex>
 
-// Global mutex to lock parts of code for threading
-// Recursive mutex for possible multiple locks
-std::recursive_mutex mtx;
 
 // Global variable for the cloud simulation
 cloudHub CloudHub;
@@ -59,6 +60,9 @@ void cloudHub::updateMain(bool onlyView)
     // Simulate
     if (!onlyView) m_simulationHubObj->updateSimulation(dt);
 
+    // Update render data
+    copySimulateDataToRenderData();
+
     // Render
     m_cloudRenderObj->render(dt);
 
@@ -68,8 +72,12 @@ void cloudHub::updateMain(bool onlyView)
 	time = ctime;
 }
 
-
-
-void lockGlobal() { mtx.lock(); }
-
-void unlockGlobal() { mtx.unlock(); }
+void cloudHub::copySimulateDataToRenderData()
+{
+    if (m_simulationHubObj->getIsSimulationRunning())
+    {
+        // Get from the simulation thread and copy into the render
+        m_simulationHubObj->Environment().synchronizeSimStream(); // TODO: likely have to work with events to fix issues, maybe even let the environment copy data into another buffer that we read
+        m_cloudRenderObj->cudaRendererObj().setDataEnvironment(m_simulationHubObj->Environment().getRenderData(), true);
+    }
+}

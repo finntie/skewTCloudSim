@@ -1,7 +1,6 @@
 #include "rendering/helper_open_gl.hpp"
 
-#include "rendering/new_open_gl.hpp"
-
+#include "new_open_gl.hpp"
 
 #include <fstream>
 #include <sstream>

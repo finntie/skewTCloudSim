@@ -4,7 +4,7 @@
 #include "rendering/colors.hpp"
 
 #include "math/meteoformulas.cuh"
-#include "math/meteoconstants.cuh"
+#include "meteoconstants.hpp"
 
 #include <memory>
 

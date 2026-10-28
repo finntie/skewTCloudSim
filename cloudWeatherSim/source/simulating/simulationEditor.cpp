@@ -9,18 +9,18 @@
 #include "simulating/simulation_hub.hpp"
 #include "simulating/skewTer.h"
 #include "simulating/tracing.h"
-#include "simulating/cuda/environment.cuh"
-#include "simulating/cuda/dataClass.cuh"
+#include "simulating/environment.cuh"
+#include "simulating/dataClass.hpp"
 
 #include "rendering/draw_image.hpp"
 #include "camera.hpp"
 #include "rendering/colors.hpp"
 #include "rendering/render_hub.hpp"
 #include "rendering/shapes_gl.hpp"
-#include "rendering/cuda/cloudFile.cuh"
+#include "rendering/cloudFile.cuh"
 
 #include "math/meteoformulas.cuh"
-#include "math/geometry.hpp"
+#include "geometry.hpp"
 
 #include <imgui/imgui.h>
 #include <imgui/ImGuizmo.h>
@@ -380,6 +380,16 @@ void simulationEditor::dataPanel(bool simActive)
     ImGui::End();
 }
 
+bool simulationEditor::getDataClassActive()
+{
+    return m_dataClassObj->microPhysCheckActive;
+}
+
+void simulationEditor::setDataClassData(microPhysEnvValuesSingle& singleParams)
+{
+    m_dataClassObj->setMicroPhysicsData(singleParams);
+}
+
 void simulationEditor::viewParamValuesPanel() 
 {
     int x = m_mousePointingPos.x;
@@ -388,13 +398,13 @@ void simulationEditor::viewParamValuesPanel()
     const int Gidx = x + z * GRIDSIZESKYX;
 
     ImGui::Indent();
-    ImGui::Text(std::string("X: " + std::to_string(x) + ", Y: " + std::to_string(y) + ", Z: " + std::to_string(z)).c_str());
-    ImGui::Text(std::string("Meters Per Voxel: " + std::to_string(VOXELSIZE)).c_str());
+    ImGui::Text("%s", std::string("X: " + std::to_string(x) + ", Y: " + std::to_string(y) + ", Z: " + std::to_string(z)).c_str());
+    ImGui::Text("%s", std::string("Meters Per Voxel: " + std::to_string(VOXELSIZE)).c_str());
     ImGui::Text(
         "--Sky--\nPot Temp: \nQv: \nQw: \nQc: \nQr: \nQs: \nQi: \nWind: \nPressure: \nDebug1: \nDebug2: \nDebug3: "
         "\n--Ground--\nTemp: \nWater: \nQr: \nQs: \nQi: ");
     ImGui::SameLine();
-    ImGui::Text(("\n" +
+    ImGui::Text("%s", ("\n" +
                  std::to_string(m_envEditData->m_envView.potTemp[m_mousePointingIndex] - 273.15) + "\n" +
                  std::to_string(m_envEditData->m_envView.Qv[m_mousePointingIndex]) + "\n" +
                  std::to_string(m_envEditData->m_envView.Qw[m_mousePointingIndex]) + "\n" +
@@ -538,7 +548,7 @@ void simulationEditor::editParamsPanel()
 	if (ImGui::TreeNode("Environment"))
 	{
 
-		ImGui::Text(std::string("Currently Editing: " + std::to_string(m_editParamSky)).c_str());
+		ImGui::Text("%s", std::string("Currently Editing: " + std::to_string(m_editParamSky)).c_str());
 		ImGui::Text("Edit parameter of:");
 		if (ImGui::Button("Temp")) m_editParamSky = POTTEMP;		ImGui::SameLine();
 		if (ImGui::Button("Wind")) m_editParamSky = WINDX;		ImGui::SameLine();
@@ -649,16 +659,13 @@ void simulationEditor::setSkewTDataPanel()
 
 void simulationEditor::dataViewPanel(bool simActive) 
 {
-    if (m_dataClassObj->microPhysCheckActive)
-    {
-        CloudHub.CloudSim().Environment().retrieveMicroPhysResults(*m_dataClassObj);
-    }
+    // Data is set already
+
     m_dataClassObj->drawMicroPhysGraph(simActive);
 
     if (ImGui::Button("Reset"))
     {
         m_dataClassObj->cancelMicroPhysCheckRegion();
-        CloudHub.CloudSim().Environment().setMicroPhysDataValues({-1, -1, -1}, {-1, -1, -1}, false);
     }
 }
 
@@ -797,7 +804,7 @@ int simulationEditor::chooseDateDay()
 
 			for (int i = 1; i < daysInMonth + 1; i++)
 			{
-				char label[8];
+				char label[16];
 				std::snprintf(label, sizeof(label), "%i", i);
 				if (ImGui::Button(label, buttonSize))
 				{
@@ -990,16 +997,8 @@ void simulationEditor::GPUSetEnv(bool setIsentropics)
     CloudHub.CloudSim().Environment().setHostSettingsData(passedTime, m_day, m_sunStrength, m_longitude, m_pauseDiurnal);
     m_time = passedTime;
     m_timeChanged = false;
-
+    
     unlockGlobal();
-
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess)
-    {
-        std::cerr << "error: " << cudaGetErrorString(err) << std::endl;
-        __debugbreak();
-    }
-
 }
 
 void simulationEditor::viewBrush() 

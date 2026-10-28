@@ -370,7 +370,7 @@ int mz_deflateReset(mz_streamp pStream);
 
 // mz_deflate() compresses the input to output, consuming as much of the input and producing as much output as possible.
 // Parameters:
-//   pStream is the stream to read from and write to. You must initialize/updateInput the next_in, avail_in, next_out, and avail_out members.
+//   pStream is the stream to read from and write to. You must initialize/update the next_in, avail_in, next_out, and avail_out members.
 //   flush may be MZ_NO_FLUSH, MZ_PARTIAL_FLUSH/MZ_SYNC_FLUSH, MZ_FULL_FLUSH, or MZ_FINISH.
 // Return values:
 //   MZ_OK on success (when flushing, or if more input is needed but not available, and/or there's more output to be written but the output buffer is full).
@@ -406,7 +406,7 @@ int mz_inflateInit2(mz_streamp pStream, int window_bits);
 
 // Decompresses the input stream to the output, consuming only as much of the input as needed, and writing as much to the output as possible.
 // Parameters:
-//   pStream is the stream to read from and write to. You must initialize/updateInput the next_in, avail_in, next_out, and avail_out members.
+//   pStream is the stream to read from and write to. You must initialize/update the next_in, avail_in, next_out, and avail_out members.
 //   flush may be MZ_NO_FLUSH, MZ_SYNC_FLUSH, or MZ_FINISH.
 //   On the first call, if flush is MZ_FINISH it's assumed the input and output buffers are both sized large enough to decompress the entire stream in a single call (this is slightly faster).
 //   MZ_FINISH implies that there are no more source bytes available beside what's already in the input buffer, and that the output buffer is large enough to hold the rest of the decompressed data.
@@ -5103,7 +5103,7 @@ tm safe_localtime(const time_t &t)
 #endif
 }
 
-std::size_t write_callback(void *opaque, std::uint64_t file_ofs, const void *pBuf, std::size_t n)
+std::size_t write_callback(void *opaque, mz_uint64 file_ofs, const void *pBuf, std::size_t n)
 {
     auto buffer = static_cast<std::vector<char> *>(opaque);
     
@@ -5570,7 +5570,7 @@ private:
             case MZ_ZIP_MODE_READING:
             {
                 mz_zip_archive archive_copy;
-            std::memset(&archive_copy, 0, sizeof(mz_zip_archive));
+                memset(&archive_copy, 0, sizeof(mz_zip_archive));
                 std::vector<char> buffer_copy(buffer_.begin(), buffer_.end());
                 
                 if(!mz_zip_reader_init_mem(&archive_copy, buffer_copy.data(), buffer_copy.size(), 0))
@@ -5676,7 +5676,7 @@ private:
 
         zip_info result;
 
-        result.filename = std::string(stat.m_filename, stat.m_filename + std::strlen(stat.m_filename));
+        result.filename = std::string(stat.m_filename, stat.m_filename + strlen(stat.m_filename));
         result.comment = std::string(stat.m_comment, stat.m_comment + stat.m_comment_size);
         result.compress_size = static_cast<std::size_t>(stat.m_comp_size);
         result.file_size = static_cast<std::size_t>(stat.m_uncomp_size);

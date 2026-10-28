@@ -18,8 +18,6 @@ public:
 	simulationHub();
     ~simulationHub();
 
-    void shutDown();
-
     void updateSimulation(float dt);
 
 	// ImGui Handler
@@ -33,10 +31,13 @@ public:
     environmentGPU& Environment() { return *m_environmentObj; }
     simulationEditor& SimEditor() { return *m_simulationEditObj; }
 
+    bool getIsSimulationRunning() { return m_running; }
+
 private:
 
     void setSimulation();
     bool chooseObservedSounding(bool init);
+    void handleDataClass();
 
 	readTable* m_readTableObj{nullptr};
     skewTMaker* m_skewTMakerObj{nullptr};

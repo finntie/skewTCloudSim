@@ -1,6 +1,6 @@
 #include "rendering/draw_image.hpp"
 
-#include "rendering/new_open_gl.hpp"
+#include "new_open_gl.hpp"
 #include "rendering/helper_open_gl.hpp"
 
 #include <glm/glm.hpp>

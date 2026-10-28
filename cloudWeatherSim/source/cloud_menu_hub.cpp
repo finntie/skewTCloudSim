@@ -1,5 +1,9 @@
 #include "cloud_menu_hub.hpp"
 
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS// No strcpy warning
+#endif
+
 #include "cloud_hub.hpp"
 #include "new_input.hpp"
 #include "camera.hpp"
@@ -16,8 +20,9 @@
 #include <imgui/imgui_impl_opengl3.h>
 #include <imgui/IconsFontAwesome.h>
 
-#include <string>
 
+
+#include <string>
 
 #include <filesystem>
 
@@ -60,7 +65,7 @@ void cloudMenu::initializeImGuiStyle()
     std::string filePath = "assets/ImGui/ImGui.ini";
     const char* constStr = filePath.c_str();
     char* str = new char[filePath.size() + 1];
-    strcpy_s(str, filePath.size() + 1, constStr);
+    strcpy(str, constStr);
     io.IniFilename = str;
 
     const float fontSize = 14.0f;

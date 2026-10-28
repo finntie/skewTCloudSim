@@ -1,7 +1,7 @@
 #include "simulating/tracing.h"
 
 #include "utils.cuh"
-#include "math/geometry.hpp"
+#include "geometry.hpp"
 #include "cloud_hub.hpp"
 #include "new_input.hpp"
 #include "camera.hpp"

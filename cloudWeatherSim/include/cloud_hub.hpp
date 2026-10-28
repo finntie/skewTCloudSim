@@ -35,6 +35,9 @@ public:
     /// <param name="onlyView">Only view active, no UI or simulating</param>
     void updateMain(bool onlyView = false);
 
+
+    void copySimulateDataToRenderData();
+
 	cloudRenderer& CloudRender() { return *m_cloudRenderObj; }
     simulationHub& CloudSim() { return *m_simulationHubObj; }
     newInput& InputObj() { return *m_inputObj; }
@@ -52,6 +55,3 @@ private:
 };
 
 extern cloudHub CloudHub;
-
-void lockGlobal();
-void unlockGlobal();

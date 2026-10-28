@@ -6,6 +6,8 @@ project(cloudWeatherSim LANGUAGES CXX CUDA)
 # Add 'd' suffix to the end of the debug configurations, so both libs can live in the same folder
 set(CMAKE_DEBUG_POSTFIX d)
 
+
+
 # Create static library, including all source files manually
 add_library(cloudWeatherSim STATIC 
     source/math/cudaMath.cu
@@ -45,6 +47,8 @@ FetchContent_Declare(glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG 3.4
 )
+
+set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

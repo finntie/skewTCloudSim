@@ -1,6 +1,6 @@
 #include "rendering/shapes_gl.hpp"
 
-#include "rendering/new_open_gl.hpp"
+#include "new_open_gl.hpp"
 #include "rendering/helper_open_gl.hpp"
 
 #include <glm/gtc/constants.hpp>
@@ -144,7 +144,7 @@ bool shapesGL::AddTriangle(const glm::vec3& first, const glm::vec3& second, cons
 
 void shapesGL::AddCircle(const glm::vec3& center, float radius, const glm::vec3& normal, const glm::vec4& color)
 {
-    constexpr float dt = glm::two_pi<float>() / 32.0f;
+    const float dt = glm::two_pi<float>() / 32.0f;
     float t = 0.0f;
 
     const auto& rotation = glm::rotation(glm::vec3(0, 0, 1), normal);
@@ -211,7 +211,7 @@ void shapesGL::AddRectangle(const glm::vec3& from, const glm::vec3& to, const gl
 
 void shapesGL::AddCylinder(const glm::vec3& center1, const glm::vec3& center2, float radius, const glm::vec4& color)
 {
-    constexpr float dt = glm::two_pi<float>() / 16.0f;
+    const float dt = glm::two_pi<float>() / 16.0f;
     float t = 0.0f;
 
     const auto& diff = center2 - center1;

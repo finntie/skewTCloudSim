@@ -1,0 +1,90 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{6667347f-ab1d-48e4-9f95-89e8f0ad77ee}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;def;odl;idl;hpj;bat;asm;asmx;hip;cu</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{f0057306-a13a-4961-8830-01c42af36da4}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd;cuh</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{b810f28b-1c7a-4564-bf5d-9521dfe6b0b0}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="source\rendering\cloudFile.cu">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\math\cudaMath.cu">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\rendering\cuda_render.cu">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\rendering\cuda_render_gl.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\rendering\LUTS.cu">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\rendering\texture_noise.cu">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\simulating\environment.cu">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\simulating\kernelSky.cu">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\simulating\microPhysics.cu">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\utils.cu">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\math\cudaMath.cuh">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\math\meteoformulas.cuh">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rendering\cloudFile.cuh">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rendering\cuda_render.cuh">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rendering\cuda_render_gl.hpp">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rendering\LUTS.cuh">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rendering\texture_noise.cuh">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\simulating\environment.cuh">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\simulating\kernelSky.cuh">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\simulating\microPhysics.cuh">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\utils.cuh">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\gpu_defines.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\msvc_defines.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

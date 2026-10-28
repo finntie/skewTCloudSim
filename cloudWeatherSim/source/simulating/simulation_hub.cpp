@@ -3,8 +3,9 @@
 #include "simulating/readTable.h"
 #include "simulating/skewTMaker.h"
 #include "simulating/skewTFile.h"
-#include "simulating/cuda/environment.cuh"
+#include "simulating/environment.cuh"
 #include "simulating/simulationEditor.hpp"
+
 
 #include "cloud_hub.hpp"
 #include "cloud_menu_hub.hpp"
@@ -242,7 +243,11 @@ void simulationHub::simulationMainPanel()
     if (m_editing) m_simulationEditObj->editPanel();
     m_simulationEditObj->viewPanel();
     if (m_skewT) m_simulationEditObj->skewTPanel();
-    if (dataViewer) m_simulationEditObj->dataPanel(m_simulationActive);
+    if (dataViewer)
+    {
+        handleDataClass();
+        m_simulationEditObj->dataPanel(m_simulationActive);
+    }
 }
 
 void simulationHub::setSimulation()
@@ -399,14 +404,33 @@ bool simulationHub::chooseObservedSounding(bool init)
                     }
                 }
                 ImGui::TableNextColumn();
-                ImGui::Text(file.country.c_str());
+                ImGui::Text("%s", file.country.c_str());
                 ImGui::TableNextColumn();
-                ImGui::Text(file.station.c_str());
+                ImGui::Text("%s", file.station.c_str());
                 ImGui::TableNextColumn();
-                ImGui::Text(date.c_str());
+                ImGui::Text("%s", date.c_str());
             }
         }
         ImGui::EndTable();
     }
     return confirmed;
+}
+
+void simulationHub::handleDataClass()
+{
+    // Reset only 1 time if not active anymore
+    static bool reset = false;
+
+    if (m_simulationEditObj->getDataClassActive())
+    {
+        microPhysEnvValuesSingle singleParams;
+        m_environmentObj->retrieveMicroPhysResults(singleParams);
+        m_simulationEditObj->setDataClassData(singleParams);
+        reset = true;
+    }
+    else if (reset)
+    {
+        reset = false;
+        m_environmentObj->setMicroPhysDataValues({ -1, -1, -1 }, { -1, -1, -1 }, false);
+    }
 }

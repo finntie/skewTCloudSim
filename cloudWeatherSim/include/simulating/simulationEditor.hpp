@@ -1,6 +1,6 @@
 #pragma once
-#include "config.h"
-#include "simulating/environment.hpp"
+#include "config.hpp"
+#include "environment.hpp"
 
 #include <glm/glm.hpp>
 
@@ -9,7 +9,6 @@ class colorScheme;
 class dataClass;
 class tracing;
 struct envDebugData;
-
 
 class simulationEditor
 {
@@ -34,6 +33,10 @@ public:
     void editPanel();
     void skewTPanel();
     void dataPanel(bool simActive);
+
+    // Set and Get
+    bool getDataClassActive();
+    void setDataClassData(microPhysEnvValuesSingle& singleParams);
 
 private:
 

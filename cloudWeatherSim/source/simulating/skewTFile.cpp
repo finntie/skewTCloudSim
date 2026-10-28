@@ -6,7 +6,7 @@
 #include "simulating/simulation_hub.hpp"
 #include "simulating/readTable.h"
 #include "simulating/skewTMaker.h"
-#include "math/meteoconstants.cuh"
+#include "meteoconstants.hpp"
 
 #include <filesystem>
 
@@ -575,8 +575,8 @@ void skewTFile::degreeToDir(std::vector<float>& degreeRotation, std::vector<glm:
 	for (int i = 0; i < int(degreeRotation.size()); i++)
 	{
 		const float dir = degreeRotation[i] + 1e-16f;
-		float velFieldValueX = std::sinf((dir - 180.0f) * (ConstantsCPU::PI / 180.0f)) * dir;
-		float velFieldValueZ = std::cosf((dir - 180.0f) * (ConstantsCPU::PI / 180.0f)) * dir;
+		float velFieldValueX = std::sin((dir - 180.0f) * (Constants::PI / 180.0f)) * dir;
+		float velFieldValueZ = std::cos((dir - 180.0f) * (Constants::PI / 180.0f)) * dir;
 		dirRotation[i] = glm::normalize(glm::vec2(velFieldValueX, velFieldValueZ));
 	}
 }

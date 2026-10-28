@@ -3,16 +3,16 @@
 #include "cloud_hub.hpp"
 #include "camera.hpp"
 
-#include "rendering/new_open_gl.hpp"
+#include "new_open_gl.hpp"
 #include "rendering/shapes_gl.hpp"
 #include "rendering/helper_open_gl.hpp"
 #include "rendering/draw_image.hpp"
-#include "rendering/cuda/cuda_render_gl.h"
-#include "rendering/cuda/cuda_render.cuh"
-#include "rendering/cuda/cloudFile.cuh"
+#include "rendering/cuda_render_gl.hpp"
+#include "rendering/cloudFile.cuh"
+#include "rendering/cloudFile_hub.hpp"
 
 #include "cloud_menu_hub.hpp"
-#include "config.h"
+#include "config.hpp"
 #include "utils.cuh"
 #include "new_input.hpp"
 
@@ -26,12 +26,14 @@ cloudRenderer::cloudRenderer()
 	m_shapesObj = new shapesGL();
 	m_cudaRenderObj = new CudaRender();
 	m_cloudFileObj = new cloudFile();
+	m_cloudFileHubObj = new cloudFileHub(m_cloudFileObj);
 }
 
 cloudRenderer::~cloudRenderer() 
 {
     m_cudaRenderObj->cleanUp();
 
+    delete m_cloudFileHubObj;
     delete m_cloudFileObj;
     delete m_cudaRenderObj;
 	delete m_shapesObj;
@@ -42,7 +44,7 @@ void cloudRenderer::init(unsigned int framebuffer, unsigned int colorbuffer)
     // Initialize Cloud Rendering OpenGLxCUDA
     if (m_cudaRenderObj)
     {
-        m_cudaRenderObj->initOpenGLCUDAInterop(framebuffer, colorbuffer);
+        m_cudaRenderObj->initOpenGLCUDAInterop(framebuffer, colorbuffer, CloudHub.CameraObj().getScrWidth(), CloudHub.CameraObj().getScrHeight());
     }
     else printf("CLOUDLIB WARNING: tried to initialize the frame and color buffer, but m_cudaRenderObj was not initialized yet, did you call initialize() before setting the buffers?\n");
 }
@@ -52,7 +54,7 @@ void cloudRenderer::render(float dt)
     // Update viewer
     gridDataSkyGPU* data = nullptr;
     bool updateSDF = m_cloudFileObj->updateViewing(data, dt);
-    if (data) m_cudaRenderObj->setDataEnvironment(data->Qw, data->Qc, data->Qr, data->Qs, data->Qi, data->velfieldX, data->velfieldY, data->velfieldZ, updateSDF, getStream());
+    if (data) m_cudaRenderObj->setDataEnvironment(*data, updateSDF);
     
     // Call CUDA rendering
     m_cudaRenderObj->updateCameraSettings(CloudHub.CameraObj().getCamView(),
@@ -60,7 +62,7 @@ void cloudRenderer::render(float dt)
                                           CloudHub.CameraObj().getCamFar());
 
     // Actually do the rendering
-    m_cudaRenderObj->postRenderClouds();
+    m_cudaRenderObj->postRenderClouds(CloudHub.CameraObj().getScrWidth(), CloudHub.CameraObj().getScrHeight());
 
     // Draw (Debug) lines and shapes
     m_shapesObj->render(CloudHub.CameraObj().getCamView(), CloudHub.CameraObj().getCamProjection());
@@ -106,15 +108,13 @@ void cloudRenderer::renderPanel(gameStates& currentState, const bool initState, 
         if (initState)
         {
             // Initialize grid for rendering
-            dim3 blockDim, gridDim;
-            getGridBlockDims(gridDim, blockDim);
-            m_cudaRenderObj->initEnvironmentData(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ, VOXELSIZE, gridDim, blockDim);
+            m_cudaRenderObj->initEnvironmentData(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ, VOXELSIZE);
         }
         renderSettingsPanel();
 
         ImGui::End();
 
-        m_cloudFileObj->panel();
+        m_cloudFileHubObj->saveCloudFilePanel();
 
         break;
     case gameStates::VIEW_SIMULATION:
@@ -176,7 +176,7 @@ void cloudRenderer::renderSettingsPanel()
 
             ImGui::TreePop();
         }
-        m_cloudFileObj->saveRenderSettingsPanel(settings);
+        m_cloudFileHubObj->saveRenderSettingsPanel(settings);
 
         // Only updateInput when changed
         if (changed || textureChanged)
@@ -190,86 +190,13 @@ void cloudRenderer::renderSettingsPanel()
 
 void cloudRenderer::cloudViewMenu() 
 {
-
-    // Variables
-    static bool lerping = true;
-
-    // Menu for the cloud viewer
-    if (ImGui::Button(ICON_FA_PLAY))
+    if (m_cloudFileHubObj->cloudViewMenuPanel())
     {
-        m_cloudFileObj->m_cloudViewActive = true;
+        // Actually updateInput the visibility, but don't updateInput time (passing 0 for dt)
+        gridDataSkyGPU* data = nullptr;
+        m_cloudFileObj->updateViewing(data, 0.0f, true);
+        if (data) m_cudaRenderObj->setDataEnvironment(*data, true);
     }
-    ImGui::SameLine();
-    if (ImGui::Button(ICON_FA_STOP))
-    {
-        m_cloudFileObj->m_cloudViewActive = false;
-    }
-
-    // Step forwards and step backwards
-    if (ImGui::Button(ICON_FA_ARROW_LEFT) || CloudHub.InputObj().keyDown(newInput::LEFT_ARROW))
-    {
-        m_cloudFileObj->m_cloudViewStepOnce = -1;
-    }
-    ImGui::SameLine();
-
-    if (ImGui::Button(ICON_FA_ARROW_RIGHT) || CloudHub.InputObj().keyDown(newInput::RIGHT_ARROW))
-    {
-        m_cloudFileObj->m_cloudViewStepOnce = 1;
-    }
-
-    float firstTime = m_cloudFileObj->getFirstFrameTime();
-    float lastTime = m_cloudFileObj->getLastFrameTime();
-    static float slideTimeInput = 0.0f;
-    slideTimeInput = m_cloudFileObj->m_time - firstTime;
-    if (ImGui::SliderFloat("Time", &slideTimeInput, 0.0f, lastTime - firstTime))
-    {
-        m_cloudFileObj->m_time = slideTimeInput + firstTime;
-    }
-
-    ImGui::Dummy(ImVec2(30, 30));
-
-    // Calculate the current time of day from seconds
-    const int hours = int(std::floor(m_cloudFileObj->m_time / (60.0f * 60.0f)));
-    const int minutes = int(std::floor(m_cloudFileObj->m_time / 60.0f - (hours * 60.0f)));
-    const int seconds = int(std::floor(m_cloudFileObj->m_time - (hours * 60.0f * 60.0f) - (minutes * 60.0f)));
-    std::string time = std::to_string(hours) + ":" + std::to_string(minutes) + ":" + std::to_string(seconds);
-    ImGui::Text("Time of day: %s", time.c_str());
-
-    ImGui::Text("Speed Multiplier");
-    ImGui::SliderFloat("##SpeedMult", &m_cloudFileObj->m_cloudViewSpeedMult, 1.0f, 10000.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-
-    ImGui::Checkbox("Enable Lerping Frames", &lerping);
-    ImGui::SetItemTooltip("Disabling lerping will snap simulaion to the nearest captured frame");
-
-    // Type selection
-    ImGui::BeginGroup();
-    if (ImGui::TreeNode("Show Type"))
-    {
-        ImGui::Dummy(ImVec2(10, 10));
-        ImGui::Separator();
-
-        // If changed, we have to updateInput the visibility
-        bool update{false};
-        if (coloredSelectable("Water Cloud", &m_cloudFileObj->m_visibleTypes[0])) update = true;
-        if (coloredSelectable("Ice Cloud", &m_cloudFileObj->m_visibleTypes[1])) update = true;
-        if (coloredSelectable("Rain", &m_cloudFileObj->m_visibleTypes[2])) update = true;
-        if (coloredSelectable("Snow", &m_cloudFileObj->m_visibleTypes[3])) update = true;
-        if (coloredSelectable("Hail", &m_cloudFileObj->m_visibleTypes[4])) update = true;
-        if (coloredSelectable("Water Vapor", &m_cloudFileObj->m_visibleTypes[5])) update = true;
-        if (coloredSelectable("Wind", &m_cloudFileObj->m_visibleTypes[6])) update = true;
-        if (update)
-        {
-            // Actually updateInput the visibility, but don't updateInput time (passing 0 for dt)
-            gridDataSkyGPU* data = nullptr;
-            m_cloudFileObj->updateViewing(data, 0.0f, true);
-            if (data) m_cudaRenderObj->setDataEnvironment(data->Qw, data->Qc, data->Qr, data->Qs, data->Qi, data->velfieldX, data->velfieldY, data->velfieldZ, true, getStream());
-        }
-
-        ImGui::Dummy(ImVec2(10, 10));
-        ImGui::TreePop();
-    }
-    ImGui::EndGroup();
-    ImGui::SetItemTooltip("Show or hide different types of choosing");
 }
 
 void cloudRenderer::loadFile(const char* cloudFile)
@@ -295,25 +222,14 @@ void cloudRenderer::loadFile(const char* cloudFile)
     // Now load the actual data
     m_cloudFileObj->loadCloudFile(cloudFile, false);
 
-    // Make every type visible and update by advancing 1 step
-    for (int i = 0; i < 7; i++)
-    {
-        m_cloudFileObj->m_visibleTypes[i] = true;
-    }
-    m_cloudFileObj->m_cloudViewStepOnce = 1;
 
-    // Get grid and blockdim from a cu file where we can check our specs
-    dim3 blockDim;
-    dim3 gridDim;
-    getGridBlockDims(gridDim, blockDim);
-
-    m_cloudFileObj->initGPUData(getStream());
+    m_cloudFileObj->initGPUData();
 
     // Set faster render speed
     m_cudaRenderObj->setOnlyRenderResource(true);
 
     // Load viewer
-    m_cudaRenderObj->initEnvironmentData(info.sizeX, info.sizeY, info.sizeZ, info.voxelSize, gridDim, blockDim);
+    m_cudaRenderObj->initEnvironmentData(info.sizeX, info.sizeY, info.sizeZ, info.voxelSize);
 
     // Set camera Position based on grid
     glm::vec3 pos = glm::vec3(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ) * VOXELSIZE;
@@ -409,17 +325,17 @@ void cloudRenderer::chooseSavedSimulationRun(gameStates& currentState)
                 }
             }
             ImGui::TableNextColumn();
-            if (info.loaded) ImGui::Text(std::to_string(info.sizeX).c_str());
+            if (info.loaded) ImGui::Text("%s", std::to_string(info.sizeX).c_str());
             ImGui::TableNextColumn();
-            if (info.loaded) ImGui::Text(std::to_string(info.sizeY).c_str());
+            if (info.loaded) ImGui::Text("%s", std::to_string(info.sizeY).c_str());
             ImGui::TableNextColumn();
-            if (info.loaded) ImGui::Text(std::to_string(info.sizeZ).c_str());
+            if (info.loaded) ImGui::Text("%s", std::to_string(info.sizeZ).c_str());
             ImGui::TableNextColumn();
-            if (info.loaded) ImGui::Text(std::to_string(info.voxelSize).c_str());
+            if (info.loaded) ImGui::Text("%s", std::to_string(info.voxelSize).c_str());
             ImGui::TableNextColumn();
-            if (info.loaded) ImGui::Text(std::to_string(info.totalFrames).c_str());
+            if (info.loaded) ImGui::Text("%s", std::to_string(info.totalFrames).c_str());
             ImGui::TableNextColumn();
-            if (info.loaded) ImGui::Text(info.types.c_str());
+            if (info.loaded) ImGui::Text("%s", info.types.c_str());
         }
 
         ImGui::EndTable();

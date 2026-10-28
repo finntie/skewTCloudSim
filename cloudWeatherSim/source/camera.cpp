@@ -4,7 +4,7 @@
 #include "new_input.hpp"
 #include "rendering/render_hub.hpp"
 
-#include "math/geometry.hpp"
+#include "geometry.hpp"
 
 #include <GLFW/glfw3.h>
 #include <iostream>
@@ -240,8 +240,8 @@ void cameraControl::controllingTheCamera(float dt)
             if (!yawPitchInits)
             {
                 // Use current rotation to set as save
-                SaveYaw = glm::yaw(getCamRot()) * (180 / 3.14159265);
-                SavePitch = glm::pitch(getCamRot()) * (180 / 3.14159265);
+                SaveYaw = glm::yaw(getCamRot()) * (180 / 3.14159265f);
+                SavePitch = glm::pitch(getCamRot()) * (180 / 3.14159265f);
                 yawPitchInits = true;
             }
 

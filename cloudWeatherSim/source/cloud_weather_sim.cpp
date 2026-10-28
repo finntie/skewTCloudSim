@@ -4,8 +4,7 @@
 #include <camera.hpp>
 #include <cloud_menu_hub.hpp>
 #include <rendering/render_hub.hpp>
-#include <rendering/render_hub.hpp>
-#include "rendering/cuda/cuda_render_gl.h"
+#include "rendering/cuda_render_gl.hpp"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>

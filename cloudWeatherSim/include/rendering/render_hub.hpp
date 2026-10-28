@@ -1,12 +1,14 @@
 #pragma once
 
 #include <glm/glm.hpp>
-#include <glm/gtx/quaternion.hpp>
+#include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 class CudaRender;
 class shapesGL;
 class cloudFile;
+class cloudFileHub;
 
 enum class gameStates;
 
@@ -21,6 +23,7 @@ public:
     shapesGL& shapesGLObj() { return *m_shapesObj; }
     CudaRender& cudaRendererObj() { return *m_cudaRenderObj; }
     cloudFile& CloudFile() { return *m_cloudFileObj; }
+    cloudFileHub& CloudFileHub() { return *m_cloudFileHubObj; }
 
     /// <summary>
     /// Initializes the cloud renderer with the correct buffers
@@ -72,7 +75,10 @@ public:
 private:
     void chooseSavedSimulationRun(gameStates& currentState);
 
+
     shapesGL* m_shapesObj{nullptr};
     CudaRender* m_cudaRenderObj{nullptr};
     cloudFile* m_cloudFileObj{nullptr};
+    cloudFileHub* m_cloudFileHubObj{nullptr};
+
 };

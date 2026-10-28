@@ -30,7 +30,7 @@ game::~game()
 
 void game::core()
 {
-	cloudWeatherSim::loadCloudFile("singleCloudFile2.bin");
+	//cloudWeatherSim::loadCloudFile("singleCloudFile2.bin");
 	//cloudWeatherSim::loadRenderSettingsFile("32Settings.bin");
 
 	while (!m_deviceObj->windowShouldClose())

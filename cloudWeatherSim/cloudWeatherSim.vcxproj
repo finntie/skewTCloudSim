@@ -42,19 +42,19 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.3.props" />
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.9.props" />
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
@@ -71,6 +71,14 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+    <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+    <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -112,7 +120,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions);DLLEXPORTS</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)include;$(SolutionDir)external/glad/include;$(SolutionDir)external;$(CUDA_PATH)\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(SolutionDir)external/glad/include;$(SolutionDir)shared;$(SolutionDir)external;$(CUDA_PATH)\include;$(SolutionDir)cloudWeatherSimCUDA/include</AdditionalIncludeDirectories>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <AdditionalOptions>/Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -155,7 +163,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions);DLLEXPORTS</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)include;$(SolutionDir)external/glad/include;$(SolutionDir)external;$(CUDA_PATH)\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(SolutionDir)external/glad/include;$(SolutionDir)shared;$(SolutionDir)external;$(CUDA_PATH)\include;$(SolutionDir)cloudWeatherSimCUDA/include</AdditionalIncludeDirectories>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <AdditionalOptions>/Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -203,15 +211,16 @@
     <ClCompile Include="source\camera.cpp" />
     <ClCompile Include="source\cloud_hub.cpp" />
     <ClCompile Include="source\cloud_menu_hub.cpp" />
-    <ClCompile Include="source\config.cpp" />
-    <ClCompile Include="source\math\geometry.cpp" />
+    <ClCompile Include="shared\config.cpp" />
+    <ClCompile Include="shared\geometry.cpp" />
     <ClCompile Include="source\new_input.cpp" />
+    <ClCompile Include="source\rendering\cloudFile_hub.cpp" />
     <ClCompile Include="source\rendering\colors.cpp" />
-    <ClCompile Include="source\rendering\cuda\cuda_render_gl.cpp" />
     <ClCompile Include="source\rendering\draw_image.cpp" />
     <ClCompile Include="source\rendering\helper_open_gl.cpp" />
     <ClCompile Include="source\rendering\render_hub.cpp" />
     <ClCompile Include="source\rendering\shapes_gl.cpp" />
+    <ClCompile Include="source\simulating\dataClass.cpp" />
     <ClCompile Include="source\simulating\readTable.cpp" />
     <ClCompile Include="source\simulating\simulationEditor.cpp" />
     <ClCompile Include="source\simulating\simulation_hub.cpp" />
@@ -226,29 +235,19 @@
     <ClInclude Include="include\cloud_hub.hpp" />
     <ClInclude Include="include\cloud_menu_hub.hpp" />
     <ClInclude Include="include\cloud_weather_sim.hpp" />
-    <ClInclude Include="include\config.h" />
+    <ClInclude Include="shared\config.hpp" />
     <ClInclude Include="include\external\zip_file.hpp" />
-    <CudaCompile Include="include\simulating\cuda\dataClass.cuh" />
-    <CudaCompile Include="include\simulating\cuda\environment.cuh" />
-    <CudaCompile Include="include\simulating\cuda\kernelSky.cuh" />
-    <CudaCompile Include="include\simulating\cuda\microPhysics.cuh" />
-    <CudaCompile Include="include\rendering\cuda\cloudFile.cuh" />
-    <CudaCompile Include="include\rendering\cuda\cuda_render.cuh" />
-    <CudaCompile Include="include\rendering\cuda\LUTs.cuh" />
-    <CudaCompile Include="include\rendering\cuda\texture_noise.cuh" />
-    <CudaCompile Include="include\math\cudaMath.cuh" />
-    <ClInclude Include="include\math\geometry.hpp" />
-    <CudaCompile Include="include\math\meteoformulas.cuh" />
+    <ClInclude Include="shared\geometry.hpp" />
     <ClInclude Include="include\math\simplemath.hpp" />
     <ClInclude Include="include\new_input.hpp" />
+    <ClInclude Include="include\rendering\cloudFile_hub.hpp" />
     <ClInclude Include="include\rendering\colors.hpp" />
-    <ClInclude Include="include\rendering\cuda\cuda_render_gl.h" />
     <ClInclude Include="include\rendering\draw_image.hpp" />
     <ClInclude Include="include\rendering\helper_open_gl.hpp" />
-    <ClInclude Include="include\rendering\new_open_gl.hpp" />
+    <ClInclude Include="shared\new_open_gl.hpp" />
     <ClInclude Include="include\rendering\render_hub.hpp" />
     <ClInclude Include="include\rendering\shapes_gl.hpp" />
-    <ClInclude Include="include\simulating\environment.hpp" />
+    <ClInclude Include="shared\environment.hpp" />
     <ClInclude Include="include\simulating\readTable.h" />
     <ClInclude Include="include\simulating\simulationEditor.hpp" />
     <ClInclude Include="include\simulating\simulation_hub.hpp" />
@@ -256,21 +255,11 @@
     <ClInclude Include="include\simulating\skewTFile.h" />
     <ClInclude Include="include\simulating\skewTMaker.h" />
     <ClInclude Include="include\simulating\tracing.h" />
-    <CudaCompile Include="source\math\cudaMath.cu" />
-    <CudaCompile Include="source\rendering\cuda\cloudFile.cu" />
-    <CudaCompile Include="source\rendering\cuda\cuda_render.cu" />
-    <CudaCompile Include="source\rendering\cuda\LUTS.cu" />
-    <CudaCompile Include="source\rendering\cuda\texture_noise.cu" />
-    <CudaCompile Include="source\simulating\cuda\dataClass.cu" />
-    <CudaCompile Include="source\simulating\cuda\environment.cu" />
-    <CudaCompile Include="source\simulating\cuda\kernelSky.cu" />
-    <CudaCompile Include="source\simulating\cuda\microPhysics.cu" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="include\utils.cuh" />
+    <ClInclude Include="shared\meteoconstants.hpp" />
+    <ClInclude Include="include\simulating\dataClass.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 13.3.targets" />
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.9.targets" />
   </ImportGroup>
 </Project>
