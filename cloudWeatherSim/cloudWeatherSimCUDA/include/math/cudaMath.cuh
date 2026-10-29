@@ -218,24 +218,33 @@ __inline__ __host__ __device__ unsigned int randomHash(unsigned int x, unsigned 
 
 // Due to them being __global__ they have to be declared in the .cu file
 
-__global__ void setToValue(float* array, const float value, const int depth, const int offset);
+void setConstantsCudaMath(float invBlockSpreadDepth, void* stream);
 
-__global__ void multiplyValues(float* array1, const float* array2, const int depth);
+__global__ void setToValue(int3 size, float* array, const float value, const int depth, const int offset);
 
-__global__ void divideValues(float* array1, const float* array2, const int depth);
+__global__ void testkernel();
 
-__global__ void divideValuesFull(float* array1, const float* array2);
+__global__ void multiplyValues(int3 size, float* array1, const float* array2, const int depth);
 
-__global__ void subtractValue(float* array, const float value, const int depth);
+__global__ void divideValues(int3 size, float* array1, const float* array2, const int depth);
 
-__global__ void subtractArrayFull(float* array1, const float* array2);
+__global__ void divideValuesFull(int3 size, float* array1, const float* array2);
 
-__global__ void debugPrintArray(const float* array, const int depth);
+__global__ void subtractValue(int3 size, float* array, const float value, const int depth);
 
-__global__ void debugPrintArray(const int* array, const int depth);
+__global__ void subtractArrayFull(int3 size, float* array1, const float* array2);
 
-__inline__ __device__ unsigned int randomCuda(unsigned int seed);
+__global__ void debugPrintArray(int3 size, const float* array, const int depth);
 
-__global__ void randomArray(float* array, const float min, const float max, const int depth, const unsigned int seed);
+__global__ void debugPrintArray(int3 size, const int* array, const int depth);
+
+__inline__ __device__ unsigned int randomCuda(unsigned int seed)
+{
+    unsigned int s = seed * 747796405u + 2891336453u;
+    unsigned int w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+    return (w >> 22u) ^ w;
+}
+
+__global__ void randomArray(int3 size, float* array, const float min, const float max, const int depth, const unsigned int seed);
 
 #endif

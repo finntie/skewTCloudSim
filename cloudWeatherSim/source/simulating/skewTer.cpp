@@ -15,9 +15,6 @@ skewTer::skewTer()
 
 skewTer::~skewTer()
 {
-	if (m_skewT.temps) delete[] m_skewT.temps;
-	if (m_skewT.dewPoints) delete[] m_skewT.dewPoints;
-	if (m_skewT.pressures) delete[] m_skewT.pressures;
 	if (skewTImage) delete skewTImage;
 }
 
@@ -62,13 +59,13 @@ void skewTer::setArray(skewTInfo::skewTParam param, const float* input)
 	switch (param)
 	{
 	case skewTer::skewTInfo::TEMP:
-		std::memcpy(m_skewT.temps, input, m_skewT.size * sizeof(float));
+		m_skewT.temps.assign(input, input + m_skewT.size);
 		break;
 	case skewTer::skewTInfo::DP:
-		std::memcpy(m_skewT.dewPoints, input, m_skewT.size * sizeof(float));
+		m_skewT.dewPoints.assign(input, input + m_skewT.size);
 		break;
 	case skewTer::skewTInfo::P:
-		std::memcpy(m_skewT.pressures, input, m_skewT.size * sizeof(float));
+		m_skewT.pressures.assign(input, input + m_skewT.size);
 		break;
 	default:
 		break;
@@ -82,9 +79,9 @@ void skewTer::setStartHeight(const int height)
 
 void skewTer::setAllArrays(float* T, float* D, float* Ps)
 {
-	std::memcpy(m_skewT.temps, T, m_skewT.size * sizeof(float));
-	std::memcpy(m_skewT.dewPoints, D, m_skewT.size * sizeof(float));
-	std::memcpy(m_skewT.pressures, Ps, m_skewT.size * sizeof(float));
+	m_skewT.temps.assign(T, T + m_skewT.size);
+	m_skewT.dewPoints.assign(D, D + m_skewT.size);
+	m_skewT.pressures.assign(Ps, Ps + m_skewT.size);
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------
@@ -143,7 +140,7 @@ void skewTer::drawDryAndMoist()
 		std::unique_ptr<float[]> temps = std::make_unique<float[]>(m_skewT.size);
 
 		//Dry adiabatic to LCL
-		MForms::getDryAdiabatic(m_skewT.temps[startHeight], m_skewT.pressures[startHeight], m_skewT.pressures, temps.get(), m_skewT.size);
+		MForms::getDryAdiabatic(m_skewT.temps[startHeight], m_skewT.pressures[startHeight], m_skewT.pressures.data(), temps.get(), m_skewT.size);
 
 		for (int j = startHeight + 1; j < m_skewT.size; j++)
 		{
@@ -160,7 +157,7 @@ void skewTer::drawDryAndMoist()
 		//Moist adiabatic at LCL
 		int offset = 0;
 		glm::vec3 LCL = MForms::getLCL(m_skewT.temps[startHeight], m_skewT.pressures[startHeight],0, m_skewT.dewPoints[startHeight]);
-		MForms::getMoistTemp(LCL.x, LCL.y, m_skewT.pressures, temps.get(), m_skewT.size, offset);
+		MForms::getMoistTemp(LCL.x, LCL.y, m_skewT.pressures.data(), temps.get(), m_skewT.size, offset);
 		if (offset != -1)
 		{
 			for (int j = offset + 1; j < m_skewT.size; j++)

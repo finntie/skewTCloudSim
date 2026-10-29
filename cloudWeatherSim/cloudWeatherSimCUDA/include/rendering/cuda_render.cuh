@@ -9,6 +9,7 @@
 #endif
 
 struct environmentData;
+struct simParams;
 
 void* getStream();
 
@@ -73,7 +74,7 @@ void fillNoiseTexture(float* output,
                       float lacunarity = 2.0f,
                       unsigned long long seed = 1);
 
-void renderEnvironmentCUDA(dim3 gridSize,
+void renderEnvironmentCUDA(simParams params,
                            dim3 blockSize,
                            unsigned int* dOutput,
                            environmentData data,
@@ -82,21 +83,10 @@ void renderEnvironmentCUDA(dim3 gridSize,
                            unsigned int height);
 
 __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
+                                         simParams params,
                                          environmentData data,
                                          unsigned int width,
                                          unsigned int height,
                                          int heightOffset);
 
-__device__ float intersectGrid(float3 dir, float3 origin, float3 recDir, float& maxDist);
 
-__device__ float calculateCloudCoverage(float3& pos, environmentData& data);
-
-__device__ float calculateRainCoverage(float3& pos, environmentData& data);
-
-__device__ float calculateSnowCoverage(float3& pos, environmentData& data);
-
-__device__ float calculateDensity(float3& pos, environmentData& data, const float cloudCoverage);
-
-__device__ float lightMarch(float3 pos, const float3& lightDir, environmentData& data, float stepSize, int heightOffset, int2 size);
-
-__device__ float henyenGreenstein(float inCosAngle, float inG);

@@ -7,6 +7,29 @@ __constant__ float radiusEarth = 6360.0f;  // Radius of the earth in km
 __constant__ float sampleHeight = 100.0f;  // Height of sampled medium (until the medium gets small enough that we dont care)
 __constant__ float3x4 invViewLUT;
 
+// Forward declare device kernels
+
+__device__ float posToLUT(const float3& pos, float width);
+__device__ float dirToLUT(const float3& pos, const float3& dir, float height);
+// Convert UV (0 to 1) values to zenith (angle from UP to SunDir) and azimuth (360 degrees compas angle) angles which are turned into a direction vector
+__device__ float3 UVToDir(float u, float v, float3 up, float3 sunDir, float r);
+__device__ float3 envTransDir(const float3& pos, const float3& dir, unsigned long long TTexture);
+__device__ float3 envTrans(const float3& pos, const float3& pos2, unsigned long long TTexture);
+__device__ float3 envScat(const float3& pos, const float3& lightDir, unsigned long long TScat);
+__device__ float3 envPhaseFunction(float angle, float g);
+__device__ float3 shadowTerm(const float3& pos, const float3& lightdir, unsigned long long TTexture);
+__device__ float3 groundRadiance(const float3& pos, const float3& lightdir, unsigned long long TTexture);
+__device__ float3 getIpoint(const float3& pos, const float3& dir, bool& hitGround);
+__device__ float3 sphereSamplePoint(float u1, float u2);
+__device__ float3 transferFunction(const float3& pos, const float3& lightdir, unsigned long long TTexture);
+__device__ float3 luminanceFunction(const float3& from,
+    const float3& to,
+    const float3& dir,
+    const float3& lightDir,
+    unsigned long long TTexture,
+    unsigned long long TScattering);
+
+
 void setConstants(const float* _invView, size_t sizeViewMat, void* stream)
 {
     if (_invView) hipMemcpyToSymbolAsync(HIP_SYMBOL(invViewLUT), _invView, sizeViewMat, 0, hipMemcpyHostToDevice, reinterpret_cast<hipStream_t>(stream));
@@ -101,42 +124,6 @@ __device__ float3 UVToDir(float u, float v, float3 up, float3 sunDir, float r)
 
     // up * cosZ is just how far up the sun is
     // sinZ * () is the horizontal part
-}
-
-__device__ float2 dirToUV(float3 dir, float3 pos, float3 sunDir) 
-{ 
-    // Created from CLAUDE AI
-    // Reverse of function above
-
-    pos = pos + make_float3(0, radiusEarth, 0);
-
-    const float r = distance(pos);
-    const float3 up = pos / r;
-
-    const float cosBeta = sqrt(fmaxf(r * r - radiusEarth * radiusEarth, 0.0f)) / r;
-    const float beta = acosf(clampf(cosBeta, -1.0f, 1.0f));
-    const float zenithHorizon = 3.1415926 - beta;
-
-    // Get the zenith angle of the direction (vertical angle)
-    const float viewZenith = acosf(clampf(dot(dir, up), -1.0f, 1.0f));
-
-    float v = 0.0f;
-    // Inverse of our little remapping trick
-    if (viewZenith < zenithHorizon) v = 0.5f * (1.0f - sqrtf(fmaxf(1.0f - viewZenith / zenithHorizon, 0.0f)));
-    else v = 0.5f * (1.0f - sqrtf(fmaxf((viewZenith - zenithHorizon) / beta, 0.0f)));
-
-    // Remove up direction from the sun and normal direction
-    float3 sunT = sunDir - up * dot(sunDir, up);
-    float3 viewT = dir - up * dot(dir, up);
-    const float ls = distance(sunT);
-    const float lv = distance(viewT);
-    // If any of the direction is almost fully up, we can not divide with it, so cos will be 1.0
-    const float lightViewCos = (ls < 1e-4f || lv < 1e-4f) ? 1.0f : clampf(dot(sunT / ls, viewT / lv), -1.0f, 1.0f);
-    
-    // Map u from 0 to 1, and unmap the squaring we did
-    const float u = sqrt(fmaxf(0.5f * (1.0f - lightViewCos), 0.0f));
-
-    return make_float2(u, v);
 }
 
 // Pos.y ranging from 0 until sampleHeight, which is about 0 until 100
@@ -816,38 +803,3 @@ __global__ void envAerialView(float4* aerialView,
     aerialView[idx] = make_float4(scattering.x, scattering.y, scattering.z, transMean);
 }
 
-__device__ float4 getAtmosphericSkyView(float3 dir, float3 pos, float3 lightDir, float2 resolution, unsigned long long skyViewTexture)
-{
-    pos = pos / 1000.0f; // Make sure 1000.0f coordinate is 1 km and not 1000 km
-
-    float2 uv = dirToUV(dir, pos, lightDir);
-
-    
-     //float3 value = envTransDir(pos, dir,256, 64, skyViewTexture) ;
-
-    // Unmap texel center correction
-    const float s = uv.x * (1.0f - 1.0f / resolution.x) + 0.5f / resolution.x;
-    const float t = uv.y * (1.0f - 1.0f / resolution.y) + 0.5f / resolution.y;
-
-    //if (blockIdx.x * blockDim.x + threadIdx.x == 100 && blockIdx.y * blockDim.y + threadIdx.y == 0)
-    //{
-    //    printf("resolution: %f, %f, pos x %f, y %f, z %f lightDir: %f, %f, %f trans %f, %f, %f\n",
-    //           pos.y / sampleHeight,
-    //           resolution.y,
-    //           pos.x,
-    //           pos.y,
-    //           pos.z,
-    //           lightDir.x,
-    //           lightDir.y,
-    //           lightDir.z,
-    //           trans.x,
-    //           trans.y,
-    //           trans.z);
-    //}
-
-    //const float3 value = envScat(pos, lightDir, resolution.x, resolution.y, skyViewTexture);
-    //return make_float4(value.x, value.y, value.z, 0.0f);
-
-    // Thats all    
-    return tex2D<float4>(skyViewTexture, s, t);
-}

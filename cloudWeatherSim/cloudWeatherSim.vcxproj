@@ -49,13 +49,10 @@
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <ImportGroup Label="ExtensionSettings">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.9.props" />
-  </ImportGroup>
+  <ImportGroup Label="ExtensionSettings" />
   <ImportGroup Label="Shared">
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -135,11 +132,12 @@
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
     <CudaCompile>
-      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode>false</GenerateRelocatableDeviceCode>
       <FastMath>true</FastMath>
       <Include>
       </Include>
       <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" -allow-unsupported-compiler %(AdditionalOptions)</AdditionalOptions>
+      <CodeGeneration>compute_120,sm_120</CodeGeneration>
     </CudaCompile>
     <CudaLink>
       <UseHostLibraryDirectories>false</UseHostLibraryDirectories>
@@ -163,9 +161,11 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions);DLLEXPORTS</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)include;$(SolutionDir)external/glad/include;$(SolutionDir)shared;$(SolutionDir)external;$(CUDA_PATH)\include;$(SolutionDir)cloudWeatherSimCUDA/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(SolutionDir)external/glad/include;$(SolutionDir)shared;$(SolutionDir)external;$(SolutionDir)cloudWeatherSimCUDA/include</AdditionalIncludeDirectories>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <AdditionalOptions>/Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <Optimization>MaxSpeed</Optimization>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -177,11 +177,12 @@
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
     <CudaCompile>
-      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode>false</GenerateRelocatableDeviceCode>
       <FastMath>true</FastMath>
       <Include>
       </Include>
       <AdditionalOptions>--std=c++17 -Xcompiler "/Zc:preprocessor" -allow-unsupported-compiler %(AdditionalOptions)</AdditionalOptions>
+      <CodeGeneration>compute_120,sm_120</CodeGeneration>
     </CudaCompile>
     <CudaLink>
       <UseHostLibraryDirectories>false</UseHostLibraryDirectories>
@@ -259,7 +260,5 @@
     <ClInclude Include="include\simulating\dataClass.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.9.targets" />
-  </ImportGroup>
+  <ImportGroup Label="ExtensionTargets" />
 </Project>

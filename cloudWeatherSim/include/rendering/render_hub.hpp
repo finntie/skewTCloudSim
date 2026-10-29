@@ -9,6 +9,7 @@ class CudaRender;
 class shapesGL;
 class cloudFile;
 class cloudFileHub;
+struct simParams;
 
 enum class gameStates;
 
@@ -17,7 +18,7 @@ enum class gameStates;
 class cloudRenderer
 {
 public:
-    cloudRenderer();
+    cloudRenderer(const simParams& params);
     ~cloudRenderer();
 
     shapesGL& shapesGLObj() { return *m_shapesObj; }
@@ -39,6 +40,11 @@ public:
     void render(float dt);
 
     /// <summary>
+    /// Resize GPU data with current simulation parameters.
+    /// </summary>
+    void resizeGPU();
+
+    /// <summary>
     /// In case buffers change, use this function to update them correctly
     /// </summary>
     /// <param name="framebuffer"> OpenGL framebuffer, should contain at least a depth buffer. </param>
@@ -52,7 +58,7 @@ public:
     // Call when resizing window
     // Updates all textures on resize of window
     // MAKE SURE TO UNREGISTER RESOURCES BEFORE ACCESSING YOUR COLOR/DEPTH BUFFER ( #unregisterResources() )
-    void resize(int width, int height);
+    void resizeWindow(int width, int height);
 
     // ImGui panel
     void renderMenuPanel(gameStates& currentState, const bool initState, bool& setInitState);
@@ -80,5 +86,6 @@ private:
     CudaRender* m_cudaRenderObj{nullptr};
     cloudFile* m_cloudFileObj{nullptr};
     cloudFileHub* m_cloudFileHubObj{nullptr};
+    const simParams& m_params;
 
 };

@@ -21,11 +21,11 @@
 #include <vector>
 #include <glm/glm.hpp>
 
-cloudRenderer::cloudRenderer() 
+cloudRenderer::cloudRenderer(const simParams& params) : m_params(params)
 { 
 	m_shapesObj = new shapesGL();
-	m_cudaRenderObj = new CudaRender();
-	m_cloudFileObj = new cloudFile();
+	m_cudaRenderObj = new CudaRender(params);
+	m_cloudFileObj = new cloudFile(params);
 	m_cloudFileHubObj = new cloudFileHub(m_cloudFileObj);
 }
 
@@ -68,6 +68,15 @@ void cloudRenderer::render(float dt)
     m_shapesObj->render(CloudHub.CameraObj().getCamView(), CloudHub.CameraObj().getCamProjection());
 }
 
+void cloudRenderer::resizeGPU()
+{
+    // Load GPU data for cloudFile
+    m_cloudFileObj->initGPUData();
+
+    // Load GPU data for the renderer
+    m_cudaRenderObj->initEnvironmentData();
+}
+
 void cloudRenderer::updateBuffers(unsigned int framebuffer, unsigned int colorbuffer) 
 {
     m_cudaRenderObj->updateOnlyBuffers(framebuffer, colorbuffer);
@@ -78,7 +87,7 @@ void cloudRenderer::unregisterResources()
     m_cudaRenderObj->unregisterResources();
 }
 
-void cloudRenderer::resize(int width, int height) 
+void cloudRenderer::resizeWindow(int width, int height) 
 { 
 	m_cudaRenderObj->setNewRenderSize(width, height); 
 }
@@ -108,7 +117,7 @@ void cloudRenderer::renderPanel(gameStates& currentState, const bool initState, 
         if (initState)
         {
             // Initialize grid for rendering
-            m_cudaRenderObj->initEnvironmentData(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ, VOXELSIZE);
+            m_cudaRenderObj->initEnvironmentData();
         }
         renderSettingsPanel();
 
@@ -212,27 +221,17 @@ void cloudRenderer::loadFile(const char* cloudFile)
         info.types);
     if (!info.loaded) return; // Failed to load
 
-    GRIDSIZESKYX = info.sizeX;
-    GRIDSIZESKYY = info.sizeY;
-    GRIDSIZESKYZ = info.sizeZ;
-    VOXELSIZE = info.voxelSize;
-    GRIDSIZESKY = GRIDSIZESKYX * GRIDSIZESKYY * GRIDSIZESKYZ;
-    GRIDSIZEGROUND = GRIDSIZESKYX * GRIDSIZESKYZ;
-
     // Now load the actual data
     m_cloudFileObj->loadCloudFile(cloudFile, false);
 
-
-    m_cloudFileObj->initGPUData();
+    // Resize GPU data
+    CloudHub.resize(info.sizeX, info.sizeY, info.sizeZ, info.voxelSize, cloudHub::RESIZE_RENDERER_FLAG);
 
     // Set faster render speed
     m_cudaRenderObj->setOnlyRenderResource(true);
 
-    // Load viewer
-    m_cudaRenderObj->initEnvironmentData(info.sizeX, info.sizeY, info.sizeZ, info.voxelSize);
-
     // Set camera Position based on grid
-    glm::vec3 pos = glm::vec3(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ) * VOXELSIZE;
+    glm::vec3 pos = glm::vec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ) * m_params.voxelSize;
     glm::vec3 normPos = glm::normalize(pos);
     pos = normPos * distance(pos, glm::vec3(0.0f)) * 1.5f;
     glm::quat rotation = glm::quatLookAt(-normPos, glm::vec3(0, 1, 0));

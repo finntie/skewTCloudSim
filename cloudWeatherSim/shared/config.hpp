@@ -4,14 +4,23 @@
 //Do we want to use the GPU? (CPU is very unstable if not working at all atm)
 #define USE_GPU 1
 
-inline int GRIDSIZESKYX = 128;
-inline int GRIDSIZESKYY = 128;
-inline int GRIDSIZESKYZ = 128;
 
-extern int GRIDSIZESKY;
-extern int GRIDSIZEGROUND;
-extern float VOXELSIZE; // In Meters
-z
+// Holds data of the simulation size
+struct simParams
+{
+	int sizeX, sizeY, sizeZ;
+	int size;
+	int sizeGround;
+	float voxelSize;
+
+	// Initializes data in the struct
+	static simParams create(int x, int y, int z, float _voxelSize)
+	{
+		return { x, y, z, x * y * z, x * z, _voxelSize };
+	}
+};
+
+
 // Data graph
 #define MAXGRAPHLENGTH 100
 

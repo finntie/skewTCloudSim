@@ -25,6 +25,57 @@ __constant__ float m_gammaQr; //Rain falling; 4 + b
 __constant__ float m_gammaQs; //Snow falling; 4.0f + d
 __constant__ float m_gammaQi; //Ice falling; 4.0f + d
 
+__constant__ float invBlockSpreadDepth{ 1.0f };
+
+
+// Forward declare device kernels
+
+__device__ float FPVCON(const float temp, const float ps, const float Qv, const float QWS, const float dt, const float speed);
+__device__ float FPIMLT(const float temp, const float Qc); //TODO: limit melting?
+__device__ float FPIDW(const float dt, const float temp, const float Qc, const float Qw, const float Dair, const float ps);
+__device__ float FPIHOM(const float temp, const float Qw);
+__device__ float FPIACR(const float Qr, const float Qc, const float Dair, const float slopeR);
+__device__ float FPRACI(const float Qr, const float Qc, const float Dair, const float slopeR);
+__device__ float FPRAUT(const float Qw, const float QwMin, const float temp);
+__device__ float FPRACW(const float Qr, const float Qw, const float Dair, const float slopeR);
+__device__ float FPREVP(const float temp, const float Qr, const float Qv, const float QWS, const float Dair, const float ps, const float slopeR, const float PTerm1);
+__device__ float FPRACS(const float Qr, const float Qs, const float PTerm2, const float3 fallVel, const float Dair, const float slopeS, const float slopeR);
+__device__ float FPSACW(const float Qs, const float Qw, const float Dair, const float slopeS);
+__device__ float FPSACR(const float Qr, const float Qs, const float3 fallVel, const float Dair, const float slopeR, const float slopeS);
+__device__ float FPSACI(const float temp, const float Qs, const float Qc, const float Dair, const float slopeS);
+__device__ float FPSAUT(const float temp, const float Qc, const float QcMin);
+__device__ float FPSFW(const float dt, const float temp, const float ps, const float Qs, const float Qw, const float Qc, const float Qv, const float QWI, const float Dair); //TODO: use this function?
+__device__ float FPSFI(const float dt, const float temp, const float ps, const float Qs, const float Qw, const float Qc, const float Qv, const float QWI, const float Dair); //TODO: also use old formula?
+__device__ float FPSDEP(const float temp, const float ps, const float Qv, const float QWI, const float Dair, const float slopeS);
+__device__ float FPSSUB(const float PSDEP);
+__device__ float FPSMLT(const float temp, const float ps, const float Qw, const float Qr, const float Qs, const float Qv, const float Dair, const float slopeS, const float PSACW, const float PSACR, const float dtSpeed);
+__device__ float FPGAUT(const float temp, const float Qs, const float QiMin);
+__device__ float FPGFR(const float temp, const float Qr, const float Dair, const float slopeR);
+__device__ float FPGACW(const float Qi, const float Qw, const float slopeI, const float Dair);
+__device__ float FPGACI(const float Qi, const float Qc, const float slopeI, const float Dair);
+__device__ float FPGACR(const float Qi, const float Qr, const float Dair, const float3 fallVel, const float slopeR, const float slopeI);
+__device__ float FPGACS(const float temp, const float Qs, const float Qi, const float Dair, const float3 fallVel, const float slopeS, const float slopeI, const bool EGS1 = false);
+__device__ float FPGDRY(const float Qw, const float Qc, const float Qr, const float Qs, const float PGACW, const float PGACI, const float PGACR, const float PGACS, const float dtSpeed);
+__device__ float FPGSUB(const float temp, const float ps, const float Qv, const float QWI, const float Qi, const float Dair, const float slopeI);
+__device__ float FPGMLT(const float temp, const float ps, const float Qw, const float Qr, const float Qi, const float Qv, const float Dair, const float slopeI, const float PGACW, const float PGACR, const float dtSpeed);
+__device__ float FPGWET(const float temp, const float ps, const float Qc, const float Qs, const float Qi, const float Qv, const float3 fallVel, const float Dair, const float slopeS, const float slopeI, const float PGACI, const float PGACS, const float dtSpeed);
+__device__ float FPGACR1(const float temp, const float Qw, const float Qc, const float Qs, const float Qi, const float Dair, const float3 fallVel, const float slopeS, const float slopeI, const float PGWET, const float PGACW, const float PGACI, const float PGACS, const float dtSpeed);
+//Ground variables
+__device__ float FPGFLW(const float Qr);
+__device__ float FPGGMLT(const float tempGroundC, const float Qi, const float Dair, const float slopeI);
+__device__ float FPGSMLT(const float tempAirK, const float tempGroundC, const float ps, const float Qs, const float Qv, const float Qr,
+    const float irradiance, const float cloudCover, const float Dair, const float windSpeed, const float dt);
+__device__ float FPGREVP(const float tempAirK, const float tempGroundC, const float ps, const float Qv, const float Qr,
+    const float irradiance, const float Dair, const float windSpeed);
+__device__ float FPGDEVP(float* time, const float Qr, const float Qs, const float Qi, const float Qrs);
+__device__ float FPGGFR(const float tempAirK, const float tempGroundC, const float ps, const float Qr, const float Qv, const float Qi,
+    const float Dair, const float irradiance, const float cloudCover, const float windSpeed, const float dt);
+__device__ float FPGSFR(const float tempAirK, const float tempGroundC, const float ps, const float Qv, const float Qr, const float Qs,
+    const float Dair, const float windSpeed, const float dt);
+//Precip hitting ground variables
+__device__ float FPGRFR(const float tempAirK, const float tempGroundC, const float ps, const float Qr, const float Qv, const float Qi, const float Qgr, const float Qgs,
+    const float Dair, const float windSpeed, const float3 fallVel);
+
 
 /// <summary> Initializes all the gammas</summary>
 void initGammasMicroPhysics(void* stream)
@@ -59,7 +110,15 @@ void initGammasMicroPhysics(void* stream)
     hipMemcpyToSymbolAsync(HIP_SYMBOL(m_gammaQi), &gammaQi, sizeof(float), 0, hipMemcpyHostToDevice, static_cast<hipStream_t>(stream));
 }
 
-
+void setConstantsMicroPhys(float _invBlockSpreadDepth, void* stream)
+{
+    if (_invBlockSpreadDepth > 0.0f) hipMemcpyToSymbolAsync(HIP_SYMBOL(invBlockSpreadDepth), &_invBlockSpreadDepth, sizeof(float), 0, hipMemcpyHostToDevice, static_cast<hipStream_t>(stream));
+    hipError_t err = hipGetLastError();
+    if (err != hipSuccess) {
+        std::cerr << "error2: " << hipGetErrorString(err) << std::endl;
+        assert(false);
+    }
+}
 
 using namespace Constants;
 
@@ -1031,7 +1090,7 @@ __device__ float FPGRFR(const float tempAirK, const float tempGroundC, const flo
 }
 
 
-__global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, float* _Qr, float* _Qs, float* _Qi, 
+__global__ void calculateEnvMicroPhysicsGPU(simParams p, float* _Qv, float* _Qw, float* _Qc, float* _Qr, float* _Qs, float* _Qi,
     const float dt, const float speed, const float* _temp, const float* _densAir, const float* _pressure, const int* _groundHeight, const float* _groundpressure,
     float* condens, float* depos, float* freeze, 
     const bool graphActive, const int3 minSelectPos, const int3 maxSelectPos, microPhysicsParams& microPhysicsResult)
@@ -1044,20 +1103,20 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth)); // Get z index from spread and block index on z dimension.
-    int idx = getIdx(x, y, z);
+    int idx = getIdx(p, x, y, z);
     int idxsData = threadIdx.x + threadIdx.y * blockDim.x;
 
     bool valid = true;
-    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) // Avoid outside access
+    if (x >= p.sizeX || y >= p.sizeY || z >= p.sizeZ) // Avoid outside access
     {
         x = 0; y = 0; idx = 0; // Set every index to 0
         valid = false;
     }
 
-    for (; z < fminf(simSizeZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+    for (; z < fminf(p.sizeZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
     {
-        idx = getIdx(x, y, z);
-        const int idxG = x + z * simSizeX;
+        idx = getIdx(p, x, y, z);
+        const int idxG = x + z * p.sizeX;
 
         if (graphActive)
         {
@@ -1425,18 +1484,18 @@ __global__ void calculateEnvMicroPhysicsGPU(float* _Qv, float* _Qw, float* _Qc, 
     }
 }
 
-__global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _Qgr, float* _Qgs, float* _Qgi,
+__global__ void calculateGroundMicroPhysicsGPU(simParams p, float* _Qrs, float* _Qv, float* _Qgr, float* _Qgs, float* _Qgi,
     const float dt, const float speed, float* _tempGround, const float* _tempAir, const float* _densAir, const float* _pressure, const float* groundPressure,
     float* _time, const float irradiance, const float* _windSpeedX, const float* _cloudCover,
     const int* _groundHeight)
 {
     const int x = threadIdx.x;
     const int z = blockIdx.x;
-    const int idxG = x + z * simSizeX;
+    const int idxG = x + z * p.sizeX;
     const int y = _groundHeight[idxG]; //Y to use index on environment variables
-    const int idx = getIdx(x, y + 1, z);
+    const int idx = getIdx(p, x, y + 1, z);
 
-    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return; // Able to return due to no syncing
+    if (x >= p.sizeX || y >= p.sizeY || z >= p.sizeZ) return; // Able to return due to no syncing
 
     float PGREVP{ 0.0f }; // Evaporation of (rain)water.
     //float PSDEP{ 0.0f }; // TODO: Depositional growth of snow 
@@ -1550,17 +1609,17 @@ __global__ void calculateGroundMicroPhysicsGPU(float* _Qrs, float* _Qv, float* _
 }
 
 
-__global__ void calculatePrecipHittingGroundMicroPhysicsGPU(float* _Qv, float* _Qr, float* _Qs, float* _Qi, float* _Qgr, float* _Qgs, float* _Qgi,
+__global__ void calculatePrecipHittingGroundMicroPhysicsGPU(simParams p, float* _Qv, float* _Qr, float* _Qs, float* _Qi, float* _Qgr, float* _Qgs, float* _Qgi,
     const float dt, const float speed, float* _tempGround, const float* _tempAir, const float* _densAir, const float* _pressure, const float* groundPressure,
     const float* _windSpeedX, const int* _groundHeight)
 {
     const int x = threadIdx.x;
     const int z = blockIdx.x;
-    const int idxG = x + z * simSizeX;
+    const int idxG = x + z * p.sizeX;
     const int y = _groundHeight[idxG]; //Y to use index on environment variables
-    const int idx = getIdx(x, y + 1, z);
+    const int idx = getIdx(p, x, y + 1, z);
 
-    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return; // Able to return due to no syncing
+    if (x >= p.sizeX || y >= p.sizeY || z >= p.sizeZ) return; // Able to return due to no syncing
 
     float PGRFR{ 0.0f }; // Freezing rain hitting the ground forming ice
 

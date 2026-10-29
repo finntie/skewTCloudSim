@@ -6,7 +6,9 @@
   <Project Path="../Game/Game.vcxproj" Id="ecaba9ea-9a2c-427f-8754-db87fd4a5325">
     <BuildDependency Project="cloudWeatherSimCUDA/cloudWeatherSimCUDA.vcxproj" />
   </Project>
-  <Project Path="cloudWeatherSim.vcxproj" Id="b53495c5-7ac9-498f-9119-857801761cab" />
+  <Project Path="cloudWeatherSim.vcxproj" Id="b53495c5-7ac9-498f-9119-857801761cab">
+    <BuildDependency Project="cloudWeatherSimCUDA/cloudWeatherSimCUDA.vcxproj" />
+  </Project>
   <Project Path="cloudWeatherSimCUDA/cloudWeatherSimCUDA.vcxproj" Id="7e58a684-0f90-495d-bf3e-e2f217ed8cd2">
     <Platform Project="x64" />
   </Project>

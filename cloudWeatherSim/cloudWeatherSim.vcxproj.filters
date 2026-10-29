@@ -93,9 +93,6 @@
     <ClCompile Include="external\imgui\implot_items.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source\math\geometry.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="external\glad\src\glad.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -105,10 +102,10 @@
     <ClCompile Include="source\simulating\dataClass.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="include\rendering\cloudFile_hub.hpp">
+    <ClCompile Include="source\rendering\cloudFile_hub.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source\rendering\cloudFile_hub.cpp">
+    <ClCompile Include="shared\geometry.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -187,6 +184,9 @@
     </ClInclude>
     <ClInclude Include="shared\meteoconstants.hpp" />
     <ClInclude Include="include\simulating\dataClass.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rendering\cloudFile_hub.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

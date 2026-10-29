@@ -14,11 +14,14 @@ class simulationEditor
 {
 public:
 
-    simulationEditor();
+    simulationEditor(const simParams& params);
     ~simulationEditor();
 
     // Should be initialized after environment
     void init();
+
+    // Resize all allocated data
+    void resize();
 
     // Convert GPU values to CPU values
     void GPUSetEnv(bool setIsentropics);
@@ -105,6 +108,8 @@ private:
     parameter m_viewParamSky{POTTEMP};
     parameterGround m_viewParamGround{TEMP};
     parameter m_editParamSky{POTTEMP};
+    const simParams& m_params;
+
 
     // Mouse selection in grid
     int m_mousePointingIndex{0};
@@ -126,9 +131,9 @@ private:
     int m_minViewX{0};
     int m_minViewY{0};
     int m_minViewZ{0};
-    int m_maxViewX{GRIDSIZESKYX};
-    int m_maxViewY{GRIDSIZESKYY};
-    int m_maxViewZ{GRIDSIZESKYZ};
+    int m_maxViewX{1};
+    int m_maxViewY{1};
+    int m_maxViewZ{1};
 
     // Controls
     float m_mouseWheel{0.0f};

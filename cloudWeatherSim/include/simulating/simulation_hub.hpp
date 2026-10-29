@@ -10,15 +10,19 @@ class cloudFile;
 class environmentGPU;
 class simulationEditor;
 enum class gameStates;
+struct simParams;
 
 class simulationHub
 {
 public:
 
-	simulationHub();
+	simulationHub(const simParams& params);
     ~simulationHub();
 
     void updateSimulation(float dt);
+
+    // Resize all simulation instances
+    void resizeGPU();
 
 	// ImGui Handler
     void simulationMenuPanel(gameStates& currentState, const bool initState, bool& setInitState);
@@ -53,6 +57,7 @@ private:
     float m_simulationSpeed{1.0f};
     bool m_editing{false};
     bool m_skewT{false};
+    const simParams& m_params;
 
     // Thread data
     std::thread simThread;

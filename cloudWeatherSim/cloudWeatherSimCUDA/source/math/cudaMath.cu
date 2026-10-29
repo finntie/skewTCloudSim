@@ -3,16 +3,26 @@
 #include "msvc_defines.h"
 #include <hip/hip_runtime.h>
 
+__constant__ float invBlockSpreadDepth{ 1.0f };
 
 __device__ unsigned long randomState = 1;
 
-__global__ void setToValue(float* array, const float value, const int depth, const int offset)
+void setConstantsCudaMath(float _invBlockSpreadDepth, void* stream)
+{
+    if (_invBlockSpreadDepth > 0.0f) hipMemcpyToSymbolAsync(HIP_SYMBOL(invBlockSpreadDepth), &_invBlockSpreadDepth, sizeof(float), 0, hipMemcpyHostToDevice, static_cast<hipStream_t>(stream));
+    hipError_t err = hipGetLastError();
+    if (err != hipSuccess) {
+        std::cerr << "error1: " << hipGetErrorString(err) << std::endl;
+    }
+}
+
+__global__ void setToValue(int3 size, float* array, const float value, const int depth, const int offset)
 {
     const int x = threadIdx.x;
     const int y = blockIdx.x;
     int z = 0;
 
-    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return;
+    if (x >= size.x || y >= size.y || z >= size.z) return;
 
     for (z = 0; z < depth; z++)
     {
@@ -21,13 +31,18 @@ __global__ void setToValue(float* array, const float value, const int depth, con
     }
 }
 
-__global__ void multiplyValues(float* array1, const float* array2, const int depth)
+__global__ void testkernel()
+{
+    // Does nothing
+}
+
+__global__ void multiplyValues(int3 size, float* array1, const float* array2, const int depth)
 {
     const int x = threadIdx.x;
     const int y = blockIdx.x;
     int z = 0;
 
-    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return;
+    if (x >= size.x || y >= size.y || z >= size.z) return;
 
     for (z = 0; z < depth; z++)
     {
@@ -36,13 +51,13 @@ __global__ void multiplyValues(float* array1, const float* array2, const int dep
     }
 }
 
-__global__ void divideValues(float* array1, const float* array2, const int depth)
+__global__ void divideValues(int3 size, float* array1, const float* array2, const int depth)
 {
     const int x = threadIdx.x;
     const int y = blockIdx.x;
     int z = 0;
 
-    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return;
+    if (x >= size.x || y >= size.y || z >= size.z) return;
 
     for (z = 0; z < depth; z++)
     {
@@ -51,28 +66,28 @@ __global__ void divideValues(float* array1, const float* array2, const int depth
     }
 }
 
-__global__ void divideValuesFull(float* array1, const float* array2)
+__global__ void divideValuesFull(int3 size, float* array1, const float* array2)
 {
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth));  // Get z index from spread and block index on z dimension.
 
-    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return;
+    if (x >= size.x || y >= size.y || z >= size.z) return;
 
-    for (; z < fminf(simSizeZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+    for (; z < fminf(size.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
     {
-        int idx = x + y * simSizeX + z * simSizeX * simSizeY;
+        int idx = x + y * size.x + z * size.x * size.y;
         array1[idx] /= array2[idx];
     }
 }
 
-__global__ void subtractValue(float* array, const float value, const int depth)
+__global__ void subtractValue(int3 size, float* array, const float value, const int depth)
 {
     const int x = threadIdx.x;
     const int y = blockIdx.x;
     int z = 0;
 
-    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return;
+    if (x >= size.x || y >= size.y || z >= size.z) return;
 
     for (z = 0; z < depth; z++)
     {
@@ -83,28 +98,28 @@ __global__ void subtractValue(float* array, const float value, const int depth)
     }
 }
 
-__global__ void subtractArrayFull(float* array1, const float* array2)
+__global__ void subtractArrayFull(int3 size, float* array1, const float* array2)
 {
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     int z = int(ceilf(float(blockIdx.z) * invBlockSpreadDepth));  // Get z index from spread and block index on z dimension.
 
-    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return;
+    if (x >= size.x || y >= size.y || z >= size.z) return;
 
-    for (; z < fminf(simSizeZ, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
+    for (; z < fminf(size.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
     {
-        int idx = x + y * simSizeX + z * simSizeX * simSizeY;
+        int idx = x + y * size.x + z * size.x * size.y;
         array1[idx] -= array2[idx];
     }
 }
 
-__global__ void debugPrintArray(const float* array, const int depth)
+__global__ void debugPrintArray(int3 size, const float* array, const int depth)
 {
     const int x = threadIdx.x;
     const int y = blockIdx.x;
     int z = 0;
 
-    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return;
+    if (x >= size.x || y >= size.y || z >= size.z) return;
 
     for (z = 0; z < depth; z++)
     {
@@ -113,13 +128,13 @@ __global__ void debugPrintArray(const float* array, const int depth)
     }
 }
 
-__global__ void debugPrintArray(const int* array, const int depth)
+__global__ void debugPrintArray(int3 size, const int* array, const int depth)
 {
     const int x = threadIdx.x;
     const int y = blockIdx.x;
     int z = 0;
 
-    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return;
+    if (x >= size.x || y >= size.y || z >= size.z) return;
 
     for (z = 0; z < depth; z++)
     {
@@ -128,20 +143,13 @@ __global__ void debugPrintArray(const int* array, const int depth)
     }
 }
 
-__inline__ __device__ unsigned int randomCuda(unsigned int seed)
-{
-    unsigned int s = seed * 747796405u + 2891336453u;
-    unsigned int w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
-    return (w >> 22u) ^ w;
-}
-
-__global__ void randomArray(float* array, const float min, const float max, const int depth, const unsigned int seed)
+__global__ void randomArray(int3 size, float* array, const float min, const float max, const int depth, const unsigned int seed)
 {
     const int x = threadIdx.x;
     const int y = blockIdx.x;
     int z = 0;
 
-    if (x >= simSizeX || y >= simSizeY || z >= simSizeZ) return;
+    if (x >= size.x || y >= size.y || z >= size.z) return;
 
     if (x == 0 && y == 0 && seed != 0) randomState = seed;
 

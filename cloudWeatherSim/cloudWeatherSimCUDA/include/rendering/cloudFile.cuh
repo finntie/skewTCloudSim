@@ -5,6 +5,7 @@
 #include "environment.hpp"
 
 struct renderSettings;
+struct simParams;
 
 struct cloudFileInfo
 {
@@ -49,7 +50,7 @@ class cloudFile
 {
 public:
 
-	cloudFile() = default;
+	cloudFile(const simParams& params);
 	~cloudFile();
 
 	// Malloc data for the GPU, uses current grid sizes
@@ -129,6 +130,8 @@ private:
 	// Data of all frames on the CPU
 	std::vector<gridDataSky> m_skyData;
 	std::vector<gridDataGround> m_groundData;
+
+	const simParams& m_params;
 
 	// GPU data
 	gridDataSkyGPU* m_skyDataGPU;

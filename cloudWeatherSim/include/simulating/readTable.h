@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.hpp"
 #include <string>
 #include <glm/glm.hpp>
 
@@ -59,7 +60,7 @@ public:
 
 	void readDWDFile(const char* file);
 
-	void initEnvironment();
+	void initEnvironment(simParams params);
 
 	int getIndexAtHeight(float height);
 	

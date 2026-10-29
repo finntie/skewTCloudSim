@@ -9,6 +9,7 @@
 #include "simulating/environment.cuh"
 #include "rendering/render_hub.hpp"
 #include "rendering/cuda_render_gl.hpp"
+#include "rendering/cloudFile_hub.hpp"
 
 #include <chrono>
 #include <iostream>
@@ -26,12 +27,13 @@ cloudHub::cloudHub()
     // We may already create input context
     m_inputObj = new newInput;
     m_cloudCameraObj = new cameraControl();
+    m_params = new simParams(simParams::create(64, 64, 64, 16.0f));
 }
 
 void cloudHub::initialize(bool customImGuiStyle)
 {
-    m_cloudRenderObj = new cloudRenderer();
-    m_simulationHubObj = new simulationHub;
+    m_cloudRenderObj = new cloudRenderer(*m_params);
+    m_simulationHubObj = new simulationHub(*m_params);
     m_cloudMenuHubObj = new cloudMenu(m_simulationHubObj, m_cloudRenderObj, customImGuiStyle);
 }
 
@@ -40,6 +42,7 @@ void cloudHub::destruct()
     delete m_cloudMenuHubObj;
     delete m_cloudRenderObj;
     delete m_simulationHubObj;
+    delete m_params;
     delete m_cloudCameraObj;
     delete m_inputObj;
 }
@@ -79,5 +82,21 @@ void cloudHub::copySimulateDataToRenderData()
         // Get from the simulation thread and copy into the render
         m_simulationHubObj->Environment().synchronizeSimStream(); // TODO: likely have to work with events to fix issues, maybe even let the environment copy data into another buffer that we read
         m_cloudRenderObj->cudaRendererObj().setDataEnvironment(m_simulationHubObj->Environment().getRenderData(), true);
+    }
+}
+
+void cloudHub::resize(int x, int y, int z, float voxelSize, resizeFlag flag)
+{
+    *m_params = simParams::create(x, y, z, voxelSize);
+
+    // TODO: re allocate all data in simulation
+
+    if (flag & RESIZE_RENDERER_FLAG)
+    {
+        m_cloudRenderObj->resizeGPU();
+    }
+    if (flag & RESIZE_SIMULATION_FLAG)
+    {
+        m_simulationHubObj->resizeGPU();
     }
 }

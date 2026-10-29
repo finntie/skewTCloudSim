@@ -36,7 +36,7 @@ static void windowResizeCallBack(GLFWwindow* window, int width, int height)
     if (windowSizeOldCallback) windowSizeOldCallback(window, width, height);
 
     // Update own openGL stuff and register again
-    CloudHub.CloudRender().resize(width, height);
+    CloudHub.CloudRender().resizeWindow(width, height);
 
     m_width = width;
     m_height = height;

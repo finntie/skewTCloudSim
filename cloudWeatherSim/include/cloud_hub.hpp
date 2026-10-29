@@ -9,11 +9,13 @@ class newInput;
 class cloudMenu;
 class cameraControl;
 
+struct simParams;
+
 class cloudHub
 {
 public:
 
-	cloudHub();
+    cloudHub();
     ~cloudHub() = default;
 
     /// <summary>
@@ -38,7 +40,20 @@ public:
 
     void copySimulateDataToRenderData();
 
-	cloudRenderer& CloudRender() { return *m_cloudRenderObj; }
+
+    enum resizeFlag
+    {
+        RESIZE_PARAMS_ONLY_FLAG = 0 << 0,
+        RESIZE_SIMULATION_FLAG = 1 << 0,
+        RESIZE_RENDERER_FLAG = 1 << 1,
+        RESIZE_ALL_FLAG = RESIZE_PARAMS_ONLY_FLAG | RESIZE_SIMULATION_FLAG | RESIZE_RENDERER_FLAG
+    };
+
+    // Resizes the whole simulation grid
+    // Reallocates data, removing previous saved data
+    void resize(int x, int y, int z, float voxelSize, resizeFlag = RESIZE_PARAMS_ONLY_FLAG);
+
+    cloudRenderer& CloudRender() { return *m_cloudRenderObj; }
     simulationHub& CloudSim() { return *m_simulationHubObj; }
     newInput& InputObj() { return *m_inputObj; }
     cameraControl& CameraObj() { return *m_cloudCameraObj; }
@@ -47,11 +62,15 @@ public:
 
 private:
 
-    cloudMenu* m_cloudMenuHubObj{nullptr};
-	cloudRenderer* m_cloudRenderObj{nullptr};
-    simulationHub* m_simulationHubObj{nullptr};
-    cameraControl* m_cloudCameraObj{nullptr};
-    newInput* m_inputObj{nullptr};
+    cloudMenu* m_cloudMenuHubObj{ nullptr };
+    cloudRenderer* m_cloudRenderObj{ nullptr };
+    simulationHub* m_simulationHubObj{ nullptr };
+    cameraControl* m_cloudCameraObj{ nullptr };
+    newInput* m_inputObj{ nullptr };
+
+    // Real instance of the simulation parameters, passed onto all other classes.
+    // Determines the size of the simulation / renderer
+    simParams* m_params{ nullptr };
 };
 
 extern cloudHub CloudHub;

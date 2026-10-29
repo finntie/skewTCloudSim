@@ -1,6 +1,8 @@
 #pragma once 
 #include <glm/glm.hpp>
 
+struct simParams;
+
 class tracing
 {
 public:
@@ -10,7 +12,7 @@ public:
 		BELOW = 1, EQUAL = 2, ABOVE = 4
 	};
 
-	tracing() {};
+	tracing(const simParams& params) : m_params(params) {}
 	~tracing();
 
 	void init();
@@ -28,6 +30,7 @@ private:
 	bool* gridVoxels{ nullptr };
 	glm::vec3 gridMin{};
 	glm::vec3 gridMax{};
+	const simParams& m_params;
 
 };
 

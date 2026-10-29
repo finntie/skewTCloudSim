@@ -1,5 +1,6 @@
 #include "rendering/cuda_render_gl.hpp"
 
+#undef NDEBUG
 // Rendering
 #include "rendering/cuda_render.cuh"
 
@@ -8,6 +9,7 @@
 
 // Shared
 #include "new_open_gl.hpp"
+#include "config.hpp"
 
 // Extras
 #include <glm/glm.hpp>
@@ -31,7 +33,7 @@ template void copyDataToTexture<float4>(float4*, void*&, glm::ivec3, void*);
 
 static void RenderQuad();
 
-CudaRender::CudaRender() 
+CudaRender::CudaRender(const simParams& params) : m_params(params)
 {
     // Check if we are running on NVIDIA:
     const char* vendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
@@ -627,9 +629,9 @@ void CudaRender::render()
 
         // Set over the view matrix
 
-        float3 gridMin = make_float3(0, 0, 0) * m_envData.voxelSize;
+        float3 gridMin = make_float3(0, 0, 0) * m_params.voxelSize;
         float3 gridMax =
-            make_float3(float(m_envData.sizeX), float(m_envData.sizeY), float(m_envData.sizeZ)) * m_envData.voxelSize;
+            make_float3(float(m_params.sizeX), float(m_params.sizeY), float(m_params.sizeZ)) * m_params.voxelSize;
         gridMax = make_float3(gridMin.x + gridMax.x, gridMin.y + gridMax.y, gridMin.z + gridMax.z);
         glm::mat4 transposeCamView = glm::transpose(glm::inverse(m_camView)); // Transpose the matrix so the translation alligns correct with the 4x3 matrix
         initConstants(glm::value_ptr(transposeCamView), sizeof(float4) * 3, gridMin, gridMax);
@@ -645,7 +647,7 @@ void CudaRender::render()
         }
 
         // Actual rendering function, writing into dOutput
-        renderEnvironmentCUDA(gridSize, blockSize, dOutput, m_envData, m_allResourcesRender, m_width, m_height);
+        renderEnvironmentCUDA(m_params, blockSize, dOutput, m_envData, m_allResourcesRender, m_width, m_height);
 
     }
 
@@ -953,33 +955,24 @@ void CudaRender::display()
     }
 }
 
-void CudaRender::initEnvironmentData(const int _sizeX,
-                                     const int _sizeY,
-                                     const int _sizeZ,
-                                     const float _voxelSize)
+void CudaRender::initEnvironmentData()
 {
-    m_envData.sizeX = _sizeX;
-    m_envData.sizeY = _sizeY;
-    m_envData.sizeZ = _sizeZ;
-    m_envData.voxelSize = _voxelSize;
-    m_envData.fullSize = _sizeX * _sizeY * _sizeZ;
-
     dim3 blockDim;
     dim3 gridDim;
-    getGridBlockDims(gridDim, blockDim);
+    getGridBlockDims(m_params, gridDim, blockDim);
 
     m_gridDim = new dim3(gridDim);
     m_blockDim = new dim3(blockDim);
 
     // Malloc data
     //cudaMalloc((void**)&m_envData.Qw, m_envData.fullSize * sizeof(float));
-    hipMalloc((void**)&m_envData.Qc, m_envData.fullSize * sizeof(float));
+    hipMalloc((void**)&m_envData.Qc, m_params.size * sizeof(float));
     //cudaMalloc((void**)&m_envData.Qs, m_envData.fullSize * sizeof(float));
-    hipMalloc((void**)&m_envData.Qi, m_envData.fullSize * sizeof(float));
+    hipMalloc((void**)&m_envData.Qi, m_params.size * sizeof(float));
 
     // Signed Distance Field data
-    hipMalloc((void**)&m_SDFDistanceNeigh, m_envData.fullSize * sizeof(float));
-    hipMalloc((void**)&m_SDFClosestTarget, m_envData.fullSize * sizeof(float));
+    hipMalloc((void**)&m_SDFDistanceNeigh, m_params.size * sizeof(float));
+    hipMalloc((void**)&m_SDFClosestTarget, m_params.size * sizeof(float));
 
     // Create noise texture
     const int resolution = 256;
@@ -995,15 +988,15 @@ void CudaRender::initEnvironmentData(const int _sizeX,
     //cudaFree(m_envData.tempArray);
 
     // initialize environment data
-    initTextureObj<float>(m_QWTextureStorage, m_envData.QwTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), true, true);
-    initTextureObj<float>(m_SDFTextureStorageQw, m_envData.SDFTextureQw, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), true, true);
-    initTextureObj<float>(m_QRTextureStorage, m_envData.QrTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), true, true);
-    initTextureObj<float>(m_SDFTextureStorageQr, m_envData.SDFTextureQr, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), true, true);
-    initTextureObj<float>(m_QSTextureStorage, m_envData.QsTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), true, true);
-    initTextureObj<float>(m_SDFTextureStorageQs, m_envData.SDFTextureQs, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), true, true);
-    initTextureObj<float>(m_velXTextureStorage, m_envData.velXTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), true, true);
-    initTextureObj<float>(m_velYTextureStorage, m_envData.velYTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), true, true);
-    initTextureObj<float>(m_velZTextureStorage, m_envData.velZTexture, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), true, true);
+    initTextureObj<float>(m_QWTextureStorage, m_envData.QwTexture, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), true, true);
+    initTextureObj<float>(m_SDFTextureStorageQw, m_envData.SDFTextureQw, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), true, true);
+    initTextureObj<float>(m_QRTextureStorage, m_envData.QrTexture, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), true, true);
+    initTextureObj<float>(m_SDFTextureStorageQr, m_envData.SDFTextureQr, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), true, true);
+    initTextureObj<float>(m_QSTextureStorage, m_envData.QsTexture, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), true, true);
+    initTextureObj<float>(m_SDFTextureStorageQs, m_envData.SDFTextureQs, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), true, true);
+    initTextureObj<float>(m_velXTextureStorage, m_envData.velXTexture, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), true, true);
+    initTextureObj<float>(m_velYTextureStorage, m_envData.velYTexture, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), true, true);
+    initTextureObj<float>(m_velZTextureStorage, m_envData.velZTexture, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), true, true);
 
     initTextureObj<float4>(m_envTransmittanceTextureStorage, m_envData.envTransmittanceTexture, glm::ivec3(256, 64, 0), true, true);
     initTextureObj<float4>(m_envScatteringTextureStorage, m_envData.envScatteringTexture, glm::ivec3(32, 32, 0), true, true);
@@ -1085,7 +1078,7 @@ void copyDataToTexture(T* data, void*& storageArray, const glm::ivec3 size, void
 void CudaRender::setDataEnvironment(gridDataSkyGPU data, bool updateSDF)
 {
     // TODO: synchronize, lock or whatever to prevent the intervention between sim and render stream.
-    if (m_envData.fullSize == 0)
+    if (m_params.size == 0)
     {
         printf(
             "Warning: environment renderer fullsize is 0 when trying to set environmnent render data, call "
@@ -1093,12 +1086,12 @@ void CudaRender::setDataEnvironment(gridDataSkyGPU data, bool updateSDF)
     }
     // cudaMemcpy(m_envData.Qw, Qw, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
 
-    if (data.Qw) copyDataToTexture<float>(data.Qw, m_QWTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), static_cast<hipStream_t>(getStream()));
-    if (data.Qr) copyDataToTexture<float>(data.Qr, m_QRTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), static_cast<hipStream_t>(getStream()));
-    if (data.Qs) copyDataToTexture<float>(data.Qs, m_QSTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), static_cast<hipStream_t>(getStream()));
-    if (data.velfieldX) copyDataToTexture<float>(data.velfieldX, m_velXTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), static_cast<hipStream_t>(getStream()));
-    if (data.velfieldY) copyDataToTexture<float>(data.velfieldY, m_velYTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), static_cast<hipStream_t>(getStream()));
-    if (data.velfieldZ) copyDataToTexture<float>(data.velfieldZ, m_velZTextureStorage, glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ), static_cast<hipStream_t>(getStream()));
+    if (data.Qw) copyDataToTexture<float>(data.Qw, m_QWTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
+    if (data.Qr) copyDataToTexture<float>(data.Qr, m_QRTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
+    if (data.Qs) copyDataToTexture<float>(data.Qs, m_QSTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
+    if (data.velfieldX) copyDataToTexture<float>(data.velfieldX, m_velXTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
+    if (data.velfieldY) copyDataToTexture<float>(data.velfieldY, m_velYTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
+    if (data.velfieldZ) copyDataToTexture<float>(data.velfieldZ, m_velZTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
 
         hipError_t err = hipGetLastError();
     if (err != hipSuccess)
@@ -1108,7 +1101,7 @@ void CudaRender::setDataEnvironment(gridDataSkyGPU data, bool updateSDF)
     }
 
     if (data.Qw && updateSDF)
-    fillSDF(glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ),
+    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ),
             data.Qw,
             0.00005f,
             m_SDFTextureStorageQw,
@@ -1119,7 +1112,7 @@ void CudaRender::setDataEnvironment(gridDataSkyGPU data, bool updateSDF)
         static_cast<hipStream_t>(getStream()));
 
     if (data.Qr && updateSDF)
-    fillSDF(glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ),
+    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ),
             data.Qr,
             0.00001f,
             m_SDFTextureStorageQr,
@@ -1130,7 +1123,7 @@ void CudaRender::setDataEnvironment(gridDataSkyGPU data, bool updateSDF)
         static_cast<hipStream_t>(getStream()));
 
     if (data.Qs && updateSDF)
-    fillSDF(glm::ivec3(m_envData.sizeX, m_envData.sizeY, m_envData.sizeZ),
+    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ),
             data.Qs,
             0.00001f,
             m_SDFTextureStorageQs,

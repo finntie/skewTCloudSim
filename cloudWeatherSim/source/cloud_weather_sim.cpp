@@ -6,6 +6,10 @@
 #include <rendering/render_hub.hpp>
 #include "rendering/cuda_render_gl.hpp"
 
+
+#include "simulating/simulation_hub.hpp"
+#include "simulating/environment.cuh"
+
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
@@ -17,6 +21,8 @@ bool mainUpdateOnlyView = false;
 
 void cloudWeatherSim::init(GLFWwindow* window, cloudWeatherSimInitFlags flags)
 {
+	runTest();
+
 	CloudHub.CameraObj().initDevice(window);
 
 	CloudHub.initialize(flags & initFlag_LibImGuiStyle);

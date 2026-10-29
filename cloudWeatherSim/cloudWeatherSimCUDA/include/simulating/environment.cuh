@@ -11,15 +11,27 @@ struct microPhysicsParams;
 struct envDebugData;
 struct hipGraphExec;
 struct float4;
+struct simParams;
 
+
+void runTest();
 class environmentGPU
 {
 public:
 
-	environmentGPU();
+	environmentGPU(const simParams& params);
 	~environmentGPU();
 
+	// Makes space for all data, should happen before init
+	void allocateData();
+
+	// Frees all data that was allocated
+	void freeData();
+
 	void init(float* potTemps, glm::vec3* velField, float* Qv, float* groundTemp, float* groundPres, float* pressures, float* smallPressure);
+
+	// Resizes all the data, removed already allocated data
+	void resize();
 
 	void updateGPU(float dt, const float speed);
 
@@ -102,9 +114,11 @@ private:
 	gridDataSkyGPU m_envGrid{};
 	gridDataGroundGPU m_groundGrid{};
 	simInfo simKernelInfo{};
+	const simParams& m_params;
 
 	bool canFillAll{ false }; // If we can fit all threads within the simulation or not
 
+	bool allocatedData{ false };
 
 	float m_time = 43200.0f; //0 to 86.400 time in seconds
 	static constexpr float m_dayLightDuration = 14.0f;
@@ -174,3 +188,4 @@ private:
 	// Debug arrays, point to any array already existing
     float* m_debugArray0 = nullptr, *m_debugArray1 = nullptr, *m_debugArray2 = nullptr;
 };
+

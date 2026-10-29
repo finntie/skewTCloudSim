@@ -20,6 +20,10 @@
 #include "msvc_defines.h"
 #include <hip/hip_runtime.h>
 
+cloudFile::cloudFile(const simParams& params) : m_params(params)
+{
+}
+
 cloudFile::~cloudFile()
 {
 	if (m_GPUDataInitialized)
@@ -59,29 +63,29 @@ void cloudFile::initGPUData()
 	// Environment Values
 	for (int i = 0; i < m_sizeGPUData + 1; i++)
 	{
-		hipMallocAsync((void**)&m_skyDataGPU[i].Qv, GRIDSIZESKY * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_skyDataGPU[i].Qw, GRIDSIZESKY * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_skyDataGPU[i].Qc, GRIDSIZESKY * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_skyDataGPU[i].Qr, GRIDSIZESKY * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_skyDataGPU[i].Qs, GRIDSIZESKY * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_skyDataGPU[i].Qi, GRIDSIZESKY * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_skyDataGPU[i].potTemp, GRIDSIZESKY * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_skyDataGPU[i].velfieldX, GRIDSIZESKY * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_skyDataGPU[i].velfieldY, GRIDSIZESKY * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_skyDataGPU[i].velfieldZ, GRIDSIZESKY * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_skyDataGPU[i].pressure, GRIDSIZESKY * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_skyDataGPU[i].Qv, m_params.size * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_skyDataGPU[i].Qw, m_params.size * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_skyDataGPU[i].Qc, m_params.size * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_skyDataGPU[i].Qr, m_params.size * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_skyDataGPU[i].Qs, m_params.size * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_skyDataGPU[i].Qi, m_params.size * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_skyDataGPU[i].potTemp, m_params.size * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_skyDataGPU[i].velfieldX, m_params.size * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_skyDataGPU[i].velfieldY, m_params.size * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_skyDataGPU[i].velfieldZ, m_params.size * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_skyDataGPU[i].pressure, m_params.size * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
 	}
 
 	// Ground values
 	for (int i = 0; i < m_sizeGPUData + 1; i++)
 	{
-		hipMallocAsync((void**)&m_groundDataGPU[i].Qrs, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_groundDataGPU[i].Qgr, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_groundDataGPU[i].Qgs, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_groundDataGPU[i].Qgi, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_groundDataGPU[i].P, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_groundDataGPU[i].t, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
-		hipMallocAsync((void**)&m_groundDataGPU[i].T, GRIDSIZEGROUND * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_groundDataGPU[i].Qrs, m_params.sizeGround * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_groundDataGPU[i].Qgr, m_params.sizeGround * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_groundDataGPU[i].Qgs, m_params.sizeGround * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_groundDataGPU[i].Qgi, m_params.sizeGround * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_groundDataGPU[i].P, m_params.sizeGround * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_groundDataGPU[i].t, m_params.sizeGround * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
+		hipMallocAsync((void**)&m_groundDataGPU[i].T, m_params.sizeGround * sizeof(float), reinterpret_cast<hipStream_t>(getStream()));
 	}
 
 	hipError_t err = hipGetLastError();
@@ -144,13 +148,13 @@ bool cloudFile::updateViewing(gridDataSkyGPU*& output, float dt, bool force)
 		{
 			if (i == 6 && !m_data.m_visibleTypes[i])
 			{
-				hipMemsetAsync(typeToPointerGPU(7, output, nullptr, true), 0, GRIDSIZESKY * sizeof(float), static_cast<hipStream_t>(getStream()));
-				hipMemsetAsync(typeToPointerGPU(8, output, nullptr, true), 0, GRIDSIZESKY * sizeof(float), static_cast<hipStream_t>(getStream()));
-				hipMemsetAsync(typeToPointerGPU(9, output, nullptr, true), 0, GRIDSIZESKY * sizeof(float), static_cast<hipStream_t>(getStream()));
+				hipMemsetAsync(typeToPointerGPU(7, output, nullptr, true), 0, m_params.size * sizeof(float), static_cast<hipStream_t>(getStream()));
+				hipMemsetAsync(typeToPointerGPU(8, output, nullptr, true), 0, m_params.size * sizeof(float), static_cast<hipStream_t>(getStream()));
+				hipMemsetAsync(typeToPointerGPU(9, output, nullptr, true), 0, m_params.size * sizeof(float), static_cast<hipStream_t>(getStream()));
 			}
 			else if (!m_data.m_visibleTypes[i])
 			{
-				hipMemsetAsync(typeToPointerGPU(i, output, nullptr, true), 0, GRIDSIZESKY * sizeof(float), static_cast<hipStream_t>(getStream()));
+				hipMemsetAsync(typeToPointerGPU(i, output, nullptr, true), 0, m_params.size * sizeof(float), static_cast<hipStream_t>(getStream()));
 			}
 		}
 
@@ -182,70 +186,70 @@ bool cloudFile::tryCreateFrame(gridDataSky& _skyData, gridDataGround& _groundDat
 
 		gridDataSky skyData;
 		gridDataGround groundData;
-		skyData.init(GRIDSIZESKY);
-		groundData.init(GRIDSIZEGROUND);
+		skyData.init(m_params.size);
+		groundData.init(m_params.sizeGround);
 
 		// Based on active types, save correct data
 		if (m_data.m_typesSky[0]) // Qw
 		{
-			memcpy(skyData.Qw, _skyData.Qw, GRIDSIZESKY * sizeof(float));
+			memcpy(skyData.Qw, _skyData.Qw, m_params.size * sizeof(float));
 		}
 		if (m_data.m_typesSky[1]) // Qc
 		{
-			memcpy(skyData.Qc, _skyData.Qc, GRIDSIZESKY * sizeof(float));
+			memcpy(skyData.Qc, _skyData.Qc, m_params.size * sizeof(float));
 		}
 		if (m_data.m_typesSky[2]) // Qr
 		{
-			memcpy(skyData.Qr,  _skyData.Qr, GRIDSIZESKY * sizeof(float));
+			memcpy(skyData.Qr,  _skyData.Qr, m_params.size * sizeof(float));
 		}
 		if (m_data.m_typesSky[3]) // Qs
 		{
-			memcpy(skyData.Qs, _skyData.Qs, GRIDSIZESKY * sizeof(float));
+			memcpy(skyData.Qs, _skyData.Qs, m_params.size * sizeof(float));
 		}
 		if (m_data.m_typesSky[4]) // Qi
 		{
-			memcpy(skyData.Qi, _skyData.Qi, GRIDSIZESKY * sizeof(float));
+			memcpy(skyData.Qi, _skyData.Qi, m_params.size * sizeof(float));
 		}
 		if (m_data.m_typesSky[5]) // Qv
 		{
-			memcpy(skyData.Qv, _skyData.Qv, GRIDSIZESKY * sizeof(float));
+			memcpy(skyData.Qv, _skyData.Qv, m_params.size * sizeof(float));
 		}
 		if (m_data.m_typesSky[6]) // Temp
 		{
-			memcpy(skyData.potTemp, _skyData.potTemp, GRIDSIZESKY * sizeof(float));
+			memcpy(skyData.potTemp, _skyData.potTemp, m_params.size * sizeof(float));
 		}
 		if (m_data.m_typesSky[7] || m_data.m_typesSky[8] || m_data.m_typesSky[9]) // Wind, all the same
 		{
-			memcpy(skyData.velFieldX, _skyData.velFieldX, GRIDSIZESKY * sizeof(float));
-			memcpy(skyData.velFieldY, _skyData.velFieldY, GRIDSIZESKY * sizeof(float));
-			memcpy(skyData.velFieldZ, _skyData.velFieldZ, GRIDSIZESKY * sizeof(float));
+			memcpy(skyData.velFieldX, _skyData.velFieldX, m_params.size * sizeof(float));
+			memcpy(skyData.velFieldY, _skyData.velFieldY, m_params.size * sizeof(float));
+			memcpy(skyData.velFieldZ, _skyData.velFieldZ, m_params.size * sizeof(float));
 		}
 		if (m_data.m_typesSky[10]) // Pressure
 		{
-			memcpy(skyData.pressure, _skyData.pressure, GRIDSIZESKY * sizeof(float));
+			memcpy(skyData.pressure, _skyData.pressure, m_params.size * sizeof(float));
 		}
 		
 		// Ground values
 
 		if (m_data.m_typesGround[0]) // Temp
 		{
-			memcpy(groundData.T,  _groundData.T, GRIDSIZEGROUND * sizeof(float));
+			memcpy(groundData.T,  _groundData.T, m_params.sizeGround * sizeof(float));
 		}
 		if (m_data.m_typesGround[1]) // Water
 		{
-			memcpy(groundData.Qrs, _groundData.Qrs, GRIDSIZEGROUND * sizeof(float));
+			memcpy(groundData.Qrs, _groundData.Qrs, m_params.sizeGround * sizeof(float));
 		}
 		if (m_data.m_typesGround[2]) // Qr
 		{
-			memcpy(groundData.Qgr, _groundData.Qgs, GRIDSIZEGROUND * sizeof(float));
+			memcpy(groundData.Qgr, _groundData.Qgs, m_params.sizeGround * sizeof(float));
 		}
 		if (m_data.m_typesGround[3]) // Qs
 		{
-			memcpy(groundData.Qgs, _groundData.Qgs, GRIDSIZEGROUND * sizeof(float));
+			memcpy(groundData.Qgs, _groundData.Qgs, m_params.sizeGround * sizeof(float));
 		}
 		if (m_data.m_typesGround[4]) // Qi
 		{
-			memcpy(groundData.Qgi, _groundData.Qgi, GRIDSIZEGROUND * sizeof(float));
+			memcpy(groundData.Qgi, _groundData.Qgi, m_params.sizeGround * sizeof(float));
 		}
 
 		m_skyData.push_back(std::move(skyData));
@@ -676,9 +680,9 @@ void cloudFile::saveToFile(cloudFileData& CFData)
 	// File Type
 	writeFile << "CloudFile" << "\n";
 	// Simulation Size
-	writeFile << GRIDSIZESKYX << " " << GRIDSIZESKYY << " " << GRIDSIZESKYZ << "\n";
+	writeFile << m_params.sizeX << " " << m_params.sizeY << " " << m_params.sizeZ << "\n";
 	// Voxel Size
-	writeFile << VOXELSIZE << "\n";
+	writeFile << m_params.voxelSize << "\n";
 	// Total Frames
 	writeFile << CFData.m_totalFrames << "\n";
 	// Time frames
@@ -697,14 +701,14 @@ void cloudFile::saveToFile(cloudFileData& CFData)
 		{
 			if (CFData.m_typesSky[j])
 			{
-				writeFile.write(reinterpret_cast<char*>(typeToPointer(j, &m_skyData[i], &m_groundData[i], true)), GRIDSIZESKY * sizeof(float));
+				writeFile.write(reinterpret_cast<char*>(typeToPointer(j, &m_skyData[i], &m_groundData[i], true)), m_params.size * sizeof(float));
 			}
 		}
 		for (int j = 0; j < 5; j++)
 		{
 			if (CFData.m_typesGround[j])
 			{
-				writeFile.write(reinterpret_cast<char*>(typeToPointer(j, &m_skyData[i], &m_groundData[i], false)), GRIDSIZEGROUND * sizeof(float));
+				writeFile.write(reinterpret_cast<char*>(typeToPointer(j, &m_skyData[i], &m_groundData[i], false)), m_params.sizeGround * sizeof(float));
 				writeFile << "\n";
 			}
 		}
@@ -792,15 +796,15 @@ void cloudFile::getLerpedFrameData(gridDataSkyGPU*& outputSkyData, gridDataGroun
 
 	// Lerp data on the GPU, input the correct array index from the GPU array
 	dim3 blockSize(8, 8, 8);
-	dim3 gridSize = dim3(unsigned(iDivUp(GRIDSIZESKYX, blockSize.x)),
-		unsigned(iDivUp(GRIDSIZESKYY, blockSize.y)),
-		unsigned(iDivUp(GRIDSIZESKYZ, blockSize.z)));
+	dim3 gridSize = dim3(unsigned(iDivUp(m_params.sizeX, blockSize.x)),
+		unsigned(iDivUp(m_params.sizeY, blockSize.y)),
+		unsigned(iDivUp(m_params.sizeZ, blockSize.z)));
 	for (int i = 0; i < 11; i++) if (m_data.m_typesSky[i]) lerpFramesType <<<gridSize, blockSize, 0, static_cast<hipStream_t>(getStream()) >>> (
 		typeToPointerGPU(i, outputSkyData, outputGroundData, true),
 		typeToPointerGPU(i, &m_skyDataGPU[m_GPUFrames[t1 - m_firstFrameGPU]], nullptr, true),
 		typeToPointerGPU(i, &m_skyDataGPU[m_GPUFrames[t2 - m_firstFrameGPU]], nullptr, true), 
 		t, 
-		make_int3(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ));
+		make_int3(m_params.sizeX, m_params.sizeY, m_params.sizeZ));
 
 	hipError_t err = hipGetLastError();
 	if (err != hipSuccess) {
@@ -1126,5 +1130,5 @@ void cloudFile::copyNewFrames(int firstFrame, int lastFrame)
 
 void cloudFile::copyOver1Frame(gridDataSkyGPU* dst, int type, int frame)
 {
-	hipMemcpyAsync(typeToPointerGPU(type, dst, nullptr, true), typeToPointer(type, &m_skyData[frame], &m_groundData[frame], true), GRIDSIZESKY * sizeof(float), hipMemcpyHostToDevice, static_cast<hipStream_t>(getStream()));
+	hipMemcpyAsync(typeToPointerGPU(type, dst, nullptr, true), typeToPointer(type, &m_skyData[frame], &m_groundData[frame], true), m_params.size * sizeof(float), hipMemcpyHostToDevice, static_cast<hipStream_t>(getStream()));
 }

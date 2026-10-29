@@ -80,12 +80,12 @@ void skewTMaker::update(float dt)
 	CloudHub.CameraObj().setCamRot(rot);
 }
 
-bool skewTMaker::skewTMakerPanel()
+bool skewTMaker::skewTMakerPanel(simParams params)
 {
     if (ImGui::Button("Confirm SkewT"))
     {
         CloudHub.CameraObj().enable();
-        confirmSkewT();
+        confirmSkewT(params);
         return true;
     }
 
@@ -1213,7 +1213,7 @@ void skewTMaker::controlCamera(float dt)
 }
 	
 
-void skewTMaker::confirmSkewT()
+void skewTMaker::confirmSkewT(simParams params)
 {
     std::vector<float> altitude;
     std::vector<float> temps;
@@ -1342,7 +1342,7 @@ void skewTMaker::confirmSkewT()
         std::memcpy(CloudHub.CloudSim().ReadTable().skewTData.data.altitude, altitude.data(), altitude.size() * sizeof(float));
     }
 
-    CloudHub.CloudSim().ReadTable().initEnvironment();
+    CloudHub.CloudSim().ReadTable().initEnvironment(params);
 
     // Quats for roll and pitch to 45 and -45
     glm::quat qRoll = glm::angleAxis(glm::radians(45.0f), glm::vec3(0, 1, 0));
@@ -1352,9 +1352,9 @@ void skewTMaker::confirmSkewT()
     // Set camera rotation
     m_cameraRot = InputRotation;
     // Offset location based on size
-    glm::vec3 middle = glm::vec3(float(GRIDSIZESKYX) * 0.5f, float(GRIDSIZESKYY) * 0.5f, float(GRIDSIZESKYZ) * 0.5f);
+    glm::vec3 middle = glm::vec3(float(params.sizeX) * 0.5f, float(params.sizeY) * 0.5f, float(params.sizeZ) * 0.5f);
     glm::vec3 dir = InputRotation * glm::vec3(0, 0, -1) * -1.0f;
-    m_cameraPos = middle + dir * float(GRIDSIZESKYX) * 2.0f;  // Offset by distance of 2x gridsizeX towards negative direction
+    m_cameraPos = middle + dir * float(params.sizeX) * 2.0f;  // Offset by distance of 2x gridsizeX towards negative direction
 
     m_skewTConfirmed = true;
     doneMakingSkewT = true;

@@ -8,6 +8,7 @@
 struct dim3;
 struct float4;
 struct hipArray;
+struct simParams;
 
 struct renderSettings
 {
@@ -107,12 +108,6 @@ struct environmentData
     unsigned long long noiseTexture; 
     int resolution;
 
-    int sizeX;
-    int sizeY;
-    int sizeZ;
-    int fullSize;
-    float voxelSize;
-
     float camFar = 0.0f;
     float camNear = 0.0f;
     bool useAlpha = false;
@@ -125,7 +120,7 @@ class CudaRender
 public:
     // Highly inspired from
     // https://github.com/BigNerd95/CUDASamples/blob/master/samples/2_Graphics/volumeRender/volumeRender.cpp
-    CudaRender();
+    CudaRender(const simParams& params);
     ~CudaRender();
 
     /// <summary>
@@ -160,10 +155,9 @@ public:
     void display();
 
     // Environment Simulation
-    void initEnvironmentData(const int _sizeX,
-                             const int _sizeY,
-                             const int _sizeZ,
-                             const float _voxelSize);
+    // Should only be called by resize() in cloud hub.
+    // allocates data, uses the latest simulation parameters
+    void initEnvironmentData();
 
     void setDataEnvironment(gridDataSkyGPU data, bool updateSDF);
 
@@ -240,6 +234,7 @@ private:
 
     float* tempArray;  // Malloced inside the creation function
 
+    const simParams& m_params;
     environmentData m_envData{};
     void* m_noiseTextureStorage; //In which we store the texture data
     void* m_QWTextureStorage; 

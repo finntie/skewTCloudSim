@@ -11,7 +11,6 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="source\utils.cu" />
     <ClInclude Include="include\gpu_defines.h" />
     <ClInclude Include="include\math\cudaMath.cuh" />
     <ClInclude Include="include\math\meteoformulas.cuh" />
@@ -25,6 +24,7 @@
     <ClInclude Include="include\simulating\kernelSky.cuh" />
     <ClInclude Include="include\simulating\microPhysics.cuh" />
     <ClInclude Include="include\utils.cuh" />
+    <ClCompile Include="source\utils.cu" />
     <ClCompile Include="source\math\cudaMath.cu" />
     <ClCompile Include="source\rendering\cloudFile.cu" />
     <ClCompile Include="source\rendering\cuda_render.cu" />
@@ -99,7 +99,7 @@
     <ClCompile>
       <PreprocessorDefinitions>__CUDACC__;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectDir)include;$(SolutionDir)external;$(SolutionDir)external/glad/include;$(SolutionDir)shared;$(HIP_PATH)\include;$(CUDA_PATH)\include</AdditionalIncludeDirectories>
-      <AdditionalOptions>-rdc=true %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard_C Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</LanguageStandard_C>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -121,10 +121,10 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64' and '$(PlatformToolset)'=='HIP nvcc $(HIPVersion)'">
     <ClCompile>
-      <WholeProgramOptimization>true</WholeProgramOptimization>
       <PreprocessorDefinitions>__CUDACC__;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)include;$(SolutionDir)external;$(SolutionDir)external/glad/include;$(SolutionDir)shared;$(HIP_PATH)\include;$(CUDA_PATH)\include</AdditionalIncludeDirectories>
-      <AdditionalOptions>-rdc=true %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectDir)include;$(SolutionDir)external;$(SolutionDir)external/glad/include;$(SolutionDir)shared</AdditionalIncludeDirectories>
+      <LanguageStandard_C Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Default</LanguageStandard_C>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
     </ClCompile>
     <Link>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>

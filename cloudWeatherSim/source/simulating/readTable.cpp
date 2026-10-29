@@ -26,7 +26,7 @@ static float lerpEnvValue(const float H1, const float H2, const float HC, const 
 	return V1 + t * (V2 - V1);
 }
 
-void readTable::initEnvironment()
+void readTable::initEnvironment(simParams p)
 {
 
 	std::vector<int> indices;
@@ -35,24 +35,24 @@ void readTable::initEnvironment()
 	std::vector<glm::vec3> velField;
 	std::vector<float> Qv;
 
-	indices.resize(GRIDSIZESKYY);
-	potTempSmall.resize(GRIDSIZESKYY);
-	potTemp.resize(GRIDSIZESKY);
-	velField.resize(GRIDSIZESKY);
-	Qv.resize(GRIDSIZESKY);
+	indices.resize(p.sizeY);
+	potTempSmall.resize(p.sizeY);
+	potTemp.resize(p.size);
+	velField.resize(p.size);
+	Qv.resize(p.size);
 
 	std::vector<float> groundTemp;
 	std::vector<float>  groundPressure;
 	std::vector<float>  pressures;
 	std::vector<float>  pressuresSmall;
 
-	groundTemp.resize(GRIDSIZEGROUND);
-	groundPressure.resize(GRIDSIZEGROUND);
-	pressures.resize(GRIDSIZESKY);
-	pressuresSmall.resize(GRIDSIZESKYY);
+	groundTemp.resize(p.sizeGround);
+	groundPressure.resize(p.sizeGround);
+	pressures.resize(p.size);
+	pressuresSmall.resize(p.sizeY);
 
 	int j = 0;
-	for (float y = 0; y < GRIDSIZESKYY * VOXELSIZE; y += VOXELSIZE)
+	for (float y = 0; y < p.sizeY * p.voxelSize; y += p.voxelSize)
 	{
 		const float H0 = skewTData.data.altitude[0];
 		int i = getIndexAtHeight(y + H0);
@@ -64,22 +64,22 @@ void readTable::initEnvironment()
 		j++;
 	}
 
-	MForms::getPotentialTempArray(potTempSmall.data(), skewTData.data.pressure[0], pressuresSmall.data(), potTempSmall.data(), GRIDSIZESKYY);
+	MForms::getPotentialTempArray(potTempSmall.data(), skewTData.data.pressure[0], pressuresSmall.data(), potTempSmall.data(), p.sizeY);
 	//Duplicate across x and z direction
-	for (int z = 0; z < GRIDSIZESKYZ; z++)
+	for (int z = 0; z < p.sizeZ; z++)
 	{
-		for (int i = 0; i < GRIDSIZESKYY; i++) 
+		for (int i = 0; i < p.sizeY; i++) 
 		{
-			for (int x = 0; x < GRIDSIZESKYX; x++)
+			for (int x = 0; x < p.sizeX; x++)
 			{
-				const int idx = getIdx(x, i, z);
+				const int idx = getIdx(p, x, i, z);
 				potTemp[idx] = static_cast<float>(potTempSmall[i] + 273.15f);
 			}
 		}
 	}
 
 	//Converting 2D into 1D: 90degrees = -1, 270 degrees = 1
-	for (int i = 0; i < GRIDSIZESKYY; i++)
+	for (int i = 0; i < p.sizeY; i++)
 	{
 		const float H0 = skewTData.data.altitude[0];
 		const int idx = indices[i];
@@ -92,17 +92,17 @@ void readTable::initEnvironment()
 		float velFieldValueZ = std::cos((skewTData.data.windDir[idx] - 180.0f) * partPI) * skewTData.data.windSpeed[idx];
 		const float prevVelFieldValueZ = std::cos((skewTData.data.windDir[Pidx] - 180.0f) * partPI) * skewTData.data.windSpeed[Pidx];
 		// Now lerp
-		velFieldValueX = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, prevVelFieldValueX, velFieldValueX);
-		velFieldValueZ = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, prevVelFieldValueZ, velFieldValueZ);
+		velFieldValueX = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * p.voxelSize, prevVelFieldValueX, velFieldValueX);
+		velFieldValueZ = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * p.voxelSize, prevVelFieldValueZ, velFieldValueZ);
 
-		const float psValue = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, pressuresSmall[Pi], pressuresSmall[i]);
-		const float QvValue = MForms::ws(lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * VOXELSIZE, 
+		const float psValue = lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * p.voxelSize, pressuresSmall[Pi], pressuresSmall[i]);
+		const float QvValue = MForms::ws(lerpEnvValue(skewTData.data.altitude[Pidx] - H0, skewTData.data.altitude[idx] - H0, i * p.voxelSize, 
 			skewTData.data.dewPoint[Pidx], skewTData.data.dewPoint[idx]), psValue);
-		for (int z = 0; z < GRIDSIZESKYZ; z++)
+		for (int z = 0; z < p.sizeZ; z++)
 		{
-			for (int x = 0; x < GRIDSIZESKYX; x++)
+			for (int x = 0; x < p.sizeX; x++)
 			{
-				const int idxFull = getIdx(x, i, z);
+				const int idxFull = getIdx(p, x, i, z);
 				velField[idxFull] = { velFieldValueX, 0, velFieldValueZ };
 				Qv[idxFull] = QvValue;
 				pressures[idxFull] = psValue;
@@ -111,27 +111,27 @@ void readTable::initEnvironment()
 	}
 
 	//Convert velfield into MAC-grid - TODO: could be done in loop above if loop was counting down.
-	for (int z = 0; z < GRIDSIZESKYZ; z++)
+	for (int z = 0; z < p.sizeZ; z++)
 	{
-		for (int y = 0; y < GRIDSIZESKYY; y++)
+		for (int y = 0; y < p.sizeY; y++)
 		{
-			for (int x = 0; x < GRIDSIZESKYX; x++)
+			for (int x = 0; x < p.sizeX; x++)
 			{
-				const int Nx = x + 1 >= GRIDSIZESKYX ? x : x + 1;
-				const int Ny = y + 1 >= GRIDSIZESKYY ? y : y + 1;
-				const int Nz = z + 1 >= GRIDSIZESKYZ ? z : z + 1;
-				const int idx = getIdx(x, y, z);
+				const int Nx = x + 1 >= p.sizeX ? x : x + 1;
+				const int Ny = y + 1 >= p.sizeY ? y : y + 1;
+				const int Nz = z + 1 >= p.sizeZ ? z : z + 1;
+				const int idx = getIdx(p, x, y, z);
 
 
-				velField[idx] = { (velField[idx].x + velField[getIdx(Nx, y, z)].x) / 2.0f,
-					(velField[idx].y + velField[getIdx(x, Ny, z)].y) / 2.0f,
-					(velField[idx].z + velField[getIdx(x, y, Nz)].z) / 2.0f };
+				velField[idx] = { (velField[idx].x + velField[getIdx(p, Nx, y, z)].x) / 2.0f,
+					(velField[idx].y + velField[getIdx(p, x, Ny, z)].y) / 2.0f,
+					(velField[idx].z + velField[getIdx(p, x, y, Nz)].z) / 2.0f };
 			}
 		}
 	}
 
 
-	for (int i = 0; i < GRIDSIZEGROUND; i++)
+	for (int i = 0; i < p.sizeGround; i++)
 	{
 		groundTemp[i] = skewTData.data.temperature[0] + 273.15f;
 		groundPressure[i] = skewTData.data.pressure[0];

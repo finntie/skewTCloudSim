@@ -18,7 +18,7 @@ public:
 	void update(float dt);
 
 	// Returns true if skewT was confirmed
-	bool skewTMakerPanel();
+	bool skewTMakerPanel(simParams params);
 
 	bool doneMakingSkewT{ false };
 
@@ -61,7 +61,7 @@ private:
 	bool getAllIndicesAround(std::vector<float> values, bool& valueIsTarget1, bool& foundAroundTarget, bool& foundInBetweenTargets, std::vector<int>& outputIndices, float target1, float target2);
 
 	void controlCamera(float dt);
-	void confirmSkewT();
+	void confirmSkewT(simParams params);
 	void resetControls();
 
 	//Converts temp and height in meters or pressure to plotting so its easily modified.

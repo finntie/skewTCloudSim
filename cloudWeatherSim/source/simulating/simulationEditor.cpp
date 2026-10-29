@@ -28,13 +28,13 @@
 #include <algorithm>
 #include <glm/gtc/type_ptr.hpp>
 
-simulationEditor::simulationEditor() 
+simulationEditor::simulationEditor(const simParams& params) : m_params(params)
 { 
     m_envEditData = new envDebugData();
     m_colorSchemeObj = new colorScheme();
     m_skewTObj = new skewTer();
     m_dataClassObj = new dataClass();
-    m_tracingObj = new tracing();
+    m_tracingObj = new tracing(params);
 
     setColorScheme();
     setSliceMinMax(false); 
@@ -51,19 +51,30 @@ simulationEditor::~simulationEditor()
 
 void simulationEditor::init() 
 {
-    m_envEditData->init(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ);
+    m_envEditData->init(m_params.sizeX, m_params.sizeY, m_params.sizeZ);
     GPUSetEnv(true);
     initializeSkewT();
 
     m_tracingObj->init();
 
     // Set camera Position based on grid
-    glm::vec3 pos = glm::vec3(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ) * VOXELSIZE;
+    glm::vec3 pos = glm::vec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ) * m_params.voxelSize;
     glm::vec3 normPos = glm::normalize(pos);
     pos = normPos * distance(pos, glm::vec3(0.0f)) * 1.5f;
     glm::quat rotation = glm::quatLookAt(-normPos, glm::vec3(0,1,0));
     CloudHub.CameraObj().setCamPos(pos);
     CloudHub.CameraObj().setCamRot(rotation);
+}
+
+void simulationEditor::resize()
+{
+    if (m_envEditData) delete m_envEditData;
+    m_envEditData = new envDebugData();
+    m_envEditData->init(m_params.sizeX, m_params.sizeY, m_params.sizeZ);
+    GPUSetEnv(true);
+    initializeSkewT();
+
+    m_tracingObj->init();
 }
 
 void simulationEditor::setColorScheme()
@@ -139,13 +150,13 @@ void simulationEditor::updateValues()
         m_selectionInGrid = true;
         m_mousePointingIndex = pointingAtIdx;  // Do not change if invalid index
     }
-    getCoord(m_mousePointingIndex, m_mousePointingPos.x, m_mousePointingPos.y, m_mousePointingPos.z);
+    getCoord(m_params, m_mousePointingIndex, m_mousePointingPos.x, m_mousePointingPos.y, m_mousePointingPos.z);
 
     // If space is pressed, updateInput skewT index
     if (CloudHub.InputObj().keyDown(newInput::SPACEBAR))
     {
         m_skewTidx = m_mousePointingIndex;
-        getCoord(m_skewTidx, m_skewTPos.x, m_skewTPos.y, m_skewTPos.z);
+        getCoord(m_params, m_skewTidx, m_skewTPos.x, m_skewTPos.y, m_skewTPos.z);
     }
 }
 
@@ -153,14 +164,14 @@ void simulationEditor::initializeSkewT()
 {
     // Initialize skewTer
     {
-        float* temps = new float[GRIDSIZESKYY];
-        float* dewPoints = new float[GRIDSIZESKYY];
+        float* temps = new float[m_params.sizeY];
+        float* dewPoints = new float[m_params.sizeY];
 
         dataToSkewTData(temps, dewPoints);
 
         skewTer::skewTInfo skewT;
-        skewT.init(GRIDSIZESKYY, temps, dewPoints, m_envEditData->m_envPressure);
-        m_skewTidx = (m_envEditData->m_groundHeight[0] + 1) * GRIDSIZESKYX;
+        skewT.init(m_params.sizeY, temps, dewPoints, m_envEditData->m_envPressure);
+        m_skewTidx = (m_envEditData->m_groundHeight[0] + 1) * m_params.sizeX;
         m_skewTObj->setSkewT(skewT);
 
         delete[] temps;
@@ -175,7 +186,7 @@ void simulationEditor::dataToSkewTData(float* temp, float* dew)
     const int z = m_skewTPos.z;
 
     // Use i for our y lookup, gathering all data up into the sky
-    for (int i = 0; i < GRIDSIZESKYY; i++)
+    for (int i = 0; i < m_params.sizeY; i++)
     {
         if (i < y)
         {
@@ -183,8 +194,8 @@ void simulationEditor::dataToSkewTData(float* temp, float* dew)
             dew[i] = 0.0f;
             continue;
         }
-        const int idx = getIdx(x, i, z);
-        const int idxG = x + z * GRIDSIZESKYX;
+        const int idx = getIdx(m_params, x, i, z);
+        const int idxG = x + z * m_params.sizeX;
 
         const float Tz = float(m_envEditData->m_envView.potTemp[idx]) - 273.15f;
         const float T = MForms::potentialTemp(Tz, m_envEditData->m_groundView.P[idxG], m_envEditData->m_envView.pressure[idx]);
@@ -233,7 +244,7 @@ void simulationEditor::update(bool editing, bool skewT)
     CloudHub.CloudRender().CloudFile().tryCreateFrame(m_envEditData->m_envView, m_envEditData->m_groundView, m_time);
 
     // View cursor
-    CloudHub.CloudRender().shapesGLObj().AddVoxel((glm::vec3(m_mousePointingPos) + 0.5f) * VOXELSIZE, VOXELSIZE, Colors::WhiteA);
+    CloudHub.CloudRender().shapesGLObj().AddVoxel((glm::vec3(m_mousePointingPos) + 0.5f) * m_params.voxelSize, m_params.voxelSize, Colors::WhiteA);
 
     // Mouse/camera cursor
     glm::vec3 mousepos3D = CloudHub.CameraObj().getMousePos3D();
@@ -270,18 +281,18 @@ void simulationEditor::updateSkewT(bool skewTView)
     if (skewTView)
     {
         // Small SkewT Index check
-        int idxG = m_skewTPos.x + m_skewTPos.z * GRIDSIZESKYX;
+        int idxG = m_skewTPos.x + m_skewTPos.z * m_params.sizeX;
         if (m_skewTPos.y <= m_envEditData->m_groundHeight[idxG])
         {
             // Update new coordinate to be above ground
             int newY = m_envEditData->m_groundHeight[idxG] + 1;
-            m_skewTPos.y = newY < GRIDSIZESKYY ? newY : GRIDSIZESKYY - 1;
-            m_skewTidx = getIdx(m_skewTPos.x, m_skewTPos.y, m_skewTPos.z);
+            m_skewTPos.y = newY < m_params.sizeY ? newY : m_params.sizeY - 1;
+            m_skewTidx = getIdx(m_params, m_skewTPos.x, m_skewTPos.y, m_skewTPos.z);
         }
 
         // Copy over data at the skewT idx to our skewT class
-        float* temps = new float[GRIDSIZESKYY];
-        float* dewPoints = new float[GRIDSIZESKYY];
+        float* temps = new float[m_params.sizeY];
+        float* dewPoints = new float[m_params.sizeY];
         dataToSkewTData(temps, dewPoints);
 
         m_skewTObj->setAllArrays(temps, dewPoints, m_envEditData->m_envPressure);
@@ -322,10 +333,10 @@ void simulationEditor::controls()
     if (m_viewSlice && CloudHub.InputObj().keyDown(newInput::LEFT_CONTROL) && m_mouseWheel != CloudHub.InputObj().mouseScroll())
     {
         const int scroll = int(m_mouseWheel) - int(CloudHub.InputObj().mouseScroll());
-        int sliceMaxCoord = GRIDSIZESKYX - 1;
-        if (m_viewSliceCoord == 0) sliceMaxCoord = GRIDSIZESKYX - 1;
-        else if (m_viewSliceCoord == 1) sliceMaxCoord = GRIDSIZESKYY - 1;
-        else if (m_viewSliceCoord == 2) sliceMaxCoord = GRIDSIZESKYZ - 1;
+        int sliceMaxCoord = m_params.sizeX - 1;
+        if (m_viewSliceCoord == 0) sliceMaxCoord = m_params.sizeX - 1;
+        else if (m_viewSliceCoord == 1) sliceMaxCoord = m_params.sizeY - 1;
+        else if (m_viewSliceCoord == 2) sliceMaxCoord = m_params.sizeZ - 1;
 
         m_atSliceViewSlice = std::clamp(m_atSliceViewSlice + scroll, 0, sliceMaxCoord);
         setSliceMinMax(!m_viewSlice);
@@ -395,11 +406,11 @@ void simulationEditor::viewParamValuesPanel()
     int x = m_mousePointingPos.x;
     int y = m_mousePointingPos.y;
     int z = m_mousePointingPos.z;
-    const int Gidx = x + z * GRIDSIZESKYX;
+    const int Gidx = x + z * m_params.sizeX;
 
     ImGui::Indent();
     ImGui::Text("%s", std::string("X: " + std::to_string(x) + ", Y: " + std::to_string(y) + ", Z: " + std::to_string(z)).c_str());
-    ImGui::Text("%s", std::string("Meters Per Voxel: " + std::to_string(VOXELSIZE)).c_str());
+    ImGui::Text("%s", std::string("Meters Per Voxel: " + std::to_string(m_params.voxelSize)).c_str());
     ImGui::Text(
         "--Sky--\nPot Temp: \nQv: \nQw: \nQc: \nQr: \nQs: \nQi: \nWind: \nPressure: \nDebug1: \nDebug2: \nDebug3: "
         "\n--Ground--\nTemp: \nWater: \nQr: \nQs: \nQi: ");
@@ -482,7 +493,7 @@ void simulationEditor::slicePanel()
 {
     if (ImGui::TreeNode("View-Slice"))
     {
-        static int sliceMaxCoord = GRIDSIZESKYX - 1;
+        static int sliceMaxCoord = m_params.sizeX - 1;
 
         if (ImGui::Checkbox("Use Slice View", &m_viewSlice))
         {
@@ -492,19 +503,19 @@ void simulationEditor::slicePanel()
         if (ImGui::RadioButton("Slice X", &m_viewSliceCoord, 0))
         {
             setSliceMinMax(!m_viewSlice);
-            sliceMaxCoord = GRIDSIZESKYX - 1;
+            sliceMaxCoord = m_params.sizeX - 1;
         }
         ImGui::SameLine();
         if (ImGui::RadioButton("Slice Y", &m_viewSliceCoord, 1))
         {
             setSliceMinMax(!m_viewSlice);
-            sliceMaxCoord = GRIDSIZESKYY - 1;
+            sliceMaxCoord = m_params.sizeY - 1;
         }
         ImGui::SameLine();
         if (ImGui::RadioButton("Slice Z", &m_viewSliceCoord, 2))
         {
             setSliceMinMax(!m_viewSlice);
-            sliceMaxCoord = GRIDSIZESKYZ - 1;
+            sliceMaxCoord = m_params.sizeZ - 1;
         }
 
         if (ImGui::SliderInt("Slice Layer", &m_atSliceViewSlice, 0, sliceMaxCoord))
@@ -709,10 +720,10 @@ void simulationEditor::shortCutViewDataPanel()
 void simulationEditor::viewTooltipDataPanel() 
 {
     int x = 0, y = 0, z = 0;
-    getCoord(m_mousePointingIndex, x, y, z);
+    getCoord(m_params, m_mousePointingIndex, x, y, z);
     const int idx = m_mousePointingIndex;
 
-    const float height = y * VOXELSIZE;
+    const float height = y * m_params.voxelSize;
     const float Tz = float(m_envEditData->m_envView.potTemp[idx]) - 273.15f;
     const float T = MForms::potentialTemp(Tz, m_envEditData->m_groundView.P[int(x)], m_envEditData->m_envView.pressure[idx]);
 
@@ -1011,11 +1022,11 @@ void simulationEditor::viewBrush()
 
         const int brushSizeI = int(ceil(m_brushSize));
         const float maxBrushSize = m_brushSize * m_brushSize;
-        for (int zb = std::max(0, z - brushSizeI); zb < std::min(GRIDSIZESKYZ, z + brushSizeI); zb++)
+        for (int zb = std::max(0, z - brushSizeI); zb < std::min(m_params.sizeZ, z + brushSizeI); zb++)
         {
-            for (int yb = std::max(0, y - brushSizeI); yb < std::min(GRIDSIZESKYY, y + brushSizeI); yb++)
+            for (int yb = std::max(0, y - brushSizeI); yb < std::min(m_params.sizeY, y + brushSizeI); yb++)
             {
-                for (int xb = std::max(0, x - brushSizeI); xb < std::min(GRIDSIZESKYX, x + brushSizeI); xb++)
+                for (int xb = std::max(0, x - brushSizeI); xb < std::min(m_params.sizeX, x + brushSizeI); xb++)
                 {
                     const int dx = xb - x;
                     const int dy = yb - y;
@@ -1025,7 +1036,7 @@ void simulationEditor::viewBrush()
 
                     if (distance > maxBrushSize) continue;
 
-                    CloudHub.CloudRender().shapesGLObj().AddVoxel((glm::vec3(xb, yb, zb) + 0.5f) * VOXELSIZE, VOXELSIZE, Colors::WhiteA);
+                    CloudHub.CloudRender().shapesGLObj().AddVoxel((glm::vec3(xb, yb, zb) + 0.5f) * m_params.voxelSize, m_params.voxelSize, Colors::WhiteA);
                 }
             }
         }
@@ -1112,9 +1123,9 @@ void simulationEditor::viewSelect()
         int sx1 = std::max(0, std::min(m_corners[0].x, m_corners[1].x));
         int sy1 = std::max(0, std::min(m_corners[0].y, m_corners[1].y));
         int sz1 = std::max(0, std::min(m_corners[0].z, m_corners[1].z));
-        int sx2 = std::min(GRIDSIZESKYX - 1, std::max(m_corners[1].x, m_corners[0].x));
-        int sy2 = std::min(GRIDSIZESKYY - 1, std::max(m_corners[1].y, m_corners[0].y));
-        int sz2 = std::min(GRIDSIZESKYZ - 1, std::max(m_corners[1].z, m_corners[0].z));
+        int sx2 = std::min(m_params.sizeX - 1, std::max(m_corners[1].x, m_corners[0].x));
+        int sy2 = std::min(m_params.sizeY - 1, std::max(m_corners[1].y, m_corners[0].y));
+        int sz2 = std::min(m_params.sizeZ - 1, std::max(m_corners[1].z, m_corners[0].z));
 
         for (int sz = sz1; sz <= sz2; sz++)
         {
@@ -1122,7 +1133,7 @@ void simulationEditor::viewSelect()
             {
                 for (int sx = sx1; sx <= sx2; sx++)
                 {
-                    CloudHub.CloudRender().shapesGLObj().AddVoxel((glm::vec3(sx, sy, sz) + 0.5f) * VOXELSIZE, VOXELSIZE, color);
+                    CloudHub.CloudRender().shapesGLObj().AddVoxel((glm::vec3(sx, sy, sz) + 0.5f) * m_params.voxelSize, m_params.voxelSize, color);
                 }
             }
         }
@@ -1172,7 +1183,7 @@ void simulationEditor::usePicker()
 {
     if (CloudHub.InputObj().keyDown(newInput::LEFT_ALT))
     {
-        if (!isOutside(m_mousePointingPos.x, m_mousePointingPos.y, m_mousePointingPos.z))
+        if (!isOutside(m_params, m_mousePointingPos.x, m_mousePointingPos.y, m_mousePointingPos.z))
         {
             if (m_viewParamSky == WINDX || m_viewParamSky == WINDY || m_viewParamSky == WINDZ)
             {
@@ -1204,8 +1215,8 @@ void simulationEditor::viewDebugSky()
 		{
 			for (int x = m_minViewX; x < m_maxViewX; x++)
 			{
-				const int idx = getIdx(x, y, z);
-				const int idxG = x + z * GRIDSIZESKYX;
+				const int idx = getIdx(m_params, x, y, z);
+				const int idxG = x + z * m_params.sizeX;
 				if (y <= m_envEditData->m_groundHeight[idxG]) 
 				{
 					continue; // Ignore
@@ -1272,8 +1283,8 @@ void simulationEditor::viewDebugSky()
 				
 				m_tracingObj->setVoxelValue(idx, true); // Add voxel to tracer so we can select it
 
-                if (m_wireFrame) CloudHub.CloudRender().shapesGLObj().AddVoxel((glm::vec3(x, y, z) + 0.5f) * VOXELSIZE, 0.999f * VOXELSIZE, { color, 1.0f });
-				else CloudHub.CloudRender().shapesGLObj().AddFilledVoxel((glm::vec3(x, y, z) + 0.5f) * VOXELSIZE, 0.999f * VOXELSIZE, { color, 1.0f });
+                if (m_wireFrame) CloudHub.CloudRender().shapesGLObj().AddVoxel((glm::vec3(x, y, z) + 0.5f) * m_params.voxelSize, 0.999f * m_params.voxelSize, { color, 1.0f });
+				else CloudHub.CloudRender().shapesGLObj().AddFilledVoxel((glm::vec3(x, y, z) + 0.5f) * m_params.voxelSize, 0.999f * m_params.voxelSize, { color, 1.0f });
 			}
 		}
 	}
@@ -1283,12 +1294,12 @@ void simulationEditor::viewDebugGround()
 {
     if (!m_viewGround) return;
 
-    for (int z = 0; z < GRIDSIZESKYZ; z++)
+    for (int z = 0; z < m_params.sizeZ; z++)
     {
-        for (int x = 0; x < GRIDSIZESKYX; x++)
+        for (int x = 0; x < m_params.sizeX; x++)
         {
-            const int idxG = x + z * GRIDSIZESKYX;
-            const int GHeight = m_envEditData->m_groundHeight[x + z * GRIDSIZESKYX];
+            const int idxG = x + z * m_params.sizeX;
+            const int GHeight = m_envEditData->m_groundHeight[x + z * m_params.sizeX];
             glm::vec3 color{};
             switch (m_viewParamGround)
             {
@@ -1309,10 +1320,10 @@ void simulationEditor::viewDebugGround()
                     break;
             }
 
-            if (m_wireFrame) CloudHub.CloudRender().shapesGLObj().AddVoxel((glm::vec3(x, GHeight, z) + 0.5f) * VOXELSIZE, 0.999f * VOXELSIZE, {color, 1.0f});
-            else CloudHub.CloudRender().shapesGLObj().AddFilledVoxel((glm::vec3(x, GHeight, z) + 0.5f) * VOXELSIZE, 0.999f * VOXELSIZE, {color, 1.0f});
+            if (m_wireFrame) CloudHub.CloudRender().shapesGLObj().AddVoxel((glm::vec3(x, GHeight, z) + 0.5f) * m_params.voxelSize, 0.999f * m_params.voxelSize, {color, 1.0f});
+            else CloudHub.CloudRender().shapesGLObj().AddFilledVoxel((glm::vec3(x, GHeight, z) + 0.5f) * m_params.voxelSize, 0.999f * m_params.voxelSize, {color, 1.0f});
 
-            m_tracingObj->setVoxelValue(getIdx(x, GHeight, z), true);  // Add voxel to tracer so we can select it
+            m_tracingObj->setVoxelValue(getIdx(m_params, x, GHeight, z), true);  // Add voxel to tracer so we can select it
         }
     }
 
@@ -1350,9 +1361,9 @@ void simulationEditor::setSliceMinMax(bool fullView)
         m_minViewX = 0;
         m_minViewY = 0;
         m_minViewZ = 0;
-        m_maxViewX = GRIDSIZESKYX;
-        m_maxViewY = GRIDSIZESKYY;
-        m_maxViewZ = GRIDSIZESKYZ;
+        m_maxViewX = m_params.sizeX;
+        m_maxViewY = m_params.sizeY;
+        m_maxViewZ = m_params.sizeZ;
     }
     else
     {
@@ -1360,34 +1371,34 @@ void simulationEditor::setSliceMinMax(bool fullView)
         switch (m_viewSliceCoord)
         {
             case 0:  // Slice X
-                m_atSliceViewSlice = std::min(m_atSliceViewSlice, GRIDSIZESKYX - 1);
+                m_atSliceViewSlice = std::min(m_atSliceViewSlice, m_params.sizeX - 1);
                 m_minViewX = m_atSliceViewSlice;
                 m_maxViewX = m_atSliceViewSlice + 1;
 
                 m_minViewY = 0;
                 m_minViewZ = 0;
-                m_maxViewY = GRIDSIZESKYY;
-                m_maxViewZ = GRIDSIZESKYZ;
+                m_maxViewY = m_params.sizeY;
+                m_maxViewZ = m_params.sizeZ;
                 break;
             case 1:  // Slice Y
-                m_atSliceViewSlice = std::min(m_atSliceViewSlice, GRIDSIZESKYY - 1);
+                m_atSliceViewSlice = std::min(m_atSliceViewSlice, m_params.sizeY - 1);
                 m_minViewY = m_atSliceViewSlice;
                 m_maxViewY = m_atSliceViewSlice + 1;
 
                 m_minViewX = 0;
                 m_minViewZ = 0;
-                m_maxViewX = GRIDSIZESKYX;
-                m_maxViewZ = GRIDSIZESKYZ;
+                m_maxViewX = m_params.sizeX;
+                m_maxViewZ = m_params.sizeZ;
                 break;
             case 2:  // Slice Z
-                m_atSliceViewSlice = std::min(m_atSliceViewSlice, GRIDSIZESKYZ - 1);
+                m_atSliceViewSlice = std::min(m_atSliceViewSlice, m_params.sizeZ - 1);
                 m_minViewZ = m_atSliceViewSlice;
                 m_maxViewZ = m_atSliceViewSlice + 1;
 
                 m_minViewX = 0;
                 m_minViewY = 0;
-                m_maxViewX = GRIDSIZESKYX;
-                m_maxViewY = GRIDSIZESKYY;
+                m_maxViewX = m_params.sizeX;
+                m_maxViewY = m_params.sizeY;
                 break;
             default:
                 break;

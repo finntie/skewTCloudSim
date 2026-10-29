@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <cstring>
+#include <vector>
 
 class DrawImage;
 
@@ -22,22 +23,19 @@ public:
 			TEMP, DP, P
 		};
 
+
 		//Initialize the struct. If used, own pointers can be deleted afterwards.
 		void init(const int _size, float* T, float* D, float* Ps, int height = 0)
 		{
-			temps = new float[_size];
-			dewPoints = new float[_size];
-			pressures = new float[_size];
+			temps.assign(T, T + _size);
+			dewPoints.assign(D, D + _size);
+			pressures.assign(Ps, Ps + _size);
 			size = _size;
 			heightPos = height;
-
-			std::memcpy(temps, T, size * sizeof(float));
-			std::memcpy(dewPoints, D, size * sizeof(float));
-			std::memcpy(pressures, Ps, size * sizeof(float));
 		}
-		float* temps{ nullptr };
-		float* dewPoints{ nullptr }; //TODO: this data may get deleted due to it being a normal pointer
-		float* pressures{ nullptr };
+		std::vector<float> temps;
+		std::vector<float> dewPoints;
+		std::vector<float> pressures;
 		int size = 0;
 		int heightPos = 0;
 

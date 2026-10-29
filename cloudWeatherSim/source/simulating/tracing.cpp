@@ -1,5 +1,6 @@
 #include "simulating/tracing.h"
 
+#include "config.hpp"
 #include "utils.cuh"
 #include "geometry.hpp"
 #include "cloud_hub.hpp"
@@ -15,17 +16,18 @@ tracing::~tracing()
 
 void tracing::init()
 {	
-	gridVoxels = new bool[GRIDSIZESKY];
+    if (gridVoxels) delete[] gridVoxels;
+	gridVoxels = new bool[m_params.size];
 	
 	// Set grid bounds
 	gridMin = glm::vec3(0, 0, 0);
-	gridMax = gridMin + glm::vec3(GRIDSIZESKYX, GRIDSIZESKYY, GRIDSIZESKYZ);
+	gridMax = gridMin + glm::vec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ);
 	resetGrid(true);
 }
 
 void tracing::resetGrid(bool value)
 {
-	std::fill_n(gridVoxels , GRIDSIZESKY * sizeof(bool), value);
+	std::fill_n(gridVoxels, m_params.size * sizeof(bool), value);
 }
 
 void tracing::showVoxelsWithValue(const float* array, const float value, showSettings settings)
@@ -34,7 +36,7 @@ void tracing::showVoxelsWithValue(const float* array, const float value, showSet
 	const bool equal = settings & EQUAL;
 	const bool above = settings & ABOVE;
 
-	for (int i = 0; i < GRIDSIZESKY; i++)
+	for (int i = 0; i < m_params.size; i++)
 	{
 		const float valueArray = array[i];
 		if (below && valueArray < value)
@@ -63,7 +65,7 @@ int tracing::getVoxelAtMouse()
     glm::vec3 D{};
     glm::vec3 rD{};
 
-    O = CloudHub.CameraObj().getCamPos() / VOXELSIZE;
+    O = CloudHub.CameraObj().getCamPos() / m_params.voxelSize;
     D = mouseRayDirection(CloudHub.InputObj().getMousePos(),
                           CloudHub.CameraObj().getCamRot(),
                           CloudHub.CameraObj().getCamProjection());
@@ -90,9 +92,9 @@ int tracing::getVoxelAtMouse()
     const glm::vec3 posInGrid = (O + (t + 0.00005f) * D);            // Position in grid
     const glm::vec3 gridPlanes = (glm::ceil(posInGrid) - stepSign);  // Next boundary intersection we will intersect using ceil
     // Set starting position, making sure to clamp within grid
-    glm::ivec3 pos = glm::ivec3(glm::clamp(int(posInGrid.x), 0, GRIDSIZESKYX - 1),
-                                glm::clamp(int(posInGrid.y), 0, GRIDSIZESKYY - 1),
-                                glm::clamp(int(posInGrid.z), 0, GRIDSIZESKYZ - 1));
+    glm::ivec3 pos = glm::ivec3(glm::clamp(int(posInGrid.x), 0, m_params.sizeX - 1),
+                                glm::clamp(int(posInGrid.y), 0, m_params.sizeY - 1),
+                                glm::clamp(int(posInGrid.z), 0, m_params.sizeZ - 1));
     // How much to step to cross 1 full cell
     glm::vec3 tDelta = glm::vec3(step) * rD;
     glm::vec3 tMax = (gridPlanes - O) * rD;  // Max distance to cross boundary of each axis
@@ -100,29 +102,29 @@ int tracing::getVoxelAtMouse()
     // Start tracing through the grid
     while (1)
     {
-        if (!isOutside(pos.x, pos.y, pos.z) && gridVoxels[getIdx(pos.x, pos.y, pos.z)])
+        if (!isOutside(m_params, pos.x, pos.y, pos.z) && gridVoxels[getIdx(m_params, pos.x, pos.y, pos.z)])
         {
-            return getIdx(pos.x, pos.y, pos.z);
+            return getIdx(m_params, pos.x, pos.y, pos.z);
         }
         else if (tMax.x < tMax.y && tMax.x < tMax.z)  // If closest to x boundary
         {
             t = tMax.x;
             pos.x += step.x;
-            if (pos.x >= GRIDSIZESKYX || pos.x < 0) return -1;
+            if (pos.x >= m_params.sizeX || pos.x < 0) return -1;
             tMax.x += tDelta.x;
         }
         else if (tMax.y < tMax.z)  // y is closer than z
         {
             t = tMax.y;
             pos.y += step.y;
-            if (pos.y >= GRIDSIZESKYY || pos.y < 0) return -1;
+            if (pos.y >= m_params.sizeY || pos.y < 0) return -1;
             tMax.y += tDelta.y;
         }
         else  // z is closest
         {
             t = tMax.z;
             pos.z += step.z;
-            if (pos.z >= GRIDSIZESKYZ || pos.z < 0) return -1;
+            if (pos.z >= m_params.sizeZ || pos.z < 0) return -1;
             tMax.z += tDelta.z;
         }
     }

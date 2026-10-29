@@ -10,19 +10,20 @@
 #include "cloud_hub.hpp"
 #include "cloud_menu_hub.hpp"
 #include "new_input.hpp"
+#include "config.hpp"
 
 #include <imgui/imgui.h>
 #include <imgui/IconsFontAwesome.h>
 #include <chrono>
 
 
-simulationHub::simulationHub()
+simulationHub::simulationHub(const simParams& params) : m_params(params)
 {
 	m_readTableObj = new readTable();
     m_skewTMakerObj = new skewTMaker();
     m_skewTFileObj = new skewTFile();
-    m_environmentObj = new environmentGPU();
-    m_simulationEditObj = new simulationEditor();
+    m_environmentObj = new environmentGPU(params);
+    m_simulationEditObj = new simulationEditor(params);
 
 
 }
@@ -61,6 +62,7 @@ void simulationHub::updateSimulation(float dt)
 
                 m_simulationEditObj->update(m_editing, m_skewT);
 
+                break;
             default:
                 break;
         }
@@ -80,6 +82,12 @@ void simulationHub::updateSimulation(float dt)
         // No speed means the simulation stops.
         m_speed.store(0.0f);
     }
+}
+
+void simulationHub::resizeGPU()
+{
+    m_environmentObj->resize();
+    m_simulationEditObj->resize();
 }
 
 void simulationHub::simulationMenuPanel(gameStates& currentState, const bool , bool& setInitState)
@@ -169,7 +177,7 @@ void simulationHub::simulationPanel(gameStates& currentState, const bool initSta
     switch (currentState)
     {
         case gameStates::SKEWT_CREATOR:
-            if (m_skewTMakerObj->skewTMakerPanel())
+            if (m_skewTMakerObj->skewTMakerPanel(m_params))
             {
                 m_simulationEditObj->init();
                 setInitState = true;
