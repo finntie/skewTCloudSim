@@ -21,8 +21,6 @@ bool mainUpdateOnlyView = false;
 
 void cloudWeatherSim::init(GLFWwindow* window, cloudWeatherSimInitFlags flags)
 {
-	runTest();
-
 	CloudHub.CameraObj().initDevice(window);
 
 	CloudHub.initialize(flags & initFlag_LibImGuiStyle);

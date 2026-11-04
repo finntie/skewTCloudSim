@@ -62,9 +62,6 @@
     <ClInclude Include="include\rendering\cuda_render_gl.hpp">
       <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\rendering\LUTS.cuh">
-      <Filter>Source Files</Filter>
-    </ClInclude>
     <ClInclude Include="include\rendering\texture_noise.cuh">
       <Filter>Source Files</Filter>
     </ClInclude>
@@ -84,6 +81,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\msvc_defines.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rendering\LUTS.cuh">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -521,7 +521,7 @@ __global__ void advectPPMX(simParams p,
 		float valR = downWind ? sharedBlock[idxsData + 1] : sharedBlock[idxsData];
 		float valC = downWind ? sharedBlock[idxsData] : sharedBlock[idxsData + 1];
 
-		float fluxRight = advectPPMFlux(p, curVel, valL, valC, valR, *dt);
+		float fluxRight = advectPPMFlux(p, curVel, valL, valC, valR, *dt * 0.5f);
 
 		// For the correct velocity, we need to do some neighbouring checks
 		float velL = fillNeighbourData(p, curNeigh.getOutsideLeft(), curNeigh.getEnvTypeLeft(), bounds, velfieldX, idx, -1, defaultVelX[y]);
@@ -609,7 +609,7 @@ __global__ void advectPPMY(simParams p,
 		float valU = downWind ? sharedBlock[idxsData + sharedBlockWidth] : sharedBlock[idxsData];
 		float valC = downWind ? sharedBlock[idxsData] : sharedBlock[idxsData + sharedBlockWidth];
 
-		float fluxUp = advectPPMFlux(p, velfieldY[idx], valD, valC, valU, *dt);
+		float fluxUp = advectPPMFlux(p, velfieldY[idx], valD, valC, valU, *dt * 0.5f);
 
 		// For the correct velocity, we need to do some neighbouring checks
 		float velD = fillNeighbourData(p, curNeigh.getOutsideDown(), curNeigh.getEnvTypeDown(), bounds, velfieldY, idx, -p.sizeX, 0.0f);
@@ -1125,7 +1125,7 @@ __global__ void applyPresProjGPU(simParams p, const int* GHeight, const float* p
 __global__ void getMaxDivergence(simParams p, const int* GHeight, float* output, const float* div)
 {
 	//To speed up getting the max divergence, we make all blocks sum up their values and then connect them together.
-	//This is faster than 1 thead doing all the work.
+	//This is faster than 1 thread doing all the work.
 	extern __shared__ float sresult[];
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -1145,7 +1145,7 @@ __global__ void getMaxDivergence(simParams p, const int* GHeight, float* output,
 	{
 		if (valid && !isGroundGPU(p, GHeight, x, y, z))
 		{
-			sresult[idxsData] = fmaxf(sresult[idxsData], div[getIdx(p, x, y, z)]);
+			sresult[idxsData] = fmaxf(sresult[idxsData], fabsf(div[getIdx(p, x, y, z)]));
 		}
 	}
 	__syncthreads();
@@ -1160,7 +1160,7 @@ __global__ void getMaxDivergence(simParams p, const int* GHeight, float* output,
 	// Basically, we grab half of the block, add all the values on the other side and repeat the process.
 	for (int i = stride; i > 0; i >>= 1)
 	{
-		if (idxsData < i && idxsData + i < blockDim.x * blockDim.y && valid) // Second check is extra to make sure we don't access outside of our data
+		if (idxsData < i && idxsData + i < blockDim.x * blockDim.y) // Second check is extra to make sure we don't access outside of our data
 		{
 			sresult[idxsData] = fmaxf(sresult[idxsData], sresult[idxsData + i]);
 		}
@@ -1614,20 +1614,19 @@ __global__ void computeNeighbourGPU(simParams p, const int* GHeight, Neigh* Neig
 		// Set all outside bools
 		// And set types to be GROUND if they are ground OR with all but up, when current is ground
 
-		Neigh[idx].setCurrent(false, 
-			isGroundGPU(p, GHeight, x, y, z) ? GROUND : SKY);
-		Neigh[idx].setLeft(x == 0,
-			(Neigh[idx].getOutsideLeft() && currentG) || (!Neigh[idx].getOutsideLeft() && isGroundGPU(p, GHeight, x - 1, y, z)) ? GROUND : SKY);
-		Neigh[idx].setRight(x == p.sizeX - 1, 
-			(Neigh[idx].getOutsideRight() && currentG) || (!Neigh[idx].getOutsideRight() && isGroundGPU(p, GHeight, x + 1, y, z)) ? GROUND : SKY);
-		Neigh[idx].setDown(y == 0, 
-			(Neigh[idx].getOutsideDown() && currentG) || (!Neigh[idx].getOutsideDown() && isGroundGPU(p, GHeight, x, y - 1, z)) ? GROUND : SKY);
-		Neigh[idx].setUp(y == p.sizeY - 1, 
-			(Neigh[idx].getOutsideUp() && currentG) || (!Neigh[idx].getOutsideUp() && isGroundGPU(p, GHeight, x, y + 1, z)) ? GROUND : SKY);
-		Neigh[idx].setBackward(z == 0, 
-			(Neigh[idx].getOutsideBackward() && currentG) || (!Neigh[idx].getOutsideBackward() && isGroundGPU(p, GHeight, x, y, z - 1)) ? GROUND : SKY);
-		Neigh[idx].setForward(z == p.sizeZ - 1, 
-			(Neigh[idx].getOutsideForward() && currentG) || (!Neigh[idx].getOutsideForward() && isGroundGPU(p, GHeight, x, y, z + 1)) ? GROUND : SKY);
+		Neigh[idx].setCurrent(false, isGroundGPU(p, GHeight, x, y, z) ? GROUND : SKY);
+		bool left = x == 0;
+		Neigh[idx].setLeft(left, (left && currentG) || (!left && isGroundGPU(p, GHeight, x - 1, y, z)) ? GROUND : SKY);
+		bool right = x == p.sizeX - 1;
+		Neigh[idx].setRight(right, (right && currentG) || (!right && isGroundGPU(p, GHeight, x + 1, y, z)) ? GROUND : SKY);
+		bool down = y == 0;
+		Neigh[idx].setDown(down, (down && currentG) || (!down && isGroundGPU(p, GHeight, x, y - 1, z)) ? GROUND : SKY);
+		bool up = y == p.sizeY - 1;
+		Neigh[idx].setUp(up, (up && currentG) || (!up && isGroundGPU(p, GHeight, x, y + 1, z)) ? GROUND : SKY);
+		bool back = z == 0;
+		Neigh[idx].setBackward(back, (back && currentG) || (!back && isGroundGPU(p, GHeight, x, y, z - 1)) ? GROUND : SKY);
+		bool forward = z == p.sizeZ - 1;
+		Neigh[idx].setForward(forward, (forward && currentG) || (!forward && isGroundGPU(p, GHeight, x, y, z + 1)) ? GROUND : SKY);
 	}
 }
 

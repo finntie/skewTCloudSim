@@ -31,11 +31,6 @@ __global__ void setToValue(int3 size, float* array, const float value, const int
     }
 }
 
-__global__ void testkernel()
-{
-    // Does nothing
-}
-
 __global__ void multiplyValues(int3 size, float* array1, const float* array2, const int depth)
 {
     const int x = threadIdx.x;
@@ -77,7 +72,11 @@ __global__ void divideValuesFull(int3 size, float* array1, const float* array2)
     for (; z < fminf(size.z, ceilf(float(blockIdx.z + 1) * invBlockSpreadDepth)); z++)
     {
         int idx = x + y * size.x + z * size.x * size.y;
-        array1[idx] /= array2[idx];
+        float value = array2[idx];
+        if (fabsf(value) - 1e-6f > 0.0f) // Quick 0 check
+        {
+            array1[idx] /= value;
+        }
     }
 }
 

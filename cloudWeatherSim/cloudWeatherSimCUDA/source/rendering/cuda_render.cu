@@ -280,7 +280,7 @@ void fillLUTSOnce(environmentData& data,
 
 inline int iDivUp(int a, int b) { return (a % b != 0) ? (a / b + 1) : (a / b); }
 
-void fillLUTS(environmentData& data, void* skyViewLUT, void* , unsigned int , unsigned int , bool reset) 
+void fillLUTS(environmentData& data, void* skyViewLUT, void* aerialViewLUT, bool reset)
 {
     static float4* tempData = nullptr;
     static float4* tempData3D = nullptr;
@@ -329,16 +329,15 @@ void fillLUTS(environmentData& data, void* skyViewLUT, void* , unsigned int , un
                   unsigned(iDivUp(aerialViewRes.y, blockSize.y)),
                   unsigned(iDivUp(aerialViewRes.z, blockSize.z)));
 
-    //envAerialView<<<gridSize, blockSize, 0, renderStream>>>(tempData3D,
-    //                                       make_float2(width, height),
-    //                                       lightDir,
-    //                                       aerialViewRes,
-    //                                       data.envTransmittanceTexture,
-    //                                       data.envScatteringTexture);
+    envAerialView<<<gridSize, blockSize, 0, renderStream>>>(tempData3D,
+                                           lightDir,
+                                           aerialViewRes,
+                                           data.envTransmittanceTexture,
+                                           data.envScatteringTexture);
 
 
     copyDataToTexture<float4>(tempData, skyViewLUT, glm::ivec3(200, 100, 0), renderStream);
-    //copyDataToTexture<float4>(tempData3D, aerialViewLUT, glm::ivec3(32, 32, 32), renderStream);
+    copyDataToTexture<float4>(tempData3D, aerialViewLUT, glm::ivec3(32, 32, 32), renderStream);
 
     hipStreamSynchronize(renderStream);
     hipError_t err = hipGetLastError();
@@ -884,7 +883,39 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     // Map density to opacity between 0 and 1
     //const float opacity = 1.0f - expf(-accumulatedDensity);
 
+    // TODO: to test we set to max depth
+    // Get intersection point to get depth
+    bool hitGround = false;
+    float3 iPoint = getIpoint(mainR.O / 1000.0f, mainR.D, hitGround);
+    iPoint.y -= 6360.0f;
+    float depth = distance(mainR.O, iPoint * 1000.0f);
+
+    float4 aerialColor = getAtmosphericAerialView(mainR.D, mainR.O, depth, lightDir, make_int3(32, 32, 32), data.envAerialViewTexture, x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f));
+    if (x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f))
+    {
+        printf("outputCol: %f, %f, %f, depth %f, aerialColor %f, %f, %f, %f, posmain %f, %f, %f, posI %f, %f, %f\n",
+            outputColor.x,
+            outputColor.y,
+            outputColor.z,
+            depth,
+            aerialColor.x,
+            aerialColor.y,
+            aerialColor.z,
+        aerialColor.w, 
+            mainR.O.x,
+            mainR.O.y,
+            mainR.O.z,
+            iPoint.x,
+            iPoint.y,
+            iPoint.z);
+    }
+    aerialColor = aerialColor * aerialColor.w;
+    aerialColor.w = 1.0f;
     
+    outputColor = outputColor + aerialColor;
+    outputColor = clamp4f(outputColor, 0.0f, 1.0f);
+    
+
     const float T = lightAbsorption;// expf(-accumulatedDensity);
     
     // Firs make sure the background color is scaled correctly with gamma, exposure

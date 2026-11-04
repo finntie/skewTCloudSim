@@ -47,12 +47,7 @@ __global__ void JFA(int3 size,
 void fillLUTSOnce(environmentData& data, void* transmittanceLUT, void* scatteringLUT);
 
 // If used, should ALWAYS be reset at least ones before closing.
-void fillLUTS(environmentData& data,
-              void* skyViewLUT,
-              void* aerialViewLUT,
-              unsigned int width,
-              unsigned int height,
-              bool reset);
+void fillLUTS(environmentData& data, void* skyViewLUT, void* aerialViewLUT, bool reset);
 
 
 

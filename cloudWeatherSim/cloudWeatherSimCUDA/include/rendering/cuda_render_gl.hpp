@@ -83,8 +83,8 @@ struct environmentData
     float* Qc;       //	Mixing Ratio of Ice
     //float* Qr;       //	Mixing Ratio of Rain
     unsigned long long QrTexture;
-    unsigned long long QsTexture;
     //float* Qs;       //	Mixing Ratio of Snow
+    unsigned long long QsTexture;
     float* Qi;       //	Mixing Ratio of Ice (precip)
     //float* velfieldX;
     //float* velfieldY;
@@ -159,7 +159,10 @@ public:
     // allocates data, uses the latest simulation parameters
     void initEnvironmentData();
 
-    void setDataEnvironment(gridDataSkyGPU data, bool updateSDF);
+    // Raw copy from data to renderer, used when NOT grabbing data from simulation
+    void setDataEnvironment(gridDataSkyGPU& data, bool updateSDF);
+    // Update with events if we copy straight from the simulation
+    void setDataEnvironmentEvent(gridDataSkyGPU& data, bool updateSDF, void*& simCopyReadyEvent, void*& renderCopyReadyEvent);
 
     void setExtraRenderInfo(renderSettings settings, bool changedTextures = false);
 

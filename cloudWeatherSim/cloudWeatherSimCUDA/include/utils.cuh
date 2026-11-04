@@ -67,3 +67,8 @@ __host__ __device__ inline bool isOutside(simParams p, int idx)
 
 // Retrieve grid and block dimensions based on current hardware
 __host__ void getGridBlockDims(simParams p, dim3& _gridDim, dim3& _blockDim);
+
+
+
+
+__global__ void validityCheck(float* array, float minValid, float maxValid, int depth, int* valid);

@@ -19,7 +19,6 @@ __device__ float3 envScat(const float3& pos, const float3& lightDir, unsigned lo
 __device__ float3 envPhaseFunction(float angle, float g);
 __device__ float3 shadowTerm(const float3& pos, const float3& lightdir, unsigned long long TTexture);
 __device__ float3 groundRadiance(const float3& pos, const float3& lightdir, unsigned long long TTexture);
-__device__ float3 getIpoint(const float3& pos, const float3& dir, bool& hitGround);
 __device__ float3 sphereSamplePoint(float u1, float u2);
 __device__ float3 transferFunction(const float3& pos, const float3& lightdir, unsigned long long TTexture);
 __device__ float3 luminanceFunction(const float3& from,
@@ -194,101 +193,6 @@ __device__ float3 groundRadiance(const float3& pos, const float3& lightdir, unsi
     const float g = 0.35f;  // Asuming low albedo for the ground, somewhere like grass
 
     return shadowTerm(pos, lightdir, TTexture) * (g / 3.14159265f) * sunAngle;
-}
-
-// Calculates the intersectionpoint of the ray, if it hit the ground or space, TODO: currently only does it 2D
-__device__ float3 getIpoint(const float3& pos, const float3& dir, bool& hitGround)
-{
-    // Calculate intersection point with space or ground.
-    // Using the ray formula: P = O + D * t
-    // And the circle formula P^2 = r^2
-    // With P being a 3D point in space and the circle center being at (0,0,0)
-    // Using the quadratic formula with intersection of a ray and circle (noting that D*D = 1):
-    // t^2 + t * (2(O*D)) + (O*O) - r^2 = 0
-    // With which we get:  A = 1,  B = 2(O*D),  C = (O*O) - r^2
-
-    const float3 O = make_float3(pos.x, pos.y + radiusEarth, pos.z);
-    const float3 D = normalize(dir); // Making sure
-    float R = radiusEarth;
-    hitGround = false;
-
-    // The ABC formula then goes: t = (-b +- sqrt(b^2 - 4ac)) / 2a
-    // Yet, we can simplify due to a being 1 and b being 2 * dot(O, D)
-    // Imagine b being dot(O,D) then we must put a 2 in front: 2b
-    // t = (-2b +- sqrt(4b^2 - 4c)) / 2
-    // Multiply sqrt by 2, being able to divide the values inside the sqrt by 4:
-    // t = (-2b +- 2 * sqrt(b^2 - c)) / 2
-    // Remove the division by multiplying:
-    // t = -b +- sqrt(b^2 - c)
-
-    const float b = dot(O, D); // Not multiplying by 2, since we divided this away
-
-    const float r = distance(O);
-    float h = r - R;
-    float c = h * (2.0f * R + h); // Same as dot(O,O) - R * R, but uses smaller numbers, meaning no floating point issues
-
-    float disc = b * b - c;
-
-    // If the discriminant not negative, we hit the ground
-    if (disc >= 0.0f)
-    {
-        const float t = -b - sqrt(disc);
-        // If t is positive, we hit the ground forward, else we hit it behind us and we dont care
-        if (t >= 0.0f)
-        {
-            hitGround = true;
-            return O + D * t;
-        }
-    }
-
-    // Instead of the ground, we will now look at intersection with space
-    // This must hit, since the position must be inside the circle
-    R = radiusEarth + sampleHeight;
-
-    h = r - R;
-    c = h * (2.0f * R + h);  // Same as dot(O,O) - R * R, but uses smaller numbers, meaning no floating point issues
-    disc = b * b - c;
-    if (disc < 0.0f) return make_float3(0, 0, 0);
-    const float t = -b + sqrt(disc);
-
-    float3 result = O + D * t;
-    return result;
-
-
-
-    //const float height = pos.y + radiusEarth;
-    //const float a = dir.y / (dir.x + 1e-6f);
-    //hitGround = false;
-    //float2 iPoint = make_float2(0, 0);
-    //{
-    //    const float A = 1 + a * a;
-    //    const float B = 2 * a * height;
-    //    float C = height * height - radiusEarth * radiusEarth;
-    //    const float inSQRT = B * B - 4 * A * C;
-    //    if (inSQRT >= 0.0f)  // If greaer than 0, we intersect with ground and thus not with space
-    //    {
-    //        float x = (-B - sqrt(inSQRT) )/ (2 * A);  // Only using - in this quadratic formula, this is because we only need the
-    //                                                // most left intersectionpoint.
-    //        if (x / dir.x >= 0.0f) // Check if the line hit the ground forward and not behind us
-    //        {
-    //            float y = a * x + height;
-    //            iPoint = make_float2(x, y);
-    //            hitGround = true;
-    //        }
-    //    }
-    //    if (!hitGround)  // If inside the sqrt is < 0, we do not intersect with the ground, so we only need to calculate space intersection
-    //    {
-    //        // C is different due to the radius not being only earth, but earth's radius + the sample height, giving radius of
-    //        // space
-    //        C = height * height - (radiusEarth + sampleHeight) * (radiusEarth + sampleHeight);
-    //        float x = (-B + sqrt(B * B - 4 * A * C)) /
-    //                           (2 * A);  // Only use of + (not -) since we know we need intersection at + direction of a)
-    //        float y = a * x + height;
-    //        iPoint = make_float2(x, y);
-    //        hitGround = false;
-    //    }
-    //}
-    //return make_float3(iPoint.x, iPoint.y, 0.0f);
 }
 
 __global__ void atmosphericTransmittance(float4* transmittance, int2 resolution)
@@ -759,11 +663,16 @@ __global__ void envSkyView(float4* skyView,
     result = make_float3(powf(result.x, 1 / 2.2f), powf(result.y, 1 / 2.2f), powf(result.z, 1 / 2.2f));
 
     output = make_float4(result.x, result.y, result.z, 0.0f);
+
+    //if (x == 5 && y == 5)
+    //{
+    //    printf("x %i, y %i, scat %f %f %f, lightDir: %f, %f, %f\n",
+    //        x, y, luminance.x, luminance.y, luminance.z,lightDir.x, lightDir.y, lightDir.z);
+    //}
 }
 
 // 3D texture, the third dimension covering multiple depths
 __global__ void envAerialView(float4* aerialView,
-                              const float2 screenSize,
                               const float3 lightDir,
                               const int3 resolution,
                               unsigned long long TTexture,
@@ -776,30 +685,51 @@ __global__ void envAerialView(float4* aerialView,
 
     if (x >= resolution.x || y >= resolution.y || z >= resolution.z) return;
 
-    // Calculation of fov and how this would effect the focalLength
-    // With focalLength being the distance from the camera origin to the virtual image plane
-    // The further away the focalLenght is, the more zoomed in the image
-    float aspectRatio = float(screenSize.x) / float(screenSize.y);
-    float fov = 60.0f;
-    float focalLength = 1.0f / tanf(fov * 0.5f * 3.14159f / 180.0f);
 
-    // Set UV, ranging between -1 and 1
-    float u = ((float(x) / float(screenSize.x)) * 2.0f - 1.0f) * aspectRatio;
-    float v = ((float(y) / float(screenSize.y)) * 2.0f - 1.0f);
+    float4& output = aerialView[idx];
 
-    // Create ray and set origin + direction
-    float4 Otemp = mul(invViewLUT, make_float4(0.0f, 0.0f, 0.0f, 1.0f));
-    float3 rayO = make_float3(Otemp.x, Otemp.y, Otemp.z);
-    float3 rayD = mul(invViewLUT, normalize(make_float3(u, v, -focalLength)));
+    // Set UV, ranging between 0 and 1
+    float u = (float(x) + 0.5f) / float(resolution.x);
+    float v = (float(y) + 0.5f) / float(resolution.y);
+
+    float4 pos = mul(invViewLUT, make_float4(0.0f, 0.0f, 0.0f, 1.0f));
+
+    // Put our coordinates to km
+    pos = pos / 1000.0f;
+
+    const float3 posC = make_float3(pos.x, pos.y + radiusEarth, pos.z);
+    const float r = distance(posC);
+    const float3 up = posC / r;
+    float3 rayD = UVToDir(u, v, up, lightDir, r);
 
     // For every z, move 1 km further
-    float3 nextO = rayO + rayD * z * 1000.0f;
+    float3 nextO = make_float3(pos.x, pos.y, pos.z) + rayD * z;
+    nextO.y = clampf(nextO.y, 0.0f, sampleHeight);
 
-    float3 scattering = luminanceFunction(rayO, nextO, rayD, lightDir, TTexture, TScat);
-    float3 transmittance = envTrans(rayO, nextO, TTexture);
+    float3 luminance = luminanceFunction(make_float3(pos.x, pos.y, pos.z), nextO, rayD, lightDir, TTexture, TScat);
+    float3 transmittance = envTrans(make_float3(pos.x, pos.y, pos.z), nextO, TTexture);
     // We store transmittance approximation as a 1D value, so we take the mean value
     float transMean = (transmittance.x + transmittance.y + transmittance.z) / 3.0f;
 
-    aerialView[idx] = make_float4(scattering.x, scattering.y, scattering.z, transMean);
+
+    // Shade properly
+    const float exposure = 7.5f;
+    float3 result = luminance * exposure;
+    result = result / (result + 1);
+    result = make_float3(powf(result.x, 1 / 2.2f), powf(result.y, 1 / 2.2f), powf(result.z, 1 / 2.2f));
+
+    output = make_float4(result.x, result.y, result.z, transMean);
+
+    //if (x == 5 && y == 16)
+    //{
+    //    printf("x %i, y %i, z %i, dir %f %f %f, pos: %f, %f, %f, nextO: %f, %f, %f, output: %f, %f, %f, %f\n",
+    //        x, y, z, rayD.x, rayD.y, rayD.z, pos.x, pos.y, pos.z, nextO.x, nextO.y, nextO.z, output.x, output.y, output.z, output.w);
+    //}
+    //if (x == 16 && y == 16)
+    //{
+    //    printf("x %i, y %i, z %i, scat %f %f %f, transmittance: %f, %f, %f, nextO: %f, %f, %f, lightDir: %f, %f, %f\n",
+    //        x, y, z, luminance.x, luminance.y, luminance.z, transmittance.x, transmittance.y, transmittance.z, 
+    //        nextO.x, nextO.y, nextO.z, lightDir.x, lightDir.y, lightDir.z);
+    //}
 }
 

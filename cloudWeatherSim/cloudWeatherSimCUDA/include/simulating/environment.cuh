@@ -13,8 +13,6 @@ struct hipGraphExec;
 struct float4;
 struct simParams;
 
-
-void runTest();
 class environmentGPU
 {
 public:
@@ -90,8 +88,10 @@ public:
 	//------------------------------------------
 
 	//-------------------Get/Set------------------
-	// 
-	gridDataSkyGPU& getRenderData() { return m_envGrid; }
+	
+	// Gets the environment data, own responsibility to lock the next run making sure simulation will not write before done copying.
+	gridDataSkyGPU& getSimulationData() { return m_middleManBuffer; }
+	void getEvents(void*& simCopyReadyEvent, void*& renderCopyReadyEvent) { simCopyReadyEvent = m_simCopyReadyEvent; renderCopyReadyEvent = m_renderCopyReadyEvent; }
 	void setHostData(envDebugData& outputCPUData, bool setIsenTropics);
     void setHostSettingsData(float& time, int day, float sunStrength, float longitude, bool pauseDiurnal);
 	void setMicroPhysDataValues(glm::ivec3 minPos, glm::ivec3 maxPos, bool active);
@@ -109,9 +109,9 @@ public:
 
 private:
 
-
-
+	// Double buffer setup for the grid
 	gridDataSkyGPU m_envGrid{};
+
 	gridDataGroundGPU m_groundGrid{};
 	simInfo simKernelInfo{};
 	const simParams& m_params;
@@ -128,10 +128,17 @@ private:
 	float m_sunStrength = 1.0f;
 	bool m_pauseDiurnal = false;
 
-	// Graphs
+	// Graphs (2 buffers)
     std::unordered_map<float*, hipGraphExec*> m_diffuseExecutionGraphs{};
     std::unordered_map<float*, hipGraphExec*> m_advectExecutionGraphs{};
     hipGraphExec* m_pressureprojectExecutionGraph{nullptr};
+
+	// Events
+	void* m_simCopyReadyEvent;
+	void* m_renderCopyReadyEvent;
+	void* m_hostCopyReadyEvent;
+	gridDataSkyGPU m_middleManBuffer;
+
 	//GPU variables
 	float* m_array;
 	float* m_outputArray;
@@ -184,6 +191,7 @@ private:
     bool m_microPhysDataActive{false};
     glm::ivec3 m_microPhysMinPos{-1, -1, -1};
     glm::ivec3 m_microPhysMaxPos{-1, -1, -1};
+	
 
 	// Debug arrays, point to any array already existing
     float* m_debugArray0 = nullptr, *m_debugArray1 = nullptr, *m_debugArray2 = nullptr;

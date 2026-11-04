@@ -222,8 +222,6 @@ void setConstantsCudaMath(float invBlockSpreadDepth, void* stream);
 
 __global__ void setToValue(int3 size, float* array, const float value, const int depth, const int offset);
 
-__global__ void testkernel();
-
 __global__ void multiplyValues(int3 size, float* array1, const float* array2, const int depth);
 
 __global__ void divideValues(int3 size, float* array1, const float* array2, const int depth);

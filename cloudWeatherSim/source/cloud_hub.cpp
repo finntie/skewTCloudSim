@@ -6,6 +6,8 @@
 #include "new_input.hpp"                    // Handling Input
 #include "camera.hpp"                       // Handling the Camera
 
+#include "utils.cuh"
+
 #include "simulating/environment.cuh"
 #include "rendering/render_hub.hpp"
 #include "rendering/cuda_render_gl.hpp"
@@ -27,7 +29,7 @@ cloudHub::cloudHub()
     // We may already create input context
     m_inputObj = new newInput;
     m_cloudCameraObj = new cameraControl();
-    m_params = new simParams(simParams::create(64, 64, 64, 16.0f));
+    m_params = new simParams(simParams::create(64, 64, 64, 64.0f));
 }
 
 void cloudHub::initialize(bool customImGuiStyle)
@@ -79,9 +81,12 @@ void cloudHub::copySimulateDataToRenderData()
 {
     if (m_simulationHubObj->getIsSimulationRunning())
     {
+        // Get events to mark if we are allowed to touch the data
+        void* eventSim;
+        void* eventRender;
+        m_simulationHubObj->Environment().getEvents(eventSim, eventRender);
         // Get from the simulation thread and copy into the render
-        m_simulationHubObj->Environment().synchronizeSimStream(); // TODO: likely have to work with events to fix issues, maybe even let the environment copy data into another buffer that we read
-        m_cloudRenderObj->cudaRendererObj().setDataEnvironment(m_simulationHubObj->Environment().getRenderData(), true);
+        m_cloudRenderObj->cudaRendererObj().setDataEnvironmentEvent(m_simulationHubObj->Environment().getSimulationData(), true, eventSim, eventRender);
     }
 }
 

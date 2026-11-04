@@ -48,12 +48,16 @@
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>HIP nvcc 7.2</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
+    <!--Makes sure MSBuild notices that a file changed-->
+    <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>HIP nvcc 7.2</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
+    <!--Makes sure MSBuild notices that a file changed-->
+    <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
   </PropertyGroup>
   <PropertyGroup Condition="'$(PlatformToolset.Contains(`HIP clang `))'">
     <HIPVersion>$(PlatformToolset.Replace(`HIP clang `, ``))</HIPVersion>
@@ -135,4 +139,8 @@
     <Import Condition="'$(PlatformToolset)'=='HIP clang $(HIPVersion)'" Project="$(VCTargetsPath)\Platforms\$(Platform)\PlatformToolsets\HIP clang $(HIPVersion)\AMD.HIP.Clang.Common.targets" />
     <Import Condition="'$(PlatformToolset)'=='HIP nvcc $(HIPVersion)'" Project="$(VCTargetsPath)\Platforms\$(Platform)\PlatformToolsets\HIP nvcc $(HIPVersion)\AMD.HIP.Nvcc.Common.targets" />
   </ImportGroup>
+  <!--Post Compile step to copy the object files, but without the exension in their name, this is needed for MSBuild to find if the files were already build.-->
+  <Target Name="HipObjAliasCopy" AfterTargets="ClCompile">
+    <Copy SourceFiles="$(IntDir)%(ClCompile.Filename)%(ClCompile.Extension).obj" DestinationFiles="$(IntDir)%(ClCompile.Filename).obj" Condition="Exists('$(IntDir)%(ClCompile.Filename)%(ClCompile.Extension).obj')" />
+  </Target>
 </Project>

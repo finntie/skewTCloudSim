@@ -53,13 +53,6 @@ environmentGPU::~environmentGPU()
 	freeData();
 }
 
-__global__ void k() {}
-void runTest() {
-	k << <1, 1 >> > ();
-	printf("%s / %s\n", hipGetErrorString(hipGetLastError()),
-		hipGetErrorString(hipDeviceSynchronize()));
-}
-
 void environmentGPU::allocateData()
 {
 	if (allocatedData)
@@ -68,24 +61,8 @@ void environmentGPU::allocateData()
 		return;
 	}
 
-	hipDeviceSynchronize();
-	hipError_t err = hipGetLastError();
-	if (err != hipSuccess) {
-		std::cerr << "errorTestKernel: " << hipGetErrorString(err) << std::endl;
-		assert(false);
-	}
-
-	hipStreamSynchronize(simStream);
-	hipError_t e = hipFree(0);                 // forces context creation
-	printf("init: %s\n", hipGetErrorString(e));
-
-	// does the runtime know the kernel?
-	cudaFuncAttributes attr;
-	cudaError_t k = cudaFuncGetAttributes(&attr, (const void*)testkernel); // needs to be in the .cu file
-	printf("kernel lookup: %s\n", cudaGetErrorString(k));
-
-	testkernel << <16, 16 >> > ();
 	lockGlobal();
+	hipDeviceSynchronize();
 
 	// Set block and grid dimension based on GPU specs.
 	getGridBlockDims(m_params, m_gridDim, m_blockDim);
@@ -140,6 +117,20 @@ void environmentGPU::allocateData()
 	hipMalloc((void**)&m_envGrid.velfieldZ, m_params.size * sizeof(float));
 	hipMalloc((void**)&m_envGrid.pressure, m_params.size * sizeof(float));
 
+	// Middle-Man Buffer 
+	hipMalloc((void**)&m_middleManBuffer.Qv, m_params.size * sizeof(float));
+	hipMalloc((void**)&m_middleManBuffer.Qw, m_params.size * sizeof(float));
+	hipMalloc((void**)&m_middleManBuffer.Qc, m_params.size * sizeof(float));
+	hipMalloc((void**)&m_middleManBuffer.Qr, m_params.size * sizeof(float));
+	hipMalloc((void**)&m_middleManBuffer.Qs, m_params.size * sizeof(float));
+	hipMalloc((void**)&m_middleManBuffer.Qi, m_params.size * sizeof(float));
+	hipMalloc((void**)&m_middleManBuffer.potTemp, m_params.size * sizeof(float));
+	hipMalloc((void**)&m_middleManBuffer.velfieldX, m_params.size * sizeof(float));
+	hipMalloc((void**)&m_middleManBuffer.velfieldY, m_params.size * sizeof(float));
+	hipMalloc((void**)&m_middleManBuffer.velfieldZ, m_params.size * sizeof(float));
+	hipMalloc((void**)&m_middleManBuffer.pressure, m_params.size * sizeof(float));
+
+
 	// Ground values
 	hipMalloc((void**)&m_groundGrid.Qrs, m_params.sizeGround * sizeof(float));
 	hipMalloc((void**)&m_groundGrid.Qgr, m_params.sizeGround * sizeof(float));
@@ -185,7 +176,7 @@ void environmentGPU::allocateData()
 	hipMalloc((void**)&m_firstValid, sizeof(int));
 	hipMalloc((void**)&m_storBool, sizeof(bool));
 
-	err = hipGetLastError();
+	hipError_t err = hipGetLastError();
 	if (err != hipSuccess) {
 		std::cerr << "error: " << hipGetErrorString(err) << std::endl;
 		assert(false);
@@ -208,6 +199,18 @@ void environmentGPU::allocateData()
 	hipMemsetAsync(m_envGrid.velfieldX, 0, m_params.size * sizeof(float), simStream);
 	hipMemsetAsync(m_envGrid.velfieldY, 0, m_params.size * sizeof(float), simStream);
 	hipMemsetAsync(m_envGrid.velfieldZ, 0, m_params.size * sizeof(float), simStream);
+
+	// Middle-man buffer
+	hipMemsetAsync(m_middleManBuffer.Qv, 0, m_params.size * sizeof(float), simStream);
+	hipMemsetAsync(m_middleManBuffer.Qw, 0, m_params.size * sizeof(float), simStream);
+	hipMemsetAsync(m_middleManBuffer.Qc, 0, m_params.size * sizeof(float), simStream);
+	hipMemsetAsync(m_middleManBuffer.Qr, 0, m_params.size * sizeof(float), simStream);
+	hipMemsetAsync(m_middleManBuffer.Qs, 0, m_params.size * sizeof(float), simStream);
+	hipMemsetAsync(m_middleManBuffer.Qi, 0, m_params.size * sizeof(float), simStream);
+	hipMemsetAsync(m_middleManBuffer.potTemp, 0, m_params.size * sizeof(float), simStream);
+	hipMemsetAsync(m_middleManBuffer.velfieldX, 0, m_params.size * sizeof(float), simStream);
+	hipMemsetAsync(m_middleManBuffer.velfieldY, 0, m_params.size * sizeof(float), simStream);
+	hipMemsetAsync(m_middleManBuffer.velfieldZ, 0, m_params.size * sizeof(float), simStream);
 
 	int3 size = make_int3(m_params.sizeX, m_params.sizeY, m_params.sizeZ);
 
@@ -326,6 +329,19 @@ void environmentGPU::freeData()
 	hipFree(m_groundGrid.Qgr);
 	hipFree(m_groundGrid.Qrs);
 
+	// Middle-man buffer
+	hipFree(m_middleManBuffer.pressure);
+	hipFree(m_middleManBuffer.velfieldZ);
+	hipFree(m_middleManBuffer.velfieldY);
+	hipFree(m_middleManBuffer.velfieldX);
+	hipFree(m_middleManBuffer.potTemp);
+	hipFree(m_middleManBuffer.Qi);
+	hipFree(m_middleManBuffer.Qs);
+	hipFree(m_middleManBuffer.Qr);
+	hipFree(m_middleManBuffer.Qc);
+	hipFree(m_middleManBuffer.Qw);
+	hipFree(m_middleManBuffer.Qv);
+
 	hipFree(m_envGrid.pressure);
 	hipFree(m_envGrid.velfieldZ);
 	hipFree(m_envGrid.velfieldY);
@@ -371,6 +387,9 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 	// Allocate data first if we have not done it yet.
 	if (!allocatedData) allocateData();
 
+	// Synchronize all GPU
+	hipDeviceSynchronize();
+
 	//Init sky
 	hipMemcpyAsync(m_envGrid.potTemp, potTemps, m_params.size * sizeof(float), hipMemcpyHostToDevice, simStream);
 	
@@ -382,6 +401,7 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 	}
 
 	int3 size = make_int3(m_params.sizeX, m_params.sizeY, m_params.sizeZ);
+
 
 	{
 		float* velX = new float[m_params.size];
@@ -405,6 +425,7 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 
 	hipMemcpyAsync(m_envGrid.Qv, Qv, m_params.size * sizeof(float), hipMemcpyHostToDevice, simStream);
 
+
 	hipMemcpyAsync(m_groundGrid.T, groundTemp, m_params.sizeGround * sizeof(float), hipMemcpyHostToDevice, simStream);
 	hipMemcpyAsync(groundTemp, m_groundGrid.T, m_params.sizeGround * sizeof(float), hipMemcpyDeviceToHost, simStream);
 
@@ -412,17 +433,12 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 	hipMemcpyAsync(m_defaultPressure, smallPressure, m_params.sizeY * sizeof(float), hipMemcpyHostToDevice, simStream);
 	hipMemcpyAsync(m_envGrid.pressure, pressures, m_params.size * sizeof(float), hipMemcpyHostToDevice, simStream);
 
-	//Initialize density
-	initDensity<<<m_params.sizeY, m_params.sizeX, 0, simStream >>>(m_params, m_GHeight, m_densityAir, m_envGrid.potTemp, m_envGrid.pressure, m_envGrid.Qv, m_groundGrid.P);
-	hipMemcpyAsync(m_oldDensityAir, m_densityAir, m_params.size * sizeof(float), hipMemcpyDeviceToDevice, simStream);
-	
-	//Set values using offset, with the 2D, you can add an offset
+	// Set values using offset, with the 2D, you can add an offset
 	// This also works for 3D, since we first store the X then Y then Z, so we can just ignore the Z.
-	hipMemcpy2DAsync(m_isentropicTemp, sizeof(float), m_envGrid.potTemp, m_params.sizeX * sizeof(float), sizeof(float), m_params.sizeY, hipMemcpyHostToDevice, simStream);
-	hipMemcpy2DAsync(m_isentropicVapor, sizeof(float), m_envGrid.Qv, m_params.sizeX * sizeof(float), sizeof(float), m_params.sizeY, hipMemcpyHostToDevice, simStream);
-	hipMemcpy2DAsync(m_defaultVelX, sizeof(float), m_envGrid.velfieldX, m_params.sizeX * sizeof(float), sizeof(float), m_params.sizeY, hipMemcpyHostToDevice, simStream);
-	hipMemcpy2DAsync(m_defaultVelZ, sizeof(float), m_envGrid.velfieldY, m_params.sizeX * sizeof(float), sizeof(float), m_params.sizeY, hipMemcpyHostToDevice, simStream);
-	hipMemcpy2DAsync(m_defaultVelZ, sizeof(float), m_envGrid.velfieldZ, m_params.sizeX * sizeof(float), sizeof(float), m_params.sizeY, hipMemcpyHostToDevice, simStream);
+	hipMemcpy2DAsync(m_isentropicTemp, sizeof(float), m_envGrid.potTemp, m_params.sizeX * sizeof(float), sizeof(float), m_params.sizeY, hipMemcpyDeviceToDevice, simStream);
+	hipMemcpy2DAsync(m_isentropicVapor, sizeof(float), m_envGrid.Qv, m_params.sizeX * sizeof(float), sizeof(float), m_params.sizeY, hipMemcpyDeviceToDevice, simStream);
+	hipMemcpy2DAsync(m_defaultVelX, sizeof(float), m_envGrid.velfieldX, m_params.sizeX * sizeof(float), sizeof(float), m_params.sizeY, hipMemcpyDeviceToDevice, simStream);
+	hipMemcpy2DAsync(m_defaultVelZ, sizeof(float), m_envGrid.velfieldZ, m_params.sizeX * sizeof(float), sizeof(float), m_params.sizeY, hipMemcpyDeviceToDevice, simStream);
 	setToValue <<<m_params.sizeY, 1, 0, simStream >>> (size, m_dummyArray, 1.0f, 1, 0);
 
 	// Randomize the environment a bit
@@ -446,7 +462,7 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 	float* noise = nullptr;
 	float* noiseGPU = nullptr;
 	hipHostMalloc(&noise, m_params.sizeGround * sizeof(float), hipHostMallocDefault);
-	hipMalloc(&noiseGPU, m_params.sizeGround * sizeof(float));
+	hipMallocAsync(reinterpret_cast<void**>(&noiseGPU), m_params.sizeGround * sizeof(float), simStream);
 	//Generate noise
 	PNoise2D(100, noise, m_params.sizeX, m_params.sizeZ, 12);
 	err = hipGetLastError();
@@ -454,7 +470,7 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 		std::cerr << "Cuda error: " << hipGetErrorString(err) << std::endl;
 		assert(false);
 	}
-	hipMemcpyAsync(noiseGPU, noise, m_params.sizeGround * sizeof(float), hipMemcpyDefault, simStream);
+	hipMemcpyAsync(noiseGPU, noise, m_params.sizeGround * sizeof(float), hipMemcpyHostToDevice, simStream);
 	const float maxHeight = 0.2f;
 	initGroundHeightGPU <<<m_params.sizeZ, m_params.sizeX, 0, simStream >>> (m_params, m_GHeight, noiseGPU, maxHeight);
 	hipStreamSynchronize(simStream);
@@ -467,6 +483,11 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 		std::cerr << "Cuda error: " << hipGetErrorString(err) << std::endl;
 		assert(false);
 	}
+
+	//Initialize density
+	hipMemsetAsync(m_densityAir, 0, m_params.size * sizeof(float), simStream);
+	initDensity << <m_params.sizeY, m_params.sizeX, 0, simStream >> > (m_params, m_GHeight, m_densityAir, m_envGrid.potTemp, m_envGrid.pressure, m_envGrid.Qv, m_groundGrid.P);
+	hipMemcpyAsync(m_oldDensityAir, m_densityAir, m_params.size * sizeof(float), hipMemcpyDeviceToDevice, simStream);
 
 	//Reset values that are in ground
 	resetValueInGround <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (m_params, m_envGrid.potTemp, m_GHeight);
@@ -486,6 +507,7 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 		assert(false);
 	}
 
+	hipMemsetAsync(m_neighbourData, 0, m_params.size * sizeof(Neigh), simStream);
 	computeNeighbourGPU <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (m_params, m_GHeight, m_neighbourData);
 	computeIsenTempGroundGPU <<<m_params.sizeZ, m_params.sizeX, 0, simStream >>> (m_params, m_groundGrid.T, m_isentropicTemp, m_groundGrid.P, m_envGrid.pressure, m_GHeight);
 	hipStreamSynchronize(simStream);
@@ -495,10 +517,21 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 		assert(false);
 	}
 
+	// Init events
+	hipEventCreate(reinterpret_cast<hipEvent_t*>(&m_renderCopyReadyEvent));
+	hipEventCreate(reinterpret_cast<hipEvent_t*>(&m_simCopyReadyEvent));
+	// And start with readying the simulation
+	hipEventRecord(reinterpret_cast<hipEvent_t>(m_simCopyReadyEvent), simStream);
+
+
 	//Init other classes
 	initKernelSky(m_params, m_defaultVelX, m_defaultVelZ, simStream);
 	initGammasMicroPhysics(simStream);
 	
+	// Some more memory initializations
+	hipMemsetAsync(m_dummyGHeight, 0, m_params.sizeGround * sizeof(float), simStream);
+	hipMemsetAsync(m_outputArray, 0, m_params.size * sizeof(float), simStream);
+
 	hipStreamSynchronize(simStream);
 	err = hipGetLastError();
 	if (err != hipSuccess) {
@@ -519,7 +552,6 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 	hipError_t err = hipGetLastError();
 
 	m_updatingSimulation = true;
-
 
 	// Set values info
 	setConstantsKernelSky(dt, speed, -1.0f, simStream);
@@ -612,10 +644,9 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 			assert(false);
 		}
 
-
 		//2.
-
 		calculateBuoyancy(dt * speed);
+
 		diffuseGPU(m_envGrid.velfieldX, 2, dt * speed);
 		diffuseGPU(m_envGrid.velfieldY, 3, dt * speed);
 		diffuseGPU(m_envGrid.velfieldZ, 4, dt * speed);
@@ -625,7 +656,7 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 		advectPPMWGPU(m_envGrid.velfieldZ, m_defaultVelZ, BOUNDSVELXZ, dt * speed);
 
 		initDensity <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (m_params, m_GHeight, m_densityAir, m_envGrid.potTemp, m_envGrid.pressure, m_envGrid.Qv, m_groundGrid.P);
-		//cudaDeviceSynchronize();
+		//hipDeviceSynchronize();
 		hipMemcpyAsync(m_oldDensityAir, m_densityAir, m_params.size * sizeof(float), hipMemcpyDeviceToDevice, simStream);
 		
 		// Debug
@@ -637,45 +668,32 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 			std::cerr << "Cuda error: " << hipGetErrorString(err) << std::endl;
 			assert(false);
 		}
-		
+	
 		calculateNewPressure <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (m_params, m_GHeight, m_envGrid.pressure, m_densityAir, m_envGrid.potTemp, m_envGrid.Qv, m_groundGrid.P);
 		hipStreamSynchronize(simStream);
-
-
 
 
 		// 3.	
 		diffuseGPU(m_envGrid.Qv, 1, dt * speed);//Vapor
 		advectPPMWGPU(m_envGrid.Qv, m_isentropicVapor, BOUNDSVAPOR, dt * speed);
-		err = hipGetLastError();
-		if (err != hipSuccess) {
-
-			std::cerr << "Cuda error: " << hipGetErrorString(err) << std::endl;
-			assert(false);
-		}
 
 		diffuseGPU(m_envGrid.Qw, 5, dt * speed);//Water cloud
 		advectPPMWGPU(m_envGrid.Qw, m_dummyArray, BOUNDSMIXINGRATIOS, dt* speed);
 		
-		diffuseGPU(m_envGrid.Qc, 5, dt * speed);//Ice cloud
+		diffuseGPU(m_envGrid.Qc, 5, dt* speed);//Ice cloud
 		advectPPMWGPU(m_envGrid.Qc, m_dummyArray, BOUNDSMIXINGRATIOS, dt * speed);
 		
-		diffuseGPU(m_envGrid.Qr, 5, dt * speed);//Rain
-		advectPrecip(m_envGrid.Qr, 0, dt * speed);
+		diffuseGPU(m_envGrid.Qr, 5, dt* speed);//Rain
+		advectPrecip(m_envGrid.Qr, 0, dt* speed);
 		advectPPMWGPU(m_envGrid.Qr, m_dummyArray, BOUNDSMIXINGRATIOS, dt * speed);
 		
 		diffuseGPU(m_envGrid.Qs, 5, dt* speed);//Snow
 		advectPrecip(m_envGrid.Qs, 1, dt* speed);
 		advectPPMWGPU(m_envGrid.Qs, m_dummyArray, BOUNDSMIXINGRATIOS, dt* speed);
 		
-		diffuseGPU(m_envGrid.Qi, 5, dt * speed);//Ice
-		advectPrecip(m_envGrid.Qi, 2, dt * speed);
+		diffuseGPU(m_envGrid.Qi, 5, dt* speed);//Ice
+		advectPrecip(m_envGrid.Qi, 2, dt* speed);
 		advectPPMWGPU(m_envGrid.Qi, m_dummyArray, BOUNDSMIXINGRATIOS, dt * speed);
-		err = hipGetLastError();
-		if (err != hipSuccess) {
-			std::cerr << "Cuda error: " << hipGetErrorString(err) << std::endl;
-			assert(false);
-		}
 
 		// 4.	
 		microPhysicsSkyGPU(dt, speed);
@@ -687,6 +705,21 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 	}
 
 	hipStreamSynchronize(simStream);
+
+	// Safely copy over data to our middle-man buffer
+	//
+	// Check if we need to wait for render event to finish copying
+	hipStreamWaitEvent(simStream, reinterpret_cast<hipEvent_t>(m_renderCopyReadyEvent), 0);
+	// TODO: add copies when needing more in the rendering
+	hipMemcpyAsync(m_middleManBuffer.Qw, m_envGrid.Qw, m_params.size * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
+	hipMemcpyAsync(m_middleManBuffer.Qr, m_envGrid.Qr, m_params.size * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
+	hipMemcpyAsync(m_middleManBuffer.Qs, m_envGrid.Qs, m_params.size * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
+	hipMemcpyAsync(m_middleManBuffer.velfieldX, m_envGrid.velfieldX, m_params.size * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
+	hipMemcpyAsync(m_middleManBuffer.velfieldY, m_envGrid.velfieldY, m_params.size * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
+	hipMemcpyAsync(m_middleManBuffer.velfieldZ, m_envGrid.velfieldZ, m_params.size * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
+	// Say we are ready
+	hipEventRecord(reinterpret_cast<hipEvent_t>(m_simCopyReadyEvent), simStream);
+
 
 	//Set editor data
 	m_time += speed * dt * float(!m_pauseDiurnal);
@@ -719,7 +752,7 @@ void environmentGPU::microPhysicsSkyGPU(const float dt, const float speed)
 		dt, speed, m_envGrid.potTemp, m_densityAir, m_envGrid.pressure, m_GHeight, m_groundGrid.P,
 		m_condens, m_depos, m_freeze, m_microPhysDataActive, minPos, maxPos, *m_microPhysRes);
 
-	//cudaDeviceSynchronize();
+	//hipDeviceSynchronize();
 	hipError_t err = hipGetLastError();
 	if (err != hipSuccess) {
 		std::cerr << "Cuda error: " << hipGetErrorString(err) << std::endl;
@@ -763,7 +796,7 @@ void environmentGPU::diffuseGPU(float* diffuseArray, int type, const float dt)
 
 }
 
-void environmentGPU::initDiffuseGPUGraph(float* diffuseArray, int type) 
+void environmentGPU::initDiffuseGPUGraph(float* diffuseArray, int type)
 {
     if (m_diffuseExecutionGraphs.find(diffuseArray) == m_diffuseExecutionGraphs.end())
 	{
@@ -814,7 +847,7 @@ void environmentGPU::initDiffuseGPUGraph(float* diffuseArray, int type)
 		// Use graphs to get rid of the overhaul between kernel launches
         // We only need to initialize the graph ones, afterwards we can reuse the graph.
         // We do need a different graph for each different array, thus we use a map
-		hipGraph_t graph;
+		hipGraph_t inputGraph;
 		hipStreamBeginCapture(simStream, hipStreamCaptureModeGlobal);
 
 		// Diffuse using red and black (chess pattern on which cells will get executed)
@@ -826,9 +859,9 @@ void environmentGPU::initDiffuseGPUGraph(float* diffuseArray, int type)
 		diffuseRedBlack <<<m_gridDim, m_blockDim, sharedDataSize, simStream >>> (m_params, m_groundGrid.T, m_envGrid.pressure, m_groundGrid.P, defaultArray, m_outputArray, m_array, m_singleStor0, type, boundsConditions, false, m_neighbourData);
 
 		hipGraphExec_t newGraph;
-		hipStreamEndCapture(simStream, &graph);
-		hipGraphInstantiateWithFlags(&newGraph, graph, 0);
-		hipGraphDestroy(graph);
+		hipStreamEndCapture(simStream, &inputGraph);
+		hipGraphInstantiateWithFlags(&newGraph, inputGraph, 0);
+		hipGraphDestroy(inputGraph);
 		m_diffuseExecutionGraphs[diffuseArray] = reinterpret_cast<hipGraphExec*>(newGraph);
 
         hipError_t err = hipGetLastError();
@@ -874,7 +907,7 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 	setToValue <<<m_params.sizeY, 1, 0, simStream >>> (size, m_dummyArraySky2, 1.0f, 1, 0);
 
 	//Recollect all threads before starting kernels
-	//cudaDeviceSynchronize();
+	//hipDeviceSynchronize();
 
 
 	// Substeps based on highest courant number
@@ -885,9 +918,11 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 	const int sharedDataSizeMaxDiv = m_blockDim.x * m_blockDim.y * sizeof(float);
 
 	// Get max velocity and base C of this.
-	getMaxDivergence <<<m_gridDim, m_blockDim, sharedDataSizeMaxDiv, simStream >>> (m_params, m_GHeight, m_singleStor0, m_envGrid.velfieldX);
-	getMaxDivergence <<<m_gridDim, m_blockDim, sharedDataSizeMaxDiv, simStream >>> (m_params, m_GHeight, m_singleStor0, m_envGrid.velfieldY);
-	getMaxDivergence <<<m_gridDim, m_blockDim, sharedDataSizeMaxDiv, simStream >>> (m_params, m_GHeight, m_singleStor0, m_envGrid.velfieldZ);
+	dim3 shortBlockDim = m_blockDim;
+	shortBlockDim.z = 1;
+	getMaxDivergence <<<m_gridDim, shortBlockDim, sharedDataSizeMaxDiv, simStream >>> (m_params, m_GHeight, m_singleStor0, m_envGrid.velfieldX);
+	getMaxDivergence <<<m_gridDim, shortBlockDim, sharedDataSizeMaxDiv, simStream >>> (m_params, m_GHeight, m_singleStor0, m_envGrid.velfieldY);
+	getMaxDivergence <<<m_gridDim, shortBlockDim, sharedDataSizeMaxDiv, simStream >>> (m_params, m_GHeight, m_singleStor0, m_envGrid.velfieldZ);
 	float maxVel = 1.0f;
 	hipMemcpyAsync(&maxVel, m_singleStor0, sizeof(float), hipMemcpyDeviceToHost, simStream); // Causing long stall due to GPU work catching up to this point.
 
@@ -896,7 +931,7 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 	const float MAXSUBSTEPS = 100;
 
 	const int subSteps = int(fminf(ceilf(fabsf(C)), MAXSUBSTEPS));
-	const float dtSub = dt / (subSteps + 1e-32f);
+	float dtSub = dt / (subSteps + 1e-32f);
 	if (C > 25)
 	{
 		printf("WARNING: Courant number is high: %f, increase size of voxels or decrease timesteps, %f, %i\n", C, dtSub, subSteps);
@@ -919,7 +954,7 @@ void environmentGPU::advectPPMWGPU(float* advectArray, const float* defaultVal, 
 	//cudaFuncAttributes attr;
 	//cudaFuncGetAttributes(&attr, advectPPMZ);
 	//printf("Registers used in kernel per thread: %d\n", attr.numRegs);
-	//cudaDeviceSynchronize();
+	//hipDeviceSynchronize();
 
 	hipError_t err = hipGetLastError();
 	if (err != hipSuccess) {
@@ -946,13 +981,10 @@ void environmentGPU::initAdvectPPMWGPUGraph(float* advectArray, const float* def
 		int3 size = make_int3(m_params.sizeX, m_params.sizeY, m_params.sizeZ);
 		const int sharedDataSize = (m_blockDim.x + 2) * (m_blockDim.y + 2) * sizeof(float);
 
-
-
-
         // Use graphs to get rid of the overhaul between kernel launches
         // We only need to initialize the graph ones, afterwards we can reuse the graph.
         // We do need a different graph for each different array, thus we use a map
-		hipGraph_t graph;
+		hipGraph_t inputGraph;
 
 		hipStreamBeginCapture(simStream, hipStreamCaptureModeGlobal);
 
@@ -973,12 +1005,11 @@ void environmentGPU::initAdvectPPMWGPUGraph(float* advectArray, const float* def
 		//First advect density and array on half X
 		advectPPMX <<<m_gridDim, m_blockDim, sharedDataSize, simStream >>> (m_params, m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldX, m_neighbourData, m_GHeight, boundsVal, m_singleStor0);
 		advectPPMX <<<m_gridDim, m_blockDim, sharedDataSize, simStream >>> (m_params, advectArray, m_outputArray, defaultVal, m_envGrid.velfieldX, m_neighbourData, m_GHeight, boundsVal, m_singleStor0);
-		//cudaDeviceSynchronize();
+
 
 		//Divide to get them both up to speed
 		divideValuesFull <<<m_gridDim, m_blockDim, 0, simStream >>> (size, m_outputArray, m_stor0);
 		setToValue <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (size, m_density, 1.0f, m_params.sizeZ, 0);
-		//cudaDeviceSynchronize();
 
 		//------------------------------ 0.5 Y -----------------------------------
 
@@ -986,51 +1017,50 @@ void environmentGPU::initAdvectPPMWGPUGraph(float* advectArray, const float* def
 		//Also input and output are swapped because of previous result
 		advectPPMY <<<m_gridDim, m_blockDim, sharedDataSize, simStream >>> (m_params, m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldY, m_neighbourData, m_GHeight, boundsVal, m_singleStor0);
 		advectPPMY <<<m_gridDim, m_blockDim, sharedDataSize, simStream >>> (m_params, m_outputArray, advectArray, defaultVal, m_envGrid.velfieldY, m_neighbourData, m_GHeight, boundsVal, m_singleStor0);
-		//cudaDeviceSynchronize();
 
 		//Divide to get them both up to speed
 		divideValuesFull <<<m_gridDim, m_blockDim, 0, simStream >>> (size, advectArray, m_stor0);
 		setToValue <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (size, m_density, 1.0f, m_params.sizeZ, 0);
-		//cudaDeviceSynchronize();
 
 		//------------------------------ 1.0 Z -----------------------------------
 
 		advectPPMZ <<<m_gridDim, m_blockDim, 0, simStream >>> (m_params, m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldZ, m_neighbourData, m_GHeight, boundsVal, m_singleStor0);
 		advectPPMZ <<<m_gridDim, m_blockDim, 0, simStream >>> (m_params, advectArray, m_outputArray, defaultVal, m_envGrid.velfieldZ, m_neighbourData, m_GHeight, boundsVal, m_singleStor0);
-		//cudaDeviceSynchronize();
 
 		divideValuesFull <<<m_gridDim, m_blockDim, 0, simStream >>> (size, m_outputArray, m_stor0);
 		setToValue <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (size, m_density, 1.0f, m_params.sizeZ, 0);
-		//cudaDeviceSynchronize();
 
 		//------------------------------ 0.5 Y -----------------------------------
 
 		advectPPMY <<<m_gridDim, m_blockDim, sharedDataSize, simStream >>> (m_params, m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldY, m_neighbourData, m_GHeight, boundsVal, m_singleStor0);
 		advectPPMY <<<m_gridDim, m_blockDim, sharedDataSize, simStream >>> (m_params, m_outputArray, advectArray, defaultVal, m_envGrid.velfieldY, m_neighbourData, m_GHeight, boundsVal, m_singleStor0);
-		//cudaDeviceSynchronize();
 
 		divideValuesFull<<<m_gridDim, m_blockDim, 0, simStream>>>(size, advectArray, m_stor0);
 		setToValue <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (size, m_density, 1.0f, m_params.sizeZ, 0);
-		//cudaDeviceSynchronize();
 
 		//------------------------------ 0.5 X -----------------------------------
-
+		
 		advectPPMX <<<m_gridDim, m_blockDim, sharedDataSize, simStream >>> (m_params, m_density, m_stor0, m_dummyArraySky2, m_envGrid.velfieldX, m_neighbourData, m_GHeight, boundsVal, m_singleStor0);
 		advectPPMX <<<m_gridDim, m_blockDim, sharedDataSize, simStream >>> (m_params, advectArray, m_outputArray, defaultVal, m_envGrid.velfieldX, m_neighbourData, m_GHeight, boundsVal, m_singleStor0);
-		//cudaDeviceSynchronize();
-
+		
 		divideValuesFull<<<m_gridDim, m_blockDim, 0, simStream>>>(size, m_outputArray, m_stor0);
 		setToValue <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (size, m_density, 1.0f, m_params.sizeZ, 0);
 
 		//Switch over input and output for our next iteration or return result.
 		hipMemcpyAsync(advectArray, m_outputArray, m_params.size * sizeof(float), hipMemcpyDeviceToDevice, simStream);
 
-
 		hipGraphExec_t newGraphExec;
-		hipStreamEndCapture(simStream, &graph);
-		hipGraphInstantiateWithFlags(&newGraphExec, graph, 0);
-		hipGraphDestroy(graph);
+		hipStreamEndCapture(simStream, &inputGraph);
+		hipGraphInstantiateWithFlags(&newGraphExec, inputGraph, 0);
+		hipGraphDestroy(inputGraph);
 		m_advectExecutionGraphs[advectArray] = reinterpret_cast<hipGraphExec*>(newGraphExec); // Add new graph
+
+		// Check error
+		hipError_t err = hipGetLastError();
+		if (err != hipSuccess) {
+			std::cerr << "Cuda error: " << hipGetErrorString(err) << std::endl;
+			assert(false);
+		}
 	}
 }
 
@@ -1055,7 +1085,7 @@ void environmentGPU::advectPrecip(float* array, const int fallVelType, const flo
 	{
 		// Psst, we swapped the X and Y around since we are only interested in the Y values per block
 		advectPrecipGPU<<<m_gridDim, m_blockDim, 0, simStream >>>(m_params, m_GHeight, array, m_neighbourData, m_envGrid.potTemp, m_envGrid.Qv, m_envGrid.pressure, m_groundGrid.P, fallVelType, dtSub);
-		//cudaDeviceSynchronize();
+		//hipDeviceSynchronize();
 	}
 }
 
@@ -1068,11 +1098,11 @@ void environmentGPU::pressureProject(const float dt)
 
 	//Should not be needed if handled correctly in advection and other velocity updates?
 	resetVelPressProj <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (m_params, m_GHeight, m_neighbourData, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ);
-	//cudaDeviceSynchronize();
+	//hipDeviceSynchronize();
 
 	//Initialize A and precon every frame due to changed based on density
 	initAMatrix <<<m_gridDim, m_blockDim, sharedDataSize, simStream >>> (m_params, m_GHeight, m_A, m_neighbourData, m_densityAir, m_dummyArraySky2);
-	//cudaDeviceSynchronize();
+	//hipDeviceSynchronize();
 
 	//cudaFuncAttributes attr;
 	//cudaFuncGetAttributes(&attr, initAMatrix);
@@ -1087,7 +1117,7 @@ void environmentGPU::pressureProject(const float dt)
 
 
 	initPrecon <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (m_params, m_GHeight, m_precon, m_A);
-	//cudaDeviceSynchronize();
+	//hipDeviceSynchronize();
 
 	//Actual pressure project
 	calculatePressureProject(dt);
@@ -1096,17 +1126,21 @@ void environmentGPU::pressureProject(const float dt)
 	updatePressure <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (m_params, m_GHeight, m_envGrid.pressure, m_outputArray);
 
 	initDensity <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (m_params, m_GHeight, m_densityAir, m_envGrid.potTemp, m_envGrid.pressure, m_envGrid.Qv, m_groundGrid.P);
-	//cudaDeviceSynchronize();
+	//hipDeviceSynchronize();
 
 
 	//Debug
 	//Game.Editor().setDebugValueNum(m_outputArray, 2);
-	//cudaDeviceSynchronize();
-
+	//hipDeviceSynchronize();
+	err = hipGetLastError();
+	if (err != hipSuccess) {
+		std::cerr << "Cuda error: " << hipGetErrorString(err) << std::endl;
+		assert(false);
+	}
 	//Apply calculate pressure to velocity field
 	applyPresProjGPU <<<m_gridDim, m_blockDim, 0, simStream >>> (m_params, m_GHeight, m_outputArray, m_neighbourData, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ,
 		m_densityAir, m_envGrid.pressure, dt, m_stor0);
-	//cudaDeviceSynchronize();
+	//hipDeviceSynchronize();
 
 	//Game.Editor().setDebugValueNum(m_stor0, 1);
 
@@ -1143,7 +1177,7 @@ void environmentGPU::calculatePressureProject(const float )
 
 	//Divergence
 	calculateDivergenceGPU <<<m_gridDim, m_blockDim, sharedDataSize, simStream >>> (m_params, m_GHeight, m_stor0, m_neighbourData, m_envGrid.velfieldX, m_envGrid.velfieldY, m_envGrid.velfieldZ, m_densityAir, m_oldDensityAir, m_dummyArraySky2);
-	//cudaDeviceSynchronize();
+	//hipDeviceSynchronize();
 	
 
 	if (!m_groundChanged)
@@ -1165,24 +1199,26 @@ void environmentGPU::calculatePressureProject(const float )
 	}
 
 	//Debug
-	//cudaDeviceSynchronize();
+	//hipDeviceSynchronize();
 	//Game.Editor().setDebugValueNum(m_stor0, 2, simStream);
 
 	//Check max divergence
-	getMaxDivergence <<<m_gridDim, m_blockDim, sharedDataSizeNoHalo, simStream >>> (m_params, m_GHeight, m_singleStor0, m_stor0);
-	//cudaDeviceSynchronize();
+	dim3 shortBlockDim = m_blockDim;
+	shortBlockDim.z = 1;
+	getMaxDivergence <<<m_gridDim, shortBlockDim, sharedDataSizeNoHalo, simStream >>> (m_params, m_GHeight, m_singleStor0, m_stor0);
+	//hipDeviceSynchronize();
 	hipMemcpyAsync(&maxr, m_singleStor0, sizeof(float), hipMemcpyDeviceToHost, simStream);
 	hipStreamSynchronize(simStream); // Synchronize host copy
 	if (maxr == 0.0f) return;
 	//printf("init r value: %e\n", maxr);
 
 	applyPreconditionerGPU <<<m_gridDim, m_blockDim, 0, simStream >>> (m_params, m_GHeight, m_stor1, m_precon, m_stor0, m_A);
-	//cudaDeviceSynchronize();
+	//hipDeviceSynchronize();
 
 
 	hipMemcpyAsync(m_stor2, m_stor1, m_params.size * sizeof(float), hipMemcpyDeviceToDevice, simStream);
 	dotProductGPU <<<m_gridDim, m_blockDim, sharedDataSizeNoHalo, simStream >>> (m_params, m_GHeight, m_sigma0, m_stor1, m_stor0);
-	//cudaDeviceSynchronize();
+	//hipDeviceSynchronize();
 
 	// Check if we need to initialize the graph
 	initPressureProjectGraph();
@@ -1194,19 +1230,19 @@ void environmentGPU::calculatePressureProject(const float )
 
 		//// Same bounds as density since A = density
 		//applyAGPU<<<m_gridDim, m_blockDim, sharedDataSize >>>(m_stor1, m_stor2, m_neighbourData, m_A);
-		////cudaDeviceSynchronize();
+		////hipDeviceSynchronize();
 
 		//dotProductGPU <<<m_gridDim, m_blockDim, sharedDataSizeNoHalo >>> (m_sigma1, m_stor1, m_stor2);
-		////cudaDeviceSynchronize();
+		////hipDeviceSynchronize();
 
 		////Update the pressure (output) and divergence
 		//updatePandDiv <<<m_gridDim, m_blockDim >>> (m_sigma0, m_sigma1, m_outputArray, m_stor0, m_stor2, m_stor1);
-		////cudaDeviceSynchronize();
+		////hipDeviceSynchronize();
 
 		////Check max divergence
 		//cudaMemset(m_singleStor0, 0, sizeof(float));
 		//getMaxDivergence <<<m_gridDim, m_blockDim, sharedDataSizeNoHalo >>> (m_singleStor0, m_stor0);
-		////cudaDeviceSynchronize();
+		////hipDeviceSynchronize();
 		////cudaMemcpy(&maxr, m_singleStor0, sizeof(float), cudaMemcpyDeviceToHost);
 		////if (maxr <= tolValue)
 		////{
@@ -1216,25 +1252,25 @@ void environmentGPU::calculatePressureProject(const float )
 
 		//applyPreconditionerGPU <<<m_gridDim, m_blockDim >>> (m_stor1, m_precon, m_stor0, m_A);
 
-		////cudaDeviceSynchronize();
+		////hipDeviceSynchronize();
 
 		////Dotproduct
 		//cudaMemset(m_sigma1, 0, sizeof(float));
 		//dotProductGPU <<<m_gridDim, m_blockDim, sharedDataSizeNoHalo >>> (m_sigma1, m_stor1, m_stor0);
-		////cudaDeviceSynchronize();
+		////hipDeviceSynchronize();
 
 		////Set values and set search vector
 		//endIteration <<<m_gridDim, m_blockDim >>> (m_sigma0, m_sigma1, m_stor2, m_stor1);
 
 		//cudaMemset(m_sigma1, 0, sizeof(float));
 
-		//cudaDeviceSynchronize();
+		//hipDeviceSynchronize();
 	}
 
 	// Check r
 	//cudaMemsetAsync(m_singleStor0, 0, sizeof(float), stream1);
 	//getMaxDivergence <<<m_gridDim, m_blockDim, sharedDataSizeNoHalo, stream1 >>> (m_singleStor0, m_stor0);
-	//////cudaDeviceSynchronize();
+	//////hipDeviceSynchronize();
 	//cudaMemcpyAsync(&maxr, m_singleStor0, sizeof(float), cudaMemcpyDeviceToHost, stream1);
 	//printf("r value: %e\n", maxr);
 
@@ -1247,7 +1283,7 @@ void environmentGPU::calculatePressureProject(const float )
 	//printf("Max iterations reached!\n");
 }
 
-void environmentGPU::initPressureProjectGraph() 
+void environmentGPU::initPressureProjectGraph()
 {
     if (!m_pressureprojectExecutionGraph)
     {
@@ -1256,7 +1292,7 @@ void environmentGPU::initPressureProjectGraph()
 
 		// Use graphs to get rid of the overhaul between kernel launches
         // We only need to initialize the graph ones, afterwards we can reuse the graph.
-        hipGraph_t graph;
+        hipGraph_t inputGraph;
         hipStreamBeginCapture(simStream, hipStreamCaptureModeGlobal);
 
         applyAGPU<<<m_gridDim, m_blockDim, sharedDataSize, simStream>>>(m_params, m_stor1, m_stor2, m_neighbourData, m_A);
@@ -1265,7 +1301,7 @@ void environmentGPU::initPressureProjectGraph()
 
         // cudaMemsetAsync(m_singleStor0, 0, sizeof(float), simStream);
         // getMaxDivergence <<<m_gridDim, m_blockDim, sharedDataSizeNoHalo, simStream >>> (m_singleStor0, m_stor0);
-        ////cudaDeviceSynchronize();
+        ////hipDeviceSynchronize();
         // cudaMemcpyAsync(&maxr, m_singleStor0, sizeof(float), cudaMemcpyDeviceToHost, simStream);
         // if (maxr <= tolValue)
         //{
@@ -1279,9 +1315,9 @@ void environmentGPU::initPressureProjectGraph()
         endIteration<<<m_gridDim, m_blockDim, 0, simStream>>>(m_params, m_GHeight, m_sigma0, m_sigma1, m_stor2, m_stor1);
         hipMemsetAsync(m_sigma1, 0, sizeof(float), simStream);
 
-        hipStreamEndCapture(simStream, &graph);
-        hipGraphInstantiateWithFlags(reinterpret_cast<hipGraphExec_t*>(&m_pressureprojectExecutionGraph), graph, 0);
-        hipGraphDestroy(graph);
+        hipStreamEndCapture(simStream, &inputGraph);
+        hipGraphInstantiateWithFlags(reinterpret_cast<hipGraphExec_t*>(&m_pressureprojectExecutionGraph), inputGraph, 0);
+        hipGraphDestroy(inputGraph);
     }
 }
 
@@ -1574,21 +1610,20 @@ void environmentGPU::resetParameterGPU(parameter paramType)
 
 void environmentGPU::setHostData(envDebugData& outputCPUData, bool setIsentropics)
 { 
-	lockGlobal();
 	// Copy over GPU data to our little CPU friend
-        
-
+	// We can just do this due to being async, we are just adding to the queue.
+    
     // Set sky values.
     hipMemcpyAsync(outputCPUData.m_envView.potTemp, m_envGrid.potTemp, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
-    hipMemcpyAsync(outputCPUData.m_envView.Qv, m_envGrid.Qv, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
-    hipMemcpyAsync(outputCPUData.m_envView.Qw, m_envGrid.Qw, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
-    hipMemcpyAsync(outputCPUData.m_envView.Qc, m_envGrid.Qc, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
-    hipMemcpyAsync(outputCPUData.m_envView.Qr, m_envGrid.Qr, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
-    hipMemcpyAsync(outputCPUData.m_envView.Qs, m_envGrid.Qs, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
-    hipMemcpyAsync(outputCPUData.m_envView.Qi, m_envGrid.Qi, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
-    hipMemcpyAsync(outputCPUData.m_envView.velFieldX, m_envGrid.velfieldX, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
-    hipMemcpyAsync(outputCPUData.m_envView.velFieldY, m_envGrid.velfieldY, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
-    hipMemcpyAsync(outputCPUData.m_envView.velFieldZ, m_envGrid.velfieldZ, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
+	hipMemcpyAsync(outputCPUData.m_envView.Qv, m_envGrid.Qv, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
+	hipMemcpyAsync(outputCPUData.m_envView.Qw, m_envGrid.Qw, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
+	hipMemcpyAsync(outputCPUData.m_envView.Qc, m_envGrid.Qc, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
+	hipMemcpyAsync(outputCPUData.m_envView.Qr, m_envGrid.Qr, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
+	hipMemcpyAsync(outputCPUData.m_envView.Qs, m_envGrid.Qs, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
+	hipMemcpyAsync(outputCPUData.m_envView.Qi, m_envGrid.Qi, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
+	hipMemcpyAsync(outputCPUData.m_envView.velFieldX, m_envGrid.velfieldX, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
+	hipMemcpyAsync(outputCPUData.m_envView.velFieldY, m_envGrid.velfieldY, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
+	hipMemcpyAsync(outputCPUData.m_envView.velFieldZ, m_envGrid.velfieldZ, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
 
     // Set pressure
     hipMemcpyAsync(outputCPUData.m_envView.pressure, m_envGrid.pressure, m_params.size * sizeof(float), hipMemcpyDeviceToHost, simStream);
@@ -1611,7 +1646,6 @@ void environmentGPU::setHostData(envDebugData& outputCPUData, bool setIsentropic
         hipMemcpyAsync(outputCPUData.m_envPressure, m_defaultPressure, m_params.sizeY * sizeof(float), hipMemcpyDeviceToHost, simStream); 
     }
 
-	unlockGlobal();
 
 	hipError_t err = hipGetLastError();
 	if (err != hipSuccess)

@@ -8,6 +8,9 @@
 // Retrieve grid and block dimensions based on current hardware
 __host__ void getGridBlockDims(simParams p, dim3& _gridDim, dim3& _blockDim)
 {
+    // Reset current ones
+    _gridDim = dim3(1,1,1);
+    _blockDim = dim3(1,1,1);
     // Set block and grid dimension based on GPU specs.
     hipDeviceProp_t prop;
     hipGetDeviceProperties(&prop, 0);
@@ -47,4 +50,17 @@ __host__ void getGridBlockDims(simParams p, dim3& _gridDim, dim3& _blockDim)
     // Depth is determined by how many blocks we have in total and use per z slice.
     _gridDim.z =
         unsigned(std::min(double(p.sizeZ), floor(double(totalBlocksPerGrid) / double(_gridDim.x * _gridDim.y))));
+}
+
+__global__ void validityCheck(float* array, float minValid, float maxValid, int depth, int* valid)
+{
+    const int x = threadIdx.x;
+    const int y = blockIdx.x;
+    int z = 0;
+
+    for (z = 0; z < depth; z++)
+    {
+        const int idx = x + y * blockDim.x + z * blockDim.x * gridDim.x;
+        if (array[idx] < minValid || array[idx] > maxValid) *valid = 1;
+    }
 }

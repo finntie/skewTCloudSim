@@ -22,9 +22,6 @@
 #include <hip/hip_gl_interop.h>
 #include <hip/hip_vector_types.h>
 
-
-
-
 // Highly inspired from https://github.com/BigNerd95/CUDASamples/blob/master/samples/2_Graphics/volumeRender/volumeRender.cpp
 
 // Predeclare templated function for different types due to compiler needing the body
@@ -48,7 +45,7 @@ CudaRender::CudaRender(const simParams& params) : m_params(params)
 
 CudaRender::~CudaRender() 
 {
-    fillLUTS(m_envData, nullptr, nullptr, 0, 0, true);
+    fillLUTS(m_envData, nullptr, nullptr, true);
 
     if (m_envInitialized)
     {
@@ -636,7 +633,7 @@ void CudaRender::render()
         glm::mat4 transposeCamView = glm::transpose(glm::inverse(m_camView)); // Transpose the matrix so the translation alligns correct with the 4x3 matrix
         initConstants(glm::value_ptr(transposeCamView), sizeof(float4) * 3, gridMin, gridMax);
 
-        fillLUTS(m_envData, m_envSkyViewTextureStorage, m_envAerialViewTextureStorage, m_width, m_height, false);
+        fillLUTS(m_envData, m_envSkyViewTextureStorage, m_envAerialViewTextureStorage, false);
 
         hipStreamSynchronize(stream);
         err = hipGetLastError();
@@ -1075,16 +1072,54 @@ void copyDataToTexture(T* data, void*& storageArray, const glm::ivec3 size, void
 
 }
 
-void CudaRender::setDataEnvironment(gridDataSkyGPU data, bool updateSDF)
+void CudaRender::setDataEnvironment(gridDataSkyGPU& data, bool updateSDF)
 {
-    // TODO: synchronize, lock or whatever to prevent the intervention between sim and render stream.
     if (m_params.size == 0)
     {
         printf(
             "Warning: environment renderer fullsize is 0 when trying to set environmnent render data, call "
             "initEnvironmentData() beforehand\n");
     }
-    // cudaMemcpy(m_envData.Qw, Qw, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
+    
+    if (data.Qw) copyDataToTexture<float>(data.Qw, m_QWTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
+    if (data.Qr) copyDataToTexture<float>(data.Qr, m_QRTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
+    if (data.Qs) copyDataToTexture<float>(data.Qs, m_QSTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
+    if (data.velfieldX) copyDataToTexture<float>(data.velfieldX, m_velXTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
+    if (data.velfieldY) copyDataToTexture<float>(data.velfieldY, m_velYTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
+    if (data.velfieldZ) copyDataToTexture<float>(data.velfieldZ, m_velZTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
+
+    if (data.Qw && updateSDF)
+    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qw, 0.00005f, m_SDFTextureStorageQw, m_SDFDistanceNeigh, m_SDFClosestTarget, *m_gridDim, *m_blockDim,static_cast<hipStream_t>(getStream())); 
+
+    if (data.Qr && updateSDF)
+    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qr, 0.00001f, m_SDFTextureStorageQr, m_SDFDistanceNeigh, m_SDFClosestTarget, *m_gridDim, *m_blockDim, static_cast<hipStream_t>(getStream()));
+
+    if (data.Qs && updateSDF)
+    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qs, 0.00001f, m_SDFTextureStorageQs, m_SDFDistanceNeigh, m_SDFClosestTarget, *m_gridDim, *m_blockDim, static_cast<hipStream_t>(getStream()));
+
+    // We did set data at least once
+    m_setData = true;
+
+    hipError_t err = hipGetLastError();
+    if (err != hipSuccess)
+    {
+        std::cerr << "error: " << hipGetErrorString(err) << std::endl;
+        assert(false);
+    }
+}
+
+
+void CudaRender::setDataEnvironmentEvent(gridDataSkyGPU& data, bool updateSDF, void*& simCopyReadyEvent, void*& renderCopyReadyEvent)
+{
+    if (m_params.size == 0)
+    {
+        printf(
+            "Warning: environment renderer fullsize is 0 when trying to set environmnent render data, call "
+            "initEnvironmentData() beforehand\n");
+    }
+
+    // Check if simulation data is ready to be read
+    hipStreamWaitEvent(static_cast<hipStream_t>(getStream()), reinterpret_cast<hipEvent_t>(simCopyReadyEvent), 0);
 
     if (data.Qw) copyDataToTexture<float>(data.Qw, m_QWTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
     if (data.Qr) copyDataToTexture<float>(data.Qr, m_QRTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
@@ -1093,63 +1128,25 @@ void CudaRender::setDataEnvironment(gridDataSkyGPU data, bool updateSDF)
     if (data.velfieldY) copyDataToTexture<float>(data.velfieldY, m_velYTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
     if (data.velfieldZ) copyDataToTexture<float>(data.velfieldZ, m_velZTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
 
-        hipError_t err = hipGetLastError();
-    if (err != hipSuccess)
-    {
-        std::cerr << "error: " << hipGetErrorString(err) << std::endl;
-        assert(false);
-    }
-
     if (data.Qw && updateSDF)
-    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ),
-            data.Qw,
-            0.00005f,
-            m_SDFTextureStorageQw,
-            m_SDFDistanceNeigh,
-            m_SDFClosestTarget,
-            *m_gridDim,
-            *m_blockDim,
-        static_cast<hipStream_t>(getStream()));
+        fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qw, 0.00005f, m_SDFTextureStorageQw, m_SDFDistanceNeigh, m_SDFClosestTarget, *m_gridDim, *m_blockDim, static_cast<hipStream_t>(getStream()));
 
     if (data.Qr && updateSDF)
-    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ),
-            data.Qr,
-            0.00001f,
-            m_SDFTextureStorageQr,
-            m_SDFDistanceNeigh,
-            m_SDFClosestTarget,
-            *m_gridDim,
-            *m_blockDim,
-        static_cast<hipStream_t>(getStream()));
+        fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qr, 0.00001f, m_SDFTextureStorageQr, m_SDFDistanceNeigh, m_SDFClosestTarget, *m_gridDim, *m_blockDim, static_cast<hipStream_t>(getStream()));
 
     if (data.Qs && updateSDF)
-    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ),
-            data.Qs,
-            0.00001f,
-            m_SDFTextureStorageQs,
-            m_SDFDistanceNeigh,
-            m_SDFClosestTarget,
-            *m_gridDim,
-            *m_blockDim,
-        static_cast<hipStream_t>(getStream()));
-    // cudaMemcpy(m_envData.Qc, Qc, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    // cudaMemcpy(m_envData.Qr, Qr, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    // cudaMemcpy(m_envData.Qs, Qs, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    // cudaMemcpy(m_envData.Qi, Qi, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    // cudaMemcpy(m_envData.velfieldX, velX, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    // cudaMemcpy(m_envData.velfieldY, VelY, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
-    // cudaMemcpy(m_envData.velfieldZ, velZ, m_envData.fullSize * sizeof(float), cudaMemcpyDeviceToDevice);
+        fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qs, 0.00001f, m_SDFTextureStorageQs, m_SDFDistanceNeigh, m_SDFClosestTarget, *m_gridDim, *m_blockDim, static_cast<hipStream_t>(getStream()));
 
-    // switchActiveTexture();
+    // We did set data at least once
+    m_setData = true;
 
-    // If anything was updated, we did set data
-    if (data.Qw || data.Qr || data.Qs || data.velfieldX || data.velfieldY || data.velfieldZ) m_setData = true;
+    // Say we are ready
+    hipEventRecord(reinterpret_cast<hipEvent_t>(renderCopyReadyEvent), static_cast<hipStream_t>(getStream()));
 
-    err = hipGetLastError();
+    hipError_t err = hipGetLastError();
     if (err != hipSuccess)
     {
         std::cerr << "error: " << hipGetErrorString(err) << std::endl;
         assert(false);
     }
 }
-
