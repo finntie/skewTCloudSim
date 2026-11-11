@@ -67,7 +67,7 @@ void cameraControl::setCameraLib(bool useLibCamera)
         glm::vec3 pos = glm::vec3(0, 10, -30);
         glm::vec3 direction = glm::normalize(glm::vec3(0, 0, 0) - pos);
         glm::quat rotation = glm::quatLookAtRH(direction, glm::vec3(0, 1, 0));
-        glm::mat4 projection = glm::perspective(glm::radians(FOV), 800.0f / 600.0f, 0.1f, 10000.0f);
+        glm::mat4 projection = glm::perspective(glm::radians(FOV), 800.0f / 600.0f, 0.1f, 100000.0f);
 
         m_cameraObj->m_cameraPos = pos;
         m_cameraObj->m_cameraRotation = rotation;

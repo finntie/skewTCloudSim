@@ -3,6 +3,14 @@
 #include "environment.hpp"
 #include "config.hpp"
 
+// TODO: Just for the float4 
+#include "gpu_defines.h"
+#ifdef GPU_COMPILER
+#include "msvc_defines.h"
+#include <hip/hip_runtime.h>
+#include <hip/hip_vector_types.h>
+#endif
+
 #include <glm/glm.hpp>
 #include <unordered_map>
 
@@ -10,7 +18,6 @@ class dataClass;
 struct microPhysicsParams;
 struct envDebugData;
 struct hipGraphExec;
-struct float4;
 struct simParams;
 
 class environmentGPU
@@ -170,8 +177,9 @@ private:
 	float* m_freeze;
 	
 	float* m_precon; //Precon (pressure projection)
+#ifdef GPU_COMPILER // Only GPU variable
 	float4* m_A; //A matrix (pressure projection)
-
+#endif
 	//Single values
 	float* m_singleStor0;
 	float* m_sigma0;

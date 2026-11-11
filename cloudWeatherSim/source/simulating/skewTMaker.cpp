@@ -37,10 +37,12 @@ void skewTMaker::init()
 	// Set camera pos and rotation
 	m_cameraPos = m_centerSkewTPos + glm::vec3(0, 100, 0);
 	m_cameraRot = glm::angleAxis(glm::radians(90.0f), glm::vec3(-1, 0, 0));
-    m_camProjection = glm::perspective(glm::radians(45.0f),
-                                           float(CloudHub.CameraObj().getScrWidth()) / float(CloudHub.CameraObj().getScrHeight()),
-                                           0.2f,
-                                           1000.0f);
+    //m_camProjection = glm::perspective(glm::radians(45.0f),
+    //                                       float(CloudHub.CameraObj().getScrWidth()) / float(CloudHub.CameraObj().getScrHeight()),
+    //                                       0.2f,
+    //                                       1000.0f);
+	// Use camera projection
+	m_camProjection = CloudHub.CameraObj().getCamProjection();
 
 	glm::vec2 zeroCoord = convertToPlottingCoordinates(0, 1000, true);
 	m_cursorPos = glm::vec3(zeroCoord.x, 0, -zeroCoord.y);
@@ -837,6 +839,7 @@ void skewTMaker::selectUnselectCursor()
 {
     // If cursor is near
     m_cursorSize = 0.5f;
+	printf("m_mousePos3D: %f, %f, %f\n", m_mousePos3D.x, m_mousePos3D.y, m_mousePos3D.z);
     if (!m_cursorActive && distance(m_mousePos3D, m_cursorPos) <= 1.5f)
     {
         m_cursorSize = 0.6f;
@@ -1394,7 +1397,7 @@ void skewTMaker::drawBackground()
 		glm::vec2 coords = convertToPlottingCoordinates(i, 100, true);
 		glm::vec2 coords2 = convertToPlottingCoordinates(i, 1000, true);
 
-		glm::vec4 color = color = glm::vec4(0.4f, 0.4f, 0.4f, 1.0f);;
+		glm::vec4 color = glm::vec4(0.4f, 0.4f, 0.4f, 1.0f);;
 		if (int(i) % 5 == 0) color = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
 		if (int(i) % 10 == 0) color = glm::vec4(0.75f, 0.75f, 0.75f, 1.0f);
 		if (i == 0) color = Colors::WhiteA;

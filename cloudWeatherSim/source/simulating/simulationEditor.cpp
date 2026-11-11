@@ -1333,24 +1333,24 @@ float simulationEditor::getValueParam(const int i, parameter param)
 { 
     switch (param)
     {
-        case POTTEMP: return {m_envEditData->m_envView.potTemp[i]}; break;
-        case QV: return {m_envEditData->m_envView.Qv[i]}; break;
-        case QW: return {m_envEditData->m_envView.Qw[i]}; break;
-        case QC: return {m_envEditData->m_envView.Qc[i]}; break;
-        case QR: return {m_envEditData->m_envView.Qr[i]}; break;
-        case QS: return {m_envEditData->m_envView.Qs[i]}; break;
-        case QI: return {m_envEditData->m_envView.Qi[i]}; break;
-        case WINDX: return {m_envEditData->m_envView.velFieldX[i]}; break;
-        case WINDY: return {m_envEditData->m_envView.velFieldY[i]}; break;
-        case WINDZ: return {m_envEditData->m_envView.velFieldZ[i]}; break;
-        case PGROUND: return {0}; break;
-        case DEBUG1: return {m_envEditData->m_debugArray0[i]}; break;
-        case DEBUG2: return {m_envEditData->m_debugArray1[i]}; break;
-        case DEBUG3: return {m_envEditData->m_debugArray2[i]}; break;
+        case POTTEMP: return m_envEditData->m_envView.potTemp[i];
+        case QV: return m_envEditData->m_envView.Qv[i];
+        case QW: return m_envEditData->m_envView.Qw[i];
+        case QC: return m_envEditData->m_envView.Qc[i];
+        case QR: return m_envEditData->m_envView.Qr[i];
+        case QS: return m_envEditData->m_envView.Qs[i];
+        case QI: return m_envEditData->m_envView.Qi[i];
+        case WINDX: return m_envEditData->m_envView.velFieldX[i];
+        case WINDY: return m_envEditData->m_envView.velFieldY[i];
+        case WINDZ: return m_envEditData->m_envView.velFieldZ[i];
+        case PGROUND: return 0;
+        case DEBUG1: return m_envEditData->m_debugArray0[i];
+        case DEBUG2: return m_envEditData->m_debugArray1[i];
+        case DEBUG3: return m_envEditData->m_debugArray2[i];
         default:
             break;
     }
-    return {0};
+    return 0;
 }
 
 void simulationEditor::setSliceMinMax(bool fullView)

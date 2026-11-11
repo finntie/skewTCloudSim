@@ -5,7 +5,8 @@
 #include <cmath>
 
 
-#ifdef __CUDACC__
+#include "gpu_defines.h"
+#ifdef GPU_COMPILER
 #include "msvc_defines.h"
 #include <hip/hip_runtime.h>
 #include <hip/hip_vector_types.h>
@@ -73,6 +74,8 @@ __device__ inline unsigned int rgbaFloatToInt(float4 rgba)
            unsigned(rgba.x * 255);
 }
 
+#if !defined(__HIP_PLATFORM_AMD__) // If compiling for AMD HIP, these operators are already handled, meaning we dont need them
+
 inline __host__ __device__ float4 operator/(float4 a, float4 b) { return make_float4(a.x / b.x, a.y / b.y, a.z / b.z, a.w / b.w); }
 inline __host__ __device__ float4 operator/(float4 a, float b) { return make_float4(a.x / b, a.y / b, a.z / b, a.w / b); }
 inline __host__ __device__ float4 operator*(float4 a, float4 b) { return make_float4(a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w); }
@@ -96,6 +99,7 @@ inline __host__ __device__ float3 operator/(float3 a, float3 b) { return make_fl
 inline __host__ __device__ float3 operator/(float3 a, float b) { return make_float3(a.x / b, a.y / b, a.z / b); }
 inline __host__ __device__ float3 operator/(float a, float3 b) { return make_float3(a / b.x, a / b.y, a / b.z); }
 
+#endif
 
 inline __host__ __device__ float2 fabs2f(float2 a) { return make_float2(fabsf(a.x), fabsf(a.y)); }
 inline __host__ __device__ float3 fabs3f(float3 a) { return make_float3(fabsf(a.x), fabsf(a.y), fabsf(a.z)); }
@@ -214,7 +218,7 @@ __inline__ __host__ __device__ unsigned int randomHash(unsigned int x, unsigned 
 // --------------------------------- More specific math functions ---------------------------
 
 // Since there is use of CUDA specific variables (threadIdx and stuff), we only want to compile them for CUDA files
-#ifdef __CUDACC__
+#ifdef GPU_COMPILER
 
 // Due to them being __global__ they have to be declared in the .cu file
 

@@ -31,7 +31,11 @@ __device__ float3 luminanceFunction(const float3& from,
 
 void setConstants(const float* _invView, size_t sizeViewMat, void* stream)
 {
-    if (_invView) hipMemcpyToSymbolAsync(HIP_SYMBOL(invViewLUT), _invView, sizeViewMat, 0, hipMemcpyHostToDevice, reinterpret_cast<hipStream_t>(stream));
+    if (_invView)
+    {
+        hipError_t err = hipMemcpyToSymbolAsync(HIP_SYMBOL(invViewLUT), _invView, sizeViewMat, 0, hipMemcpyHostToDevice, reinterpret_cast<hipStream_t>(stream));
+        if (err != hipSuccess) std::cerr << "error symbol copy LUTS.cu: " << hipGetErrorString(err) << std::endl;
+    }
 }
 
 // position.y ranging from 0 to sampleHeight
@@ -128,7 +132,7 @@ __device__ float3 UVToDir(float u, float v, float3 up, float3 sunDir, float r)
 // Pos.y ranging from 0 until sampleHeight, which is about 0 until 100
 __device__ float3 envTransDir(const float3& pos, const float3& dir, unsigned long long TTexture)
 {
-    const float4 t = tex2D<float4>(TTexture, posToLUT(pos, 256), dirToLUT(pos, dir, 64));
+    const float4 t = tex2D<float4>(toTexObj(TTexture), posToLUT(pos, 256), dirToLUT(pos, dir, 64));
     return expf3(make_float3(-t.x, -t.y, -t.z));
 }
 
@@ -141,8 +145,8 @@ __device__ float3 envTrans(const float3& pos, const float3& pos2, unsigned long 
 
     const float3 dir = normalize(b - a);
 
-    const float4 t1 = tex2D<float4>(TTexture, posToLUT(a, 256.0f), dirToLUT(a, dir, 64.0f));
-    const float4 t2 = tex2D<float4>(TTexture, posToLUT(b, 256.0f), dirToLUT(b, dir, 64.0f));
+    const float4 t1 = tex2D<float4>(toTexObj(TTexture), posToLUT(a, 256.0f), dirToLUT(a, dir, 64.0f));
+    const float4 t2 = tex2D<float4>(toTexObj(TTexture), posToLUT(b, 256.0f), dirToLUT(b, dir, 64.0f));
 
     const float3 tau = make_float3(fmaxf(t1.x - t2.x, 0.0f), fmaxf(t1.y - t2.y, 0.0f), fmaxf(t1.z - t2.z, 0.0f));
 
@@ -160,7 +164,7 @@ __device__ float3 envScat(const float3& pos, const float3& lightDir, unsigned lo
     const float sunD = dot(lightDir, up);
     const float u = (sunD + 1) * 0.5f;
 
-    const float4 t = tex2D<float4>(TScat, u, v);
+    const float4 t = tex2D<float4>(toTexObj(TScat), u, v);
     return make_float3(t.x, t.y, t.z);
 }
 
@@ -370,7 +374,7 @@ __device__ float3 transferFunction(const float3& pos, const float3& lightdir, un
 
                 // Scattering multiplied by transmittance of this distance
                 const float3 scatteringTrans =
-                    (rs * dR + ms * dM) * envTrans(pos, rayPos, TTexture);
+                    float3(rs * dR + ms * dM) * envTrans(pos, rayPos, TTexture);
 
                 // Only need to account for distance
                 currentLightScat = (scatteringTrans * stepSize) + currentLightScat;
@@ -703,7 +707,7 @@ __global__ void envAerialView(float4* aerialView,
     float3 rayD = UVToDir(u, v, up, lightDir, r);
 
     // For every z, move 1 km further
-    float3 nextO = make_float3(pos.x, pos.y, pos.z) + rayD * z;
+    float3 nextO = make_float3(pos.x, pos.y, pos.z) + rayD * z * 100.0f;
     nextO.y = clampf(nextO.y, 0.0f, sampleHeight);
 
     float3 luminance = luminanceFunction(make_float3(pos.x, pos.y, pos.z), nextO, rayD, lightDir, TTexture, TScat);
@@ -720,12 +724,12 @@ __global__ void envAerialView(float4* aerialView,
 
     output = make_float4(result.x, result.y, result.z, transMean);
 
-    //if (x == 5 && y == 16)
+    //if (x == 31 && y == 31)
     //{
     //    printf("x %i, y %i, z %i, dir %f %f %f, pos: %f, %f, %f, nextO: %f, %f, %f, output: %f, %f, %f, %f\n",
     //        x, y, z, rayD.x, rayD.y, rayD.z, pos.x, pos.y, pos.z, nextO.x, nextO.y, nextO.z, output.x, output.y, output.z, output.w);
     //}
-    //if (x == 16 && y == 16)
+    //if (x == 31 && y == 31)
     //{
     //    printf("x %i, y %i, z %i, scat %f %f %f, transmittance: %f, %f, %f, nextO: %f, %f, %f, lightDir: %f, %f, %f\n",
     //        x, y, z, luminance.x, luminance.y, luminance.z, transmittance.x, transmittance.y, transmittance.z, 

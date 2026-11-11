@@ -66,25 +66,25 @@ void* getStream()
 }
 
 
-void initConstants(const float* invViewMatrix, size_t sizeViewMat, float3 _gridMin, float3 _gridMax)
+void initConstants(const float* invViewMatrix, size_t sizeViewMat, glm::vec3 _gridMin, glm::vec3 _gridMax)
 {
     if (invViewMatrix)
     {
         hipMemcpyToSymbolAsync(HIP_SYMBOL(invView), invViewMatrix, sizeViewMat, 0, hipMemcpyHostToDevice, static_cast<hipStream_t>(getStream()));
         setConstants(invViewMatrix, sizeViewMat);
     }
-    hipMemcpyToSymbolAsync(HIP_SYMBOL(gridMin), &_gridMin, sizeof(float3), 0, hipMemcpyHostToDevice, static_cast<hipStream_t>(getStream()));
-    hipMemcpyToSymbolAsync(HIP_SYMBOL(gridMax), &_gridMax, sizeof(float3), 0, hipMemcpyHostToDevice, static_cast<hipStream_t>(getStream()));
+    hipMemcpyToSymbolAsync(HIP_SYMBOL(gridMin), &_gridMin, sizeof(glm::vec3), 0, hipMemcpyHostToDevice, static_cast<hipStream_t>(getStream()));
+    hipMemcpyToSymbolAsync(HIP_SYMBOL(gridMax), &_gridMax, sizeof(glm::vec3), 0, hipMemcpyHostToDevice, static_cast<hipStream_t>(getStream()));
 }
 
-void fillSDF(glm::ivec3 gridSize, float* parameter, float densityTreshold, void* textureStorage, float* SDFClosestDist, int* SDFClosestTarget, dim3 gridDim, dim3 blockDim, void* stream)
+void fillSDF(glm::ivec3 gridSize, float* parameter, float densityTreshold, void* textureStorage, float* SDFClosestDist, int* SDFClosestTarget, dim3* gridDim, dim3* blockDim, void* stream)
 {
     // Fill Signed Distance Field using Jump Flood Algorithm
-    const float invBlockSpreadDepthHost = 1.0f / (float(gridDim.z) / float(gridSize.z));
+    const float invBlockSpreadDepthHost = 1.0f / (float((*gridDim).z) / float(gridSize.z));
     int3 size = make_int3(gridSize.x, gridSize.y, gridSize.z);
 
     // Initialize the seeds (current indices) making sure that at a target the index is correctly set.
-    initJFASeeds<<<gridDim, blockDim, 0, static_cast<hipStream_t>(stream)>>>(size,
+    initJFASeeds<<<*gridDim, *blockDim, 0, static_cast<hipStream_t>(stream)>>>(size,
                                                                               parameter,
                                                                               densityTreshold,
                                                                               SDFClosestDist,
@@ -104,7 +104,7 @@ void fillSDF(glm::ivec3 gridSize, float* parameter, float densityTreshold, void*
         offset.y = int(ceilf(float(offset.y) / 2.0f));
         offset.z = int(ceilf(float(offset.z) / 2.0f));
 
-        JFA<<<gridDim, blockDim, 0, static_cast<hipStream_t>(stream)>>>(size,
+        JFA<<<*gridDim, *blockDim, 0, static_cast<hipStream_t>(stream)>>>(size,
                                                                          parameter,
                                                                          densityTreshold,
                                                                          SDFClosestDist,
@@ -299,10 +299,13 @@ void fillLUTS(environmentData& data, void* skyViewLUT, void* aerialViewLUT, bool
         return;
     }
 
+    int2 skyViewRes = make_int2(200, 100);
+    int3 aerialViewRes = make_int3(32, 32, 32);
+
     if (!initialized)
     {
-        hipMallocAsync((void**)&tempData, 200 * 100 * sizeof(float4), renderStream);
-        hipMallocAsync((void**)&tempData3D, 32 * 32 * 32 * sizeof(float4), renderStream);
+        hipMallocAsync((void**)&tempData, skyViewRes.x * skyViewRes.y * sizeof(float4), renderStream);
+        hipMallocAsync((void**)&tempData3D, aerialViewRes.x * aerialViewRes.y * aerialViewRes.z * sizeof(float4), renderStream);
         initialized = true;
     }
 
@@ -310,8 +313,6 @@ void fillLUTS(environmentData& data, void* skyViewLUT, void* aerialViewLUT, bool
                                                   data.settings.sunDirection[1] + 1e-6f,
                                                   data.settings.sunDirection[2] + 1e-6f));
 
-    int2 skyViewRes = make_int2(200, 100);
-    int3 aerialViewRes = make_int3(32, 32, 32);
 
     dim3 blockSize{16, 16};
     dim3 gridSize{unsigned(iDivUp(skyViewRes.x, blockSize.x)), unsigned(iDivUp(skyViewRes.y, blockSize.y))};
@@ -336,8 +337,8 @@ void fillLUTS(environmentData& data, void* skyViewLUT, void* aerialViewLUT, bool
                                            data.envScatteringTexture);
 
 
-    copyDataToTexture<float4>(tempData, skyViewLUT, glm::ivec3(200, 100, 0), renderStream);
-    copyDataToTexture<float4>(tempData3D, aerialViewLUT, glm::ivec3(32, 32, 32), renderStream);
+    copyDataToTexture<float4>(tempData, skyViewLUT, glm::ivec3(skyViewRes.x, skyViewRes.y, 0), renderStream);
+    copyDataToTexture<float4>(tempData3D, aerialViewLUT, glm::ivec3(aerialViewRes.x, aerialViewRes.y, aerialViewRes.z), renderStream);
 
     hipStreamSynchronize(renderStream);
     hipError_t err = hipGetLastError();
@@ -389,7 +390,7 @@ void fillNoiseTexture(float* output,
 }
 
 void renderEnvironmentCUDA(simParams p,
-                           dim3 blockSize,
+                           dim3* blockSize,
                            unsigned int* dOutput,
                            environmentData data,
                            bool noDelay,
@@ -401,8 +402,8 @@ void renderEnvironmentCUDA(simParams p,
     for (int i = 0; i < int(height); i += pixelsPer)
     {
         int h = std::min(pixelsPer, int(height) - i);
-        dim3 newGrid(DivideUp(width, blockSize.x), DivideUp(h, blockSize.y));
-        renderEnvironmentCUDAGPU<<<newGrid, blockSize, 0, renderStream>>>(dOutput, p, data, width, height, i);
+        dim3 newGrid(DivideUp(width, (*blockSize).x), DivideUp(h, (*blockSize).y));
+        renderEnvironmentCUDAGPU<<<newGrid, *blockSize, 0, renderStream>>>(dOutput, p, data, width, height, i);
         if (!noDelay) hipStreamSynchronize(renderStream); // Synchronize to give simulation time to also do their part, if put away, renderer will be way faster, but simulation will lack.
 
         hipError_t err = hipGetLastError();
@@ -451,8 +452,8 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                                                   data.settings.sunDirection[1] + 1e-6f,
                                                   data.settings.sunDirection[2] + 1e-6f));
     // Color the light
-    const float4 lightColor =
-        make_float4(data.settings.sunColor[0], data.settings.sunColor[1], data.settings.sunColor[2], 1.0f);
+    const float3 lightColor =
+        make_float3(data.settings.sunColor[0], data.settings.sunColor[1], data.settings.sunColor[2]);
     const float sunStrength = data.settings.sunStrength;
 
     // Create ray and set origin + direction
@@ -483,15 +484,19 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     }
 
     // Cloud lighting data
-    float4 cloudColor{};
+    float3 cloudColor{};
     float accumulatedDensity = 0.0f;
     float lightAbsorption = 1.0f;
+
+    // Distance data
+    float weightedDistance = 0.0f;
+    float weightedSum = 0.0f;
 
     // Geometry lighting data
     float4 geometryColor{};
     geometryColor = make_float4(1.0f, 1.0f, 1.0f, 0.0f);
     // Get geometry depth
-    float geometryDepth = data.depthInformationTexture != 0 ? tex2D<float>(data.depthInformationTexture, x, y) : 1e34f;
+    float geometryDepth = data.depthInformationTexture != 0 ? tex2D<float>(toTexObj(data.depthInformationTexture), x, y) : 1e34f;
     geometryDepth = geometryDepth >= data.camFar - 1.0f ? 1e34f : geometryDepth;
     // Make sure depth is based on camera XY and not only camera forward
     if (geometryDepth < 1e34f)
@@ -551,7 +556,7 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
             lightDensity = lightMarch(geoPos, lightDir, data, p.voxelSize * 0.5f, heightOffset, make_int2(width, height), p.voxelSize);
         const float lightTransmittance = exp(-lightDensity);
 
-        uchar4 output = data.colorInformationTexture != 0 ? tex2D<uchar4>(data.colorInformationTexture, x, y) : make_uchar4(0,0,0,0);
+        uchar4 output = data.colorInformationTexture != 0 ? tex2D<uchar4>(toTexObj(data.colorInformationTexture), x, y) : make_uchar4(0,0,0,0);
         float4 outputGeometryColor =
             make_float4(output.x / 255.0f, output.y / 255.0f, output.z / 255.0f, output.w) * lightTransmittance;
         geometryColor = make_float4(outputGeometryColor.x, outputGeometryColor.y, outputGeometryColor.z, data.useAlpha ? outputGeometryColor.w : 1.0f);
@@ -641,7 +646,7 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                 float lightDensity = lightMarch(geoPos, lightDir, data, p.voxelSize * 0.5f, heightOffset, make_int2(width, height), p.voxelSize);
                 const float lightTransmittance = exp(-lightDensity);
 
-                uchar4 output = data.colorInformationTexture != 0 ? tex2D<uchar4>(data.colorInformationTexture, x, y) : make_uchar4(0,0,0,0);
+                uchar4 output = data.colorInformationTexture != 0 ? tex2D<uchar4>(toTexObj(data.colorInformationTexture), x, y) : make_uchar4(0,0,0,0);
                 float newAlpha = data.useAlpha ? 1 - (1 - output.w) * (1 - geometryColor.w) : 1.0f;
                 float3 outputGeometryColor =
                     make_float3(output.x / 255.0f, output.y / 255.0f, output.z / 255.0f) * lightTransmittance;
@@ -658,9 +663,9 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
             float stepSize = (nearStepSize +
                               ((farStepSize * (t - startT)) / stepAdjustmentDistance) * data.settings.rayRandomOffset * 25.0f);
             // Already compute distance to closest cloud
-            float distanceFieldValueQw = tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z) * p.voxelSize;
-            float distanceFieldValueQr = tex3D<float>(data.SDFTextureQr, normPos.x, normPos.y, normPos.z) * p.voxelSize;
-            float distanceFieldValueQs = tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) * p.voxelSize;
+            float distanceFieldValueQw = tex3D<float>(toTexObj(data.SDFTextureQw), normPos.x, normPos.y, normPos.z) * p.voxelSize;
+            float distanceFieldValueQr = tex3D<float>(toTexObj(data.SDFTextureQr), normPos.x, normPos.y, normPos.z) * p.voxelSize;
+            float distanceFieldValueQs = tex3D<float>(toTexObj(data.SDFTextureQs), normPos.x, normPos.y, normPos.z) * p.voxelSize;
 
             // Randomize stepsize
             rSeed = randomHash(unsigned(pos.x), unsigned(pos.y), unsigned(pos.z), rSeed);
@@ -690,7 +695,7 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
             {
                 // Starting with calculating how much light is absorbed 
                 // From the total accumulated density using exponential which correlates with Beer's law
-                lightAbsorption = exp(-accumulatedDensity);
+                lightAbsorption = expf(-accumulatedDensity);
 
                 // Calculate mass extinction coëfficient of variables 
                 // By converting mixing ratio (kg/kg) to mass (kg/m3) using air density
@@ -707,11 +712,15 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                 // Density is the ray length in world size multiplied by how much the ray is consumed per meter (extinction)
                 accumulatedDensity += extinction * stepSize;
 
+                // Weighted distance to get a good average on the atmospheric Aerial view
+                float w = (1 - expf(-extinction * stepSize)) * lightAbsorption;
+                weightedDistance = w * t;
+                weightedSum = w;
 
                 // At every step also march a ray towards the light source (sun) to check how much density is in between.
                 const float lightDirMarchDensity = lightMarch(pos, lightDir, data, stepSize, heightOffset, make_int2(width, height), p.voxelSize);
                 // To gain transmittance we use exponent which corrolates with Beer's law
-                const float lightTransmittance = exp(-lightDirMarchDensity);
+                const float lightTransmittance = expf(-lightDirMarchDensity);
 
 
                 // Calculate multiple scattering using approximation https://www.researchgate.net/publication/262309690_Oz_the_great_and_volumetric
@@ -765,8 +774,6 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                     //printf("t %f, stepSize %f, voxelSize %f\n", t, stepSize, data.voxelSize);
                  }
 
-                lightAbsorption *= exp(-extinction * stepSize);
-
                 if (lightAbsorption <= 0.01f)
                 {
                     break;  // TODO: test out when cloud is full
@@ -782,9 +789,9 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
             // We loop until distance to nearest cloud becomes too small and start normal stepping again
             while (!isOutside(pos.x, pos.y, pos.z))
             {
-                distanceFieldValueQw = fmaxf(tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * p.voxelSize;
-                distanceFieldValueQr = fmaxf(tex3D<float>(data.SDFTextureQr, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * p.voxelSize;
-                distanceFieldValueQs = fmaxf(tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * p.voxelSize;
+                distanceFieldValueQw = fmaxf(tex3D<float>(toTexObj(data.SDFTextureQw), normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * p.voxelSize;
+                distanceFieldValueQr = fmaxf(tex3D<float>(toTexObj(data.SDFTextureQr), normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * p.voxelSize;
+                distanceFieldValueQs = fmaxf(tex3D<float>(toTexObj(data.SDFTextureQs), normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * p.voxelSize;
                 const float closest = fminf(fminf(distanceFieldValueQw, distanceFieldValueQr), distanceFieldValueQs);
 
                 if (closest <= 1.0f) break;
@@ -838,7 +845,7 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
                     lightMarch(geoPos, lightDir, data, p.voxelSize * 0.5f, heightOffset, make_int2(width, height), p.voxelSize);
             const float lightTransmittance = exp(-lightDensity);
 
-            uchar4 output = tex2D<uchar4>(data.colorInformationTexture, x, y);
+            uchar4 output = tex2D<uchar4>(toTexObj(data.colorInformationTexture), x, y);
             float newAlpha = data.useAlpha ? 1 - (1 - output.w) * (1 - geometryColor.w) : 1.0f;
             float3 outputGeometryColor =
                 make_float3(output.x / 255.0f, output.y / 255.0f, output.z / 255.0f) * lightTransmittance;
@@ -883,47 +890,75 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     // Map density to opacity between 0 and 1
     //const float opacity = 1.0f - expf(-accumulatedDensity);
 
+    float T = lightAbsorption;// expf(-accumulatedDensity);
+
+
     // TODO: to test we set to max depth
     // Get intersection point to get depth
     bool hitGround = false;
     float3 iPoint = getIpoint(mainR.O / 1000.0f, mainR.D, hitGround);
     iPoint.y -= 6360.0f;
-    float depth = distance(mainR.O, iPoint * 1000.0f);
+    float farDepth = distance(mainR.O, iPoint * 1000.0f);
+    
 
-    float4 aerialColor = getAtmosphericAerialView(mainR.D, mainR.O, depth, lightDir, make_int3(32, 32, 32), data.envAerialViewTexture, x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f));
+    // If there is any cloud use our weighted distance
+    // Else use far distance.
+    float aerialDepth = (accumulatedDensity > 1e-6f) ?  weightedDistance / weightedSum : farDepth;
+
+    float4 aerialColorSky = getAtmosphericAerialView(mainR.D, mainR.O, farDepth, lightDir, make_int3(32, 32, 32), data.envAerialViewTexture, x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f));
+    float4 aerialColorCloud = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+    if (accumulatedDensity > 1e-6f)
+    {
+        aerialColorCloud = getAtmosphericAerialView(mainR.D, mainR.O, aerialDepth, lightDir, make_int3(32, 32, 32), data.envAerialViewTexture, x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f));
+    }
+
+    // Fog the cloud with the atmospheric Aerial
+    cloudColor = cloudColor * (aerialColorCloud.w) + make_float3(aerialColorCloud.x, aerialColorCloud.y, aerialColorCloud.z) * (1.0f - T);
+
+    //cloudColor = make_float3(aerialDepth / (32 * 1000.0f * 100.0f), aerialDepth / (32 * 1000.0f * 100.0f), aerialDepth / (32 * 1000.0f * 100.0f));
+    
+    // Firs make sure the background color is scaled correctly with gamma, exposure
+
+    float4 skyLinear = outputColor;
+    // Only when hitting something we need to apply aerial view
+    if (hitGround)
+    {
+        // Set ground color
+        outputColor = make_float4(0.67f, 0.44f, 0.2f, 1.0f);
+
+        //float4 skycolor = make_float4(powf(outputColor.x, 2.2f), powf(outputColor.y, 2.2f), powf(outputColor.z, 2.2f), 1.0f);
+        //skyLinear = (skycolor / (1.0f - skycolor)) / data.settings.exposure;
+        // Add Aerial to the background
+        skyLinear = outputColor * aerialColorSky.w + make_float4(aerialColorSky.x, aerialColorSky.y, aerialColorSky.z, 0.0f);
+    }
+
+    
+
     if (x == int(float(width) / 2.0f) && y == int(float(height) / 2.0f))
     {
-        printf("outputCol: %f, %f, %f, depth %f, aerialColor %f, %f, %f, %f, posmain %f, %f, %f, posI %f, %f, %f\n",
-            outputColor.x,
-            outputColor.y,
-            outputColor.z,
-            depth,
-            aerialColor.x,
-            aerialColor.y,
-            aerialColor.z,
-        aerialColor.w, 
+        printf("skyLinear: %f, %f, %f, depth %f, aerialColorCloud %f, %f, %f, %f, posmain %f, %f, %f, posI %f, %f, %f T: %f\n",
+            skyLinear.x,
+            skyLinear.y,
+            skyLinear.z,
+            aerialDepth,
+            aerialColorCloud.x,
+            aerialColorCloud.y,
+            aerialColorCloud.z,
+        aerialColorCloud.w, 
             mainR.O.x,
             mainR.O.y,
             mainR.O.z,
             iPoint.x,
             iPoint.y,
-            iPoint.z);
+            iPoint.z, T);
     }
-    aerialColor = aerialColor * aerialColor.w;
-    aerialColor.w = 1.0f;
     
-    outputColor = outputColor + aerialColor;
-    outputColor = clamp4f(outputColor, 0.0f, 1.0f);
-    
-
-    const float T = lightAbsorption;// expf(-accumulatedDensity);
-    
-    // Firs make sure the background color is scaled correctly with gamma, exposure
-    float4 skycolor = make_float4(powf(outputColor.x, 2.2f), powf(outputColor.y, 2.2f), powf(outputColor.z, 2.2f), 1.0f);
-    const float4 skyLinear = (skycolor / (1.0f - skycolor)) / data.settings.exposure;
+    skyLinear = clamp4f(skyLinear, 0.0f, 1.0f);
+    skyLinear = make_float4(powf(skyLinear.x, 2.2f), powf(skyLinear.y, 2.2f), powf(skyLinear.z, 2.2f), 1.0f);
+    skyLinear = (skyLinear / (1.0f - skyLinear + 1e-6f)) / data.settings.exposure;
     float4 geometryLinear = make_float4(powf(geometryColor.x, 2.2f), powf(geometryColor.y, 2.2f), powf(geometryColor.z, 2.2f), 1.0f);
-    geometryLinear = (geometryColor / (1.0f - geometryColor + 1e-6f)) / data.settings.exposure;
-    
+    geometryLinear = (geometryLinear / (1.0f - geometryLinear + 1e-6f)) / data.settings.exposure;
+
     //    if (x == width - 1 && y == height - 1)
     //{
     //    printf(
@@ -949,12 +984,11 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     outputColor = 
         skyLinear * T * (1 - geometryColor.w) + 
         geometryLinear * T * geometryColor.w + 
-        cloudColor;
+        make_float4(cloudColor.x, cloudColor.y, cloudColor.z, 0.0f);
 
     outputColor = make_float4(fmaxf(outputColor.x, 0.0f), fmaxf(outputColor.y, 0.0f), fmaxf(outputColor.z, 0.0f), 1.0f);
 
     // Exposure   
-
     outputColor = outputColor * data.settings.exposure;
     outputColor = outputColor / (outputColor + 1.0f);
     outputColor =
@@ -1023,7 +1057,7 @@ __device__ float calculateCloudCoverage(float3& pos, environmentData& data)
 {
     float output = 0.0f;
 
-    const float QW = tex3D<float>(data.QwTexture, pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
+    const float QW = tex3D<float>(toTexObj(data.QwTexture), pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
     output = QW;
 
     //
@@ -1064,7 +1098,7 @@ __device__ float calculateRainCoverage(float3& pos, environmentData& data)
 { 
     float output = 0.0f;
 
-    const float QR = tex3D<float>(data.QrTexture, pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
+    const float QR = tex3D<float>(toTexObj(data.QrTexture), pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
     output = QR;
     if (QR > QRMIN)
     {
@@ -1079,7 +1113,7 @@ __device__ float calculateSnowCoverage(float3& pos, environmentData& data)
 {
     float output = 0.0f;
 
-    const float QS = tex3D<float>(data.QsTexture, pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
+    const float QS = tex3D<float>(toTexObj(data.QsTexture), pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
     output = QS;
     if (QS > QSMIN)
     {
@@ -1103,13 +1137,13 @@ __device__ float calculateDensity(float3& pos,
     float3 normPos = pos * maxGrid;
 
     // Offset from velocity
-    const float velX = tex3D<float>(data.velXTexture, normPos.x, normPos.y, normPos.z);
-    const float velY = tex3D<float>(data.velYTexture, normPos.x, normPos.y, normPos.z);
-    const float velZ = tex3D<float>(data.velZTexture, normPos.x, normPos.y, normPos.z);
+    const float velX = tex3D<float>(toTexObj(data.velXTexture), normPos.x, normPos.y, normPos.z);
+    const float velY = tex3D<float>(toTexObj(data.velYTexture), normPos.x, normPos.y, normPos.z);
+    const float velZ = tex3D<float>(toTexObj(data.velZTexture), normPos.x, normPos.y, normPos.z);
 
 
     const float resolutionIncrease = 8.0f;
-    noise = tex3D<float>(data.noiseTexture,
+    noise = tex3D<float>(toTexObj(data.noiseTexture),
                          (pos.x + velX) * maxGrid * resolutionIncrease,
                          (pos.y + velY) * maxGrid * resolutionIncrease,
                          (pos.z + velZ) * maxGrid * resolutionIncrease);
@@ -1154,8 +1188,8 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
     float distanceFieldValueQw = 0.0f;
     float distanceFieldValueQs = 0.0f;
     // Already check distance field for first step
-    distanceFieldValueQw = fmaxf(tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * voxelSize;
-    distanceFieldValueQs = fmaxf(tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * voxelSize;
+    distanceFieldValueQw = fmaxf(tex3D<float>(toTexObj(data.SDFTextureQw), normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * voxelSize;
+    distanceFieldValueQs = fmaxf(tex3D<float>(toTexObj(data.SDFTextureQs), normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * voxelSize;
     bool closeQw = false;
     bool closeQs = false;
     //float prevDFieldValueQw = 0.0f;
@@ -1235,8 +1269,8 @@ __device__ float lightMarch(float3 pos, const float3& lightDir, environmentData&
             normPos = make_float3(pos.x / gridMax.x, pos.y / gridMax.y, pos.z / gridMax.z);
 
             // Get Distance Field Value to check if we are out of the cloud and how far away we can move freely
-            distanceFieldValueQw = fmaxf(tex3D<float>(data.SDFTextureQw, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * voxelSize;
-            distanceFieldValueQs = fmaxf(tex3D<float>(data.SDFTextureQs, normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * voxelSize;
+            distanceFieldValueQw = fmaxf(tex3D<float>(toTexObj(data.SDFTextureQw), normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * voxelSize;
+            distanceFieldValueQs = fmaxf(tex3D<float>(toTexObj(data.SDFTextureQs), normPos.x, normPos.y, normPos.z) - 0.75f, 0.0f) * voxelSize;
 
             // Increase stepsize if no cloud is nearby
             standardStepSize =

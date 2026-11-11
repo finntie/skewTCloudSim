@@ -2,7 +2,7 @@
 
 // Makes sure all GPU definitions are valid on the CPU
 
-#if defined(__CUDACC__) || defined(__HIPCC__) || defined(__HIP__)
+#if defined(__CUDACC__) || defined(__HIPCC__) || defined(__HIP__) || defined(__HIP_PLATFORM_NVIDIA__) || defined(__HIP_PLATFORM_AMD__)
 #define GPU_COMPILER 1
 #endif
 

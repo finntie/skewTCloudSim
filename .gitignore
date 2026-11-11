@@ -13,6 +13,7 @@ Images/Showcase2D_Compressed.mp4
 [Rr]eleases/
 [Bb]uild/
 [Dd]ist/
+*build*/
 
 [Dd]ebug/x64/
 [Dd]ebugPublic/x64/
@@ -20,6 +21,9 @@ Images/Showcase2D_Compressed.mp4
 [Rr]eleases/x64/
 bin/x64/
 obj/x64/
+
+dist/
+*dist*/
 
 **/[Bb]in/*
 

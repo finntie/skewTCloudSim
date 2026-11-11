@@ -3,7 +3,8 @@
 
 #include "math/cudaMath.cuh"
 // Use of kernels, so hip include is fine.
-#ifdef __CUDACC__
+#include "gpu_defines.h"
+#ifdef GPU_COMPILER
 #include "msvc_defines.h"
 #include <hip/hip_runtime.h>
 #include <hip/hip_vector_types.h>
@@ -136,7 +137,7 @@ __device__ inline float2 dirToUV(float3 dir, float3 pos, float3 sunDir)
 }
 
 // Declared in header due to device kernel
-__device__ inline float4 getAtmosphericSkyView(float3 dir, float3 pos, float3 lightDir, float2 resolution, unsigned long long skyViewTexture)
+__device__ __inline__ float4 getAtmosphericSkyView(float3 dir, float3 pos, float3 lightDir, float2 resolution, unsigned long long skyViewTexture)
 {
     pos = pos / 1000.0f; // Make sure 1000.0f coordinate is 1 km and not 1000 km
    
@@ -147,11 +148,11 @@ __device__ inline float4 getAtmosphericSkyView(float3 dir, float3 pos, float3 li
     const float t = uv.y * (1.0f - 1.0f / resolution.y) + 0.5f / resolution.y;
 
     // Thats all    
-    return tex2D<float4>(skyViewTexture, s, t);
+    return tex2D<float4>(toTexObj(skyViewTexture), s, t);
 }
 
 // Depth in meters, resolution.z in kilometers being max, above will be set to resolution.z km.
-__device__ inline float4 getAtmosphericAerialView(float3 dir, float3 pos, float depth, float3 lightDir, int3 resolution, unsigned long long aerialViewTexture, bool debug)
+__device__ __inline__ float4 getAtmosphericAerialView(float3 dir, float3 pos, float depth, float3 lightDir, int3 resolution, unsigned long long aerialViewTexture, bool debug)
 {
     pos = pos / 1000.0f; // Make sure 1000.0f coordinate is 1 km and not 1000 km
     depth = depth / 1000.0f;
@@ -162,20 +163,28 @@ __device__ inline float4 getAtmosphericAerialView(float3 dir, float3 pos, float 
     const float s = uv.x * (1.0f - 1.0f / float(resolution.x)) + 0.5f / float(resolution.x);
     const float t = uv.y * (1.0f - 1.0f / float(resolution.y)) + 0.5f / float(resolution.y);
 
-    depth = depth / float(resolution.z);
-    depth = clampf(depth, 0.0f, 1.0f);
+    float slice = depth / 100.0f;
+    float weight = 1.0f;
+    // If beneath 0.5 of the first slice, set back to 0.5f to prevent issues.
+    if (slice < 0.5f) { weight = slice * 2.0f; slice = 0.5f; }
+    float w = slice / float(resolution.z); // New depth
+
+    float4 result = tex3D<float4>(toTexObj(aerialViewTexture), s, t, w);
+    // When close, just reduce the scattering
+    result = make_float4(result.x * weight, result.y * weight, result.z * weight, result.w);
+    // Small lerp when close to ground to get smoother result.
+    result.w = (1 - weight) + result.w * weight;
 
     if (debug)
     {
-        printf("UV: %f, %f, s %f t %f, depth %f\n",
+        printf("UV: %f, %f, s %f t %f, dir: %f, %f, %f depth %f\n",
             uv.x,
             uv.y,
             s,
             t,
+            dir.x, dir.y, dir.z,
             depth);
     }
 
-
-    // Thats all    
-    return tex3D<float4>(aerialViewTexture, s, t, depth);
+    return result;  
 }

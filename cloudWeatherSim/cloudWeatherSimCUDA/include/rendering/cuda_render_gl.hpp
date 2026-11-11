@@ -6,7 +6,6 @@
 #include <cstring>
 
 struct dim3;
-struct float4;
 struct hipArray;
 struct simParams;
 

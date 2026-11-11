@@ -3,11 +3,13 @@
 #include <glm/glm.hpp>
 
 // Use of kernels, so hip include is fine.
-#ifdef __CUDACC__
+#include "gpu_defines.h"
+#ifdef GPU_COMPILER
 #include "msvc_defines.h"
 #include <hip/hip_vector_types.h>
 #endif
 
+struct dim3;
 struct environmentData;
 struct simParams;
 
@@ -15,7 +17,7 @@ void* getStream();
 
 void initStream();
 
-void initConstants(const float* invViewMatrix = nullptr, size_t sizeViewMat = 0, float3 gridMin = float3(), float3 gridMax = float3());
+void initConstants(const float* invViewMatrix = nullptr, size_t sizeViewMat = 0, glm::vec3 gridMin = glm::vec3(), glm::vec3 gridMax = glm::vec3());
 
 void fillSDF(glm::ivec3 gridSize,
              float* parameter,
@@ -23,10 +25,11 @@ void fillSDF(glm::ivec3 gridSize,
              void* textureStorage,
              float* SDFClosestDist,
              int* SDFClosestTarget,
-             dim3 gridDim,
-             dim3 blockDim,
+             dim3* gridDim,
+             dim3* blockDim,
              void* stream);
 
+#ifdef GPU_COMPILER // GPU calls
 __global__ void initJFASeeds(int3 size,
                              float* density,
                              float densityTreshold,
@@ -42,6 +45,8 @@ __global__ void JFA(int3 size,
                     int* SDFClosestTarget,
                     const int3 offset,
                     const float invBlockSpread);
+
+#endif
 
 // Fills the LUTs that only need to be calculated ones, no need to reset
 void fillLUTSOnce(environmentData& data, void* transmittanceLUT, void* scatteringLUT);
@@ -70,7 +75,7 @@ void fillNoiseTexture(float* output,
                       unsigned long long seed = 1);
 
 void renderEnvironmentCUDA(simParams params,
-                           dim3 blockSize,
+                           dim3* blockSize,
                            unsigned int* dOutput,
                            environmentData data,
                            bool noDelay,

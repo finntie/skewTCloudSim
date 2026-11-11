@@ -214,12 +214,12 @@ void environmentGPU::allocateData()
 
 	int3 size = make_int3(m_params.sizeX, m_params.sizeY, m_params.sizeZ);
 
-	setToValue << <m_params.sizeZ, m_params.sizeX, 0, simStream >> > (size, m_groundGrid.Qrs, 0.001f, 1, 0);
+	setToValue <<<m_params.sizeZ, m_params.sizeX, 0, simStream >>> (size, m_groundGrid.Qrs, 0.001f, 1, 0);
 	hipMemsetAsync(m_groundGrid.Qgr, 0, m_params.sizeGround * sizeof(float), simStream);
 	hipMemsetAsync(m_groundGrid.Qgs, 0, m_params.sizeGround * sizeof(float), simStream);
 	hipMemsetAsync(m_groundGrid.Qgi, 0, m_params.sizeGround * sizeof(float), simStream);
-	setToValue << <m_params.sizeZ, m_params.sizeX, 0, simStream >> > (size, m_groundGrid.P, 1000.0f, 1, 0);
-	setToValue << <m_params.sizeZ, m_params.sizeX, 0, simStream >> > (size, m_groundGrid.T, 315.15f, 1, 0);
+	setToValue <<<m_params.sizeZ, m_params.sizeX, 0, simStream >>> (size, m_groundGrid.P, 1000.0f, 1, 0);
+	setToValue <<<m_params.sizeZ, m_params.sizeX, 0, simStream >>> (size, m_groundGrid.T, 315.15f, 1, 0);
 	hipMemsetAsync(m_groundGrid.t, 0, m_params.sizeGround * sizeof(float), simStream);
 
 	err = hipGetLastError();
@@ -486,7 +486,7 @@ void environmentGPU::init(float* potTemps, glm::vec3* velField, float* Qv, float
 
 	//Initialize density
 	hipMemsetAsync(m_densityAir, 0, m_params.size * sizeof(float), simStream);
-	initDensity << <m_params.sizeY, m_params.sizeX, 0, simStream >> > (m_params, m_GHeight, m_densityAir, m_envGrid.potTemp, m_envGrid.pressure, m_envGrid.Qv, m_groundGrid.P);
+	initDensity <<<m_params.sizeY, m_params.sizeX, 0, simStream >>> (m_params, m_GHeight, m_densityAir, m_envGrid.potTemp, m_envGrid.pressure, m_envGrid.Qv, m_groundGrid.P);
 	hipMemcpyAsync(m_oldDensityAir, m_densityAir, m_params.size * sizeof(float), hipMemcpyDeviceToDevice, simStream);
 
 	//Reset values that are in ground
@@ -711,12 +711,12 @@ void environmentGPU::updateGPU(const float dt, const float speed)
 	// Check if we need to wait for render event to finish copying
 	hipStreamWaitEvent(simStream, reinterpret_cast<hipEvent_t>(m_renderCopyReadyEvent), 0);
 	// TODO: add copies when needing more in the rendering
-	hipMemcpyAsync(m_middleManBuffer.Qw, m_envGrid.Qw, m_params.size * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
-	hipMemcpyAsync(m_middleManBuffer.Qr, m_envGrid.Qr, m_params.size * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
-	hipMemcpyAsync(m_middleManBuffer.Qs, m_envGrid.Qs, m_params.size * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
-	hipMemcpyAsync(m_middleManBuffer.velfieldX, m_envGrid.velfieldX, m_params.size * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
-	hipMemcpyAsync(m_middleManBuffer.velfieldY, m_envGrid.velfieldY, m_params.size * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
-	hipMemcpyAsync(m_middleManBuffer.velfieldZ, m_envGrid.velfieldZ, m_params.size * sizeof(float), cudaMemcpyDeviceToDevice, simStream);
+	hipMemcpyAsync(m_middleManBuffer.Qw, m_envGrid.Qw, m_params.size * sizeof(float), hipMemcpyDeviceToDevice, simStream);
+	hipMemcpyAsync(m_middleManBuffer.Qr, m_envGrid.Qr, m_params.size * sizeof(float), hipMemcpyDeviceToDevice, simStream);
+	hipMemcpyAsync(m_middleManBuffer.Qs, m_envGrid.Qs, m_params.size * sizeof(float), hipMemcpyDeviceToDevice, simStream);
+	hipMemcpyAsync(m_middleManBuffer.velfieldX, m_envGrid.velfieldX, m_params.size * sizeof(float), hipMemcpyDeviceToDevice, simStream);
+	hipMemcpyAsync(m_middleManBuffer.velfieldY, m_envGrid.velfieldY, m_params.size * sizeof(float), hipMemcpyDeviceToDevice, simStream);
+	hipMemcpyAsync(m_middleManBuffer.velfieldZ, m_envGrid.velfieldZ, m_params.size * sizeof(float), hipMemcpyDeviceToDevice, simStream);
 	// Say we are ready
 	hipEventRecord(reinterpret_cast<hipEvent_t>(m_simCopyReadyEvent), simStream);
 

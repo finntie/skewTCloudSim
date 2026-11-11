@@ -4,12 +4,13 @@
 
 #include <iostream>
 #include <mutex>
+#include <cstdint>
+#include <type_traits>
 
-#ifdef __CUDACC__
+#include "gpu_defines.h"
+#ifdef GPU_COMPILER
 #include "msvc_defines.h"
 #include <hip/hip_runtime.h>
-#else
-#include "gpu_defines.h"
 #endif
 
 // Global mutex to lock parts of code for threading
@@ -72,3 +73,28 @@ __host__ void getGridBlockDims(simParams p, dim3& _gridDim, dim3& _blockDim);
 
 
 __global__ void validityCheck(float* array, float minValid, float maxValid, int depth, int* valid);
+
+
+#ifdef GPU_COMPILER
+
+// Convert unsigned long long to texture object with correct cast based on AMD or NVIDIA
+__host__ __device__ inline hipTextureObject_t toTexObj(unsigned long long texture)
+{
+#if defined(__HIP_PLATFORM_AMD__)
+        return reinterpret_cast<hipTextureObject_t>(static_cast<uintptr_t>(texture)); // AMD handles as pointer
+#else
+        return static_cast<hipTextureObject_t>(texture); // NVIDIA handles as normal object
+#endif
+}
+
+// Convert texture object to unsigned long long correctly based on AMD or NVIDIA
+__host__ __device__ inline unsigned long long fromTexObj(hipTextureObject_t texture)
+{
+#if defined(__HIP_PLATFORM_AMD__) 
+        return static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(texture)); // AMD handles as pointer
+#else
+        return static_cast<unsigned long long>(texture); // NVIDIA handles as normal object
+#endif
+}
+
+#endif

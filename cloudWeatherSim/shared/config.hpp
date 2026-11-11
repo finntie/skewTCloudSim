@@ -35,11 +35,10 @@ struct simParams
 #define BOUNDSMIXINGRATIOS boundsEnv{ DIRICHLET, DIRICHLET, DIRICHLET}
 
 // Wrapper for CPU/GPU functions
-#ifdef __CUDACC__
+#include "gpu_defines.h"
+#ifdef GPU_COMPILER
 #include "msvc_defines.h"
 #include <hip/hip_runtime.h>
-#else
-#include "gpu_defines.h"
 #endif
 
 //Storage array for setting boundary conditions easier.

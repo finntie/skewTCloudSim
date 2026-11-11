@@ -4,8 +4,7 @@
 // Rendering
 #include "rendering/cuda_render.cuh"
 
-// Math
-#include "math/cudaMath.cuh"
+#include "utils.cuh"
 
 // Shared
 #include "new_open_gl.hpp"
@@ -19,6 +18,7 @@
 // Hip
 #include "msvc_defines.h"
 #include <hip/hip_runtime.h>
+#include <hip/channel_descriptor.h>
 #include <hip/hip_gl_interop.h>
 #include <hip/hip_vector_types.h>
 
@@ -49,21 +49,20 @@ CudaRender::~CudaRender()
 
     if (m_envInitialized)
     {
-        //cudaFree(m_envData.Qw);
         hipFree(m_SDFClosestTarget);
         hipFree(m_SDFDistanceNeigh);
-        hipDestroyTextureObject(m_envData.QwTexture);
+        hipDestroyTextureObject(toTexObj(m_envData.QwTexture));
         hipFree(m_envData.Qc);
-        hipDestroyTextureObject(m_envData.QrTexture);
-        hipDestroyTextureObject(m_envData.QsTexture);
+        hipDestroyTextureObject(toTexObj(m_envData.QrTexture));
+        hipDestroyTextureObject(toTexObj(m_envData.QsTexture));
         hipFree(m_envData.Qi);
-        hipDestroyTextureObject(m_envData.velXTexture);
-        hipDestroyTextureObject(m_envData.velYTexture);
-        hipDestroyTextureObject(m_envData.velZTexture);
-        //cudaFree(m_envData.noiseTexture); Already done
-        hipDestroyTextureObject(m_envData.noiseTexture);
-        if (m_envData.depthInformationTexture != 0) hipDestroyTextureObject(m_envData.depthInformationTexture);
-        if (m_envData.colorInformationTexture != 0) hipDestroyTextureObject(m_envData.colorInformationTexture);
+        hipDestroyTextureObject(toTexObj(m_envData.velXTexture));
+        hipDestroyTextureObject(toTexObj(m_envData.velYTexture));
+        hipDestroyTextureObject(toTexObj(m_envData.velZTexture));
+        //hipFree(m_envData.noiseTexture); Already done
+        hipDestroyTextureObject(toTexObj(m_envData.noiseTexture));
+        if (m_envData.depthInformationTexture != 0) hipDestroyTextureObject(toTexObj(m_envData.depthInformationTexture));
+        if (m_envData.colorInformationTexture != 0) hipDestroyTextureObject(toTexObj(m_envData.colorInformationTexture));
         hipFreeArray(static_cast<hipArray_t>(m_velZTextureStorage));
         hipFreeArray(static_cast<hipArray_t>(m_velYTextureStorage));
         hipFreeArray(static_cast<hipArray_t>(m_velXTextureStorage));
@@ -626,10 +625,9 @@ void CudaRender::render()
 
         // Set over the view matrix
 
-        float3 gridMin = make_float3(0, 0, 0) * m_params.voxelSize;
-        float3 gridMax =
-            make_float3(float(m_params.sizeX), float(m_params.sizeY), float(m_params.sizeZ)) * m_params.voxelSize;
-        gridMax = make_float3(gridMin.x + gridMax.x, gridMin.y + gridMax.y, gridMin.z + gridMax.z);
+        glm::vec3 gridMin = glm::vec3(0, 0, 0) * m_params.voxelSize;
+        glm::vec3 gridMax = glm::vec3(float(m_params.sizeX), float(m_params.sizeY), float(m_params.sizeZ)) * m_params.voxelSize;
+        gridMax = glm::vec3(gridMin.x + gridMax.x, gridMin.y + gridMax.y, gridMin.z + gridMax.z);
         glm::mat4 transposeCamView = glm::transpose(glm::inverse(m_camView)); // Transpose the matrix so the translation alligns correct with the 4x3 matrix
         initConstants(glm::value_ptr(transposeCamView), sizeof(float4) * 3, gridMin, gridMax);
 
@@ -644,7 +642,7 @@ void CudaRender::render()
         }
 
         // Actual rendering function, writing into dOutput
-        renderEnvironmentCUDA(m_params, blockSize, dOutput, m_envData, m_allResourcesRender, m_width, m_height);
+        renderEnvironmentCUDA(m_params, &blockSize, dOutput, m_envData, m_allResourcesRender, m_width, m_height);
 
     }
 
@@ -871,18 +869,22 @@ void CudaRender::createAndCopyToTextures(hipArray* depthArray, hipArray* colorAr
     if (depthArray != m_depthArray)
     {
         // Destroy if already existed
-        if (m_envData.depthInformationTexture != 0) hipDestroyTextureObject(m_envData.depthInformationTexture);
+        if (m_envData.depthInformationTexture != 0) hipDestroyTextureObject(toTexObj(m_envData.depthInformationTexture));
         // Create texture object and save to stored values
         resDesc.res.array.array = reinterpret_cast<hipArray_t>(depthArray);
-        hipCreateTextureObject(&m_envData.depthInformationTexture, &resDesc, &texDesc, NULL);
+        hipTextureObject_t tmp; // Temp needed for reference without needing to cast
+        hipCreateTextureObject(&tmp, &resDesc, &texDesc, NULL);
+        m_envData.depthInformationTexture = fromTexObj(tmp);
         m_depthArray = depthArray;
     }
     if (colorArray != m_colorArray)
     {
-        if (m_envData.colorInformationTexture != 0) hipDestroyTextureObject(m_envData.colorInformationTexture);
+        if (m_envData.colorInformationTexture != 0) hipDestroyTextureObject(toTexObj(m_envData.colorInformationTexture));
         // Create texture object and save to stored values
         resDesc.res.array.array = reinterpret_cast<hipArray_t>(colorArray);
-        hipCreateTextureObject(&m_envData.colorInformationTexture, &resDesc, &texDesc, NULL);
+        hipTextureObject_t tmp; // Temp needed for reference without needing to cast
+        hipCreateTextureObject(&tmp, &resDesc, &texDesc, NULL);
+        m_envData.colorInformationTexture = fromTexObj(tmp);
         m_colorArray = colorArray;
     }
 }
@@ -1031,6 +1033,20 @@ void CudaRender::setExtraRenderInfo(renderSettings settings, bool changedTexture
     m_envData.settings = settings;
 }
 
+
+template <typename T>
+inline hipChannelFormatDesc makeChannelDesc()
+{
+    if constexpr (std::is_same_v<T, float>) return hipCreateChannelDesc(32, 0, 0, 0, hipChannelFormatKindFloat);
+    else if constexpr (std::is_same_v<T, float2>) return hipCreateChannelDesc(32, 32, 0, 0, hipChannelFormatKindFloat);
+    else if constexpr (std::is_same_v<T, float3>) return hipCreateChannelDesc(32, 32, 32, 0, hipChannelFormatKindFloat);
+    else if constexpr (std::is_same_v<T, float4>) return hipCreateChannelDesc(32, 32, 32, 32, hipChannelFormatKindFloat);
+    else if constexpr (std::is_same_v<T, uint8_t>) return hipCreateChannelDesc(8, 0, 0, 0, hipChannelFormatKindFloat);
+    else if constexpr (std::is_same_v<T, uint16_t>) return hipCreateChannelDesc(16, 0, 0, 0, hipChannelFormatKindFloat);
+    else if constexpr (std::is_same_v<T, int32_t>) return hipCreateChannelDesc(32, 0, 0, 0, hipChannelFormatKindFloat);
+    else static_assert(sizeof(T) == 0, "CloudLib Error: at makeChannelDesc(), type is not supported yet, add a new format for it.\n");
+}
+
 template <typename T>
 void initTextureObj(void*& storageArray,
                                 unsigned long long& texture,
@@ -1038,7 +1054,7 @@ void initTextureObj(void*& storageArray,
                                 bool smooth,
                                 bool wrapTextureBoundaryMode)
 {
-    hipChannelFormatDesc channelDesc = hipCreateChannelDesc<T>();
+    hipChannelFormatDesc channelDesc = makeChannelDesc<T>();
     hipExtent extent = make_hipExtent(size.x, size.y, size.z);
     hipArray_t cuArray;
     hipMalloc3DArray(&cuArray, &channelDesc, extent, 0);
@@ -1057,7 +1073,7 @@ void initTextureObj(void*& storageArray,
 
     hipTextureObject_t texObj;
     hipCreateTextureObject(&texObj, &resDesc, &texDesc, NULL);
-    texture = texObj;
+    texture = fromTexObj(texObj);
 }
 
 template <typename T>
@@ -1089,13 +1105,13 @@ void CudaRender::setDataEnvironment(gridDataSkyGPU& data, bool updateSDF)
     if (data.velfieldZ) copyDataToTexture<float>(data.velfieldZ, m_velZTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
 
     if (data.Qw && updateSDF)
-    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qw, 0.00005f, m_SDFTextureStorageQw, m_SDFDistanceNeigh, m_SDFClosestTarget, *m_gridDim, *m_blockDim,static_cast<hipStream_t>(getStream())); 
+    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qw, 0.00005f, m_SDFTextureStorageQw, m_SDFDistanceNeigh, m_SDFClosestTarget, m_gridDim, m_blockDim,static_cast<hipStream_t>(getStream())); 
 
     if (data.Qr && updateSDF)
-    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qr, 0.00001f, m_SDFTextureStorageQr, m_SDFDistanceNeigh, m_SDFClosestTarget, *m_gridDim, *m_blockDim, static_cast<hipStream_t>(getStream()));
+    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qr, 0.00001f, m_SDFTextureStorageQr, m_SDFDistanceNeigh, m_SDFClosestTarget, m_gridDim, m_blockDim, static_cast<hipStream_t>(getStream()));
 
     if (data.Qs && updateSDF)
-    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qs, 0.00001f, m_SDFTextureStorageQs, m_SDFDistanceNeigh, m_SDFClosestTarget, *m_gridDim, *m_blockDim, static_cast<hipStream_t>(getStream()));
+    fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qs, 0.00001f, m_SDFTextureStorageQs, m_SDFDistanceNeigh, m_SDFClosestTarget, m_gridDim, m_blockDim, static_cast<hipStream_t>(getStream()));
 
     // We did set data at least once
     m_setData = true;
@@ -1129,13 +1145,13 @@ void CudaRender::setDataEnvironmentEvent(gridDataSkyGPU& data, bool updateSDF, v
     if (data.velfieldZ) copyDataToTexture<float>(data.velfieldZ, m_velZTextureStorage, glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), static_cast<hipStream_t>(getStream()));
 
     if (data.Qw && updateSDF)
-        fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qw, 0.00005f, m_SDFTextureStorageQw, m_SDFDistanceNeigh, m_SDFClosestTarget, *m_gridDim, *m_blockDim, static_cast<hipStream_t>(getStream()));
+        fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qw, 0.00005f, m_SDFTextureStorageQw, m_SDFDistanceNeigh, m_SDFClosestTarget, m_gridDim, m_blockDim, static_cast<hipStream_t>(getStream()));
 
     if (data.Qr && updateSDF)
-        fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qr, 0.00001f, m_SDFTextureStorageQr, m_SDFDistanceNeigh, m_SDFClosestTarget, *m_gridDim, *m_blockDim, static_cast<hipStream_t>(getStream()));
+        fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qr, 0.00001f, m_SDFTextureStorageQr, m_SDFDistanceNeigh, m_SDFClosestTarget, m_gridDim, m_blockDim, static_cast<hipStream_t>(getStream()));
 
     if (data.Qs && updateSDF)
-        fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qs, 0.00001f, m_SDFTextureStorageQs, m_SDFDistanceNeigh, m_SDFClosestTarget, *m_gridDim, *m_blockDim, static_cast<hipStream_t>(getStream()));
+        fillSDF(glm::ivec3(m_params.sizeX, m_params.sizeY, m_params.sizeZ), data.Qs, 0.00001f, m_SDFTextureStorageQs, m_SDFDistanceNeigh, m_SDFClosestTarget, m_gridDim, m_blockDim, static_cast<hipStream_t>(getStream()));
 
     // We did set data at least once
     m_setData = true;

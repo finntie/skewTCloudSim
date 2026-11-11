@@ -5,12 +5,10 @@
 #include <stdio.h>
 #include <glm/glm.hpp>
 
-#ifdef __CUDACC__
+#include "gpu_defines.h"
+#ifdef GPU_COMPILER
 #include "msvc_defines.h"
 #include <hip/hip_runtime.h>
-#else
-#include "gpu_defines.h"
-typedef glm::vec3 float3; // Make float3 be glm::vec3
 #endif 
 
 namespace MForms
@@ -44,11 +42,7 @@ __host__ __device__ inline float ei(const float T) { return 0.61078f * expf((21.
 __host__ __device__ inline float ws(const float T, const float P)
 {
     float Es = es(T) * 10.0f;  // kPa to hPa
-#ifdef __CUDA_ARCH__
     return (Constants::E * Es) / (P - Es);
-#else
-    return (Constants::E * Es) / (P - Es);
-#endif
 }
 
 /// <summary>Mostly the same as the saturated mixing ratio, but now using ice</summary>
@@ -58,11 +52,7 @@ __host__ __device__ inline float ws(const float T, const float P)
 __host__ __device__ inline float wi(const float T, const float P)
 {
     float Es = ei(T) * 10.0f;  // kPa to hPa
-#ifdef __CUDA_ARCH__
     return (Constants::E * Es) / (P - Es);
-#else
-    return (Constants::E * Es) / (P - Es);
-#endif
 }
 
 /// <summary>Calculate the specific humidity of air (same as mixing ratio but using moist air instead of dry)</summary>
@@ -72,11 +62,7 @@ __host__ __device__ inline float wi(const float T, const float P)
 __host__ __device__ inline float qs(const float T, const float P)
 {
     float Es = ei(T) * 10.0f;  // kPa to hPa
-#ifdef __CUDA_ARCH__
     return (Constants::E * Es) / (P - (1 - Constants::E) * Es);
-#else
-    return (Constants::E * Es) / (P - (1 - Constants::E) * Es);
-#endif
 }
 
 /// <summary>Calculates the mass fraction of water vapor </summary>
@@ -137,11 +123,7 @@ __host__ __device__ inline float Lice(const float T) { return (2834.1f - 0.29f *
 __host__ __device__ inline float Rm(const float T, const float P)
 {
     const float Qv = qv(T, P);
-#ifdef __CUDA_ARCH__
     return (1 - Qv) * Constants::Rsd + Qv * Constants::Rsw;
-#else
-    return (1 - Qv) * Constants::Rsd + Qv * Constants::Rsw;
-#endif
 }
 
 /// <summary>Calculates the specific heat capacity at constant pressure for moist air</summary>
@@ -151,11 +133,7 @@ __host__ __device__ inline float Rm(const float T, const float P)
 __host__ __device__ inline float Cpm(const float T, const float P)
 {
     const float Qv = qv(T, P);
-#ifdef __CUDA_ARCH__
     return (1 - Qv) * Constants::Cpa + Qv * Constants::Cpvw;
-#else
-    return (1 - Qv) * Constants::Cpa + Qv * Constants::Cpvw;
-#endif
 }
 
 /// <summary>Calculates the diffusity of water vapor in air </summary>
@@ -197,12 +175,7 @@ __host__ __device__ inline float slopePrecip(const float D, const float Qj, cons
             // Densities in g/cm3
             const float densW = 0.99f;
             // Check for division by 0
-            float numerator = 0.0f;
-#ifdef __CUDA_ARCH__
-            numerator = Constants::PI * densW * N0R;
-#else
-            numerator = Constants::PI * densW * N0R;
-#endif
+            float numerator = Constants::PI * densW * N0R;
             const float denominator = fmaxf(D * Qj * 0.001f, 1e-14f);  // Convert kg/kg to g/cm3
             return powf((numerator / denominator), _e);
             break;
@@ -211,12 +184,7 @@ __host__ __device__ inline float slopePrecip(const float D, const float Qj, cons
         {
             const float N0S = 3e-2f;
             const float densS = 0.11f;
-            float numerator = 0.0f;
-#ifdef __CUDA_ARCH__
-            numerator = Constants::PI * densS * N0S;
-#else
-            numerator = Constants::PI * densS * N0S;
-#endif
+            float numerator = Constants::PI * densS * N0S;
             const float denominator = fmaxf(D * Qj * 0.001f, 1e-14f);  // Convert kg/kg to g/cm3
             return powf((numerator / denominator), _e);
             break;
@@ -225,12 +193,7 @@ __host__ __device__ inline float slopePrecip(const float D, const float Qj, cons
         {
             const float N0I = 4e-4f;
             const float densI = 0.91f;
-            float numerator = 0.0f;
-#ifdef __CUDA_ARCH__
-            numerator = Constants::PI * densI * N0I;
-#else
-            numerator = Constants::PI * densI * N0I;
-#endif
+            float numerator = Constants::PI * densI * N0I;
             const float denominator = fmaxf(D * Qj * 0.001f, 1e-14f);  // Convert kg/kg to g/cm3
             return powf((numerator / denominator), _e);
             break;
@@ -240,6 +203,8 @@ __host__ __device__ inline float slopePrecip(const float D, const float Qj, cons
     }
     return 0.0f;
 }
+
+#ifdef GPU_COMPILER
 
 /// <summary>Calculates the falling velocity of each different precip type</summary>
 /// <param name = "Qr"> Mixing ratio of rain in kg/kg</param>
@@ -292,17 +257,14 @@ __host__ __device__ inline float3 calculateFallingVelocity(const float Qr,
         // constants
         const float CD = 0.6f;  // Drag coefficient
         float slopeI = slopePrecip(densAir, Qi, 2);
-#ifdef __CUDA_ARCH__
         UI = (GammaI / (6 * powf(slopeI, 0.5f))) * powf(4 * Constants::g * 100 * densI / (3 * CD * densAir * 0.001f),
                                                         0.5f);  // Converting g to cm/s2 and densAir to g/cm3
-#else
-        UI = (GammaI / (6 * powf(slopeI, 0.5f))) * powf(4 * Constants::g * 100 * densI / (3 * CD * densAir * 0.001f),
-                                                        0.5f);  // Converting g to cm/s2 and densAir to g/cm3
-#endif
         UI *= 0.01f;  // Convert cm to m
     }
     return float3{UR, US, UI};
 }
+
+#endif
 
 /// <summary>Calculates the gamma function of x</summary>
 /// <param name="x">Value for gamma</param>
@@ -319,16 +281,8 @@ __host__ __device__ inline float cvd(const float T, const float P, const float d
     const float EI = ei(T) * 1000;
     const float ES = es(T) * 1000;
     // TODO: is T below really in kelvin?
-    float A = 0.0f, B = 0.0f;
-#ifdef __CUDA_ARCH__
-    A =
-        (Constants::Ls / (Constants::Ka * (T + 273.15f))) * (Constants::Ls / (Constants::Rsw * (T + 273.15f)) - 1);
-    B = (Constants::Rsw * (T + 273.15f) * P) / (2.21f * EI);
-#else
-    A =
-        (Constants::Ls / (Constants::Ka * (T + 273.15f))) * (Constants::Ls / (Constants::Rsw * (T + 273.15f)) - 1);
-    B = (Constants::Rsw * (T + 273.15f) * P) / (2.21f * EI);
-#endif
+    float A = (Constants::Ls / (Constants::Ka * (T + 273.15f))) * (Constants::Ls / (Constants::Rsw * (T + 273.15f)) - 1);
+    float B = (Constants::Rsw * (T + 273.15f) * P) / (2.21f * EI);
     const float Ni =
         10000 * exp((12.96f * (ES - EI)) / (EI - 0.639f));  // Could use function, but than we have to again calculate EI and ES
 
@@ -344,11 +298,7 @@ __host__ __device__ inline float cvd(const float T, const float P, const float d
 /// in hPa</param> <param name="PTarget">Target Pressure at height in hPa</param> <returns>Potential temp in °C</returns>
 __host__ __device__ inline float potentialTemp(const float T, const float Pk, const float Pt)
 {
-#ifdef __CUDA_ARCH__
     return (T + 273.15f) * powf((Pt / Pk), Constants::Rsd / Constants::Cpd) - 273.15f;
-#else
-    return (T + 273.15f) * powf((Pt / Pk), Constants::Rsd / Constants::Cpd) - 273.15f;
-#endif
 }
 
 
@@ -363,11 +313,7 @@ __host__ __device__ inline float potentialTemp(const float T, const float Pk, co
 /// <returns>Temp in °C</returns>
 __host__ __device__ inline float dryLapseTemp(const float T, const float Pk, const float Pt)
 {
-#ifdef __CUDA_ARCH__
     return (T + 273.15f) * powf((Pt / Pk), Constants::Rsd / Constants::Cpd) - 273.15f;
-#else
-    return (T + 273.15f) * powf((Pt / Pk), Constants::Rsd / Constants::Cpd) - 273.15f;
-#endif
 }
 
 /// <summary>Calculates the moist lapse rate</summary>
@@ -378,16 +324,9 @@ __host__ __device__ inline float MLR(const float T, const float P)
 {
     float TKelvin = T + 273.15f;
     float Ws = ws(T, P);
-    float Tw = 0.0f;
-#ifdef __CUDA_ARCH__
-    Tw = ((Constants::Rsd * TKelvin + Constants::Hv * Ws) /
+    float Tw = ((Constants::Rsd * TKelvin + Constants::Hv * Ws) /
                 (Constants::Cpd +
                  (Constants::Hv * Constants::Hv * Ws * Constants::E / (Constants::Rsd * TKelvin * TKelvin))));
-#else
-    Tw = ((Constants::Rsd * TKelvin + Constants::Hv * Ws) /
-                (Constants::Cpd +
-                 (Constants::Hv * Constants::Hv * Ws * Constants::E / (Constants::Rsd * TKelvin * TKelvin))));
-#endif
     return Tw / P;
 }
 
@@ -415,28 +354,16 @@ __host__ __device__ inline float getStandardHeightAtPressure(const float T0, con
     const float TKelvin = T0 + 273.15f;
     // float Tv = TKelvin * (1.0f + 0.611f * qv(TKelvin, P * 100));
     // return Rsd * Tv / g * logf(P0 / P);
-
-    #ifdef __CUDA_ARCH__
     return TKelvin / Constants::Lb *
            (powf(P / P0, -Constants::R * Constants::Lb / (Constants::g * (Constants::Mda * 0.001f))) - 1);
-    #else
-    return TKelvin / Constants::Lb *
-           (powf(P / P0, -Constants::R * Constants::Lb / (Constants::g * (Constants::Mda * 0.001f))) - 1);
-    #endif
-
 }
 
 __host__ __device__ inline float getStandardPressureAtHeight(const float T0, const float h, const float h0, const float P0)
 {
     const float TKelvin = T0 + 273.15f;
 
-    #ifdef __CUDA_ARCH__
-    return P0 * powf(1 + (Constants::Lb / TKelvin) * (h - h0),
-                     (-Constants::g * (Constants::Mda * 0.001f)) / (Constants::R * Constants::Lb));
-    #else
     return P0 * powf(1 + (Constants::Lb / TKelvin) * (h - h0),
                          (-Constants::g * (Constants::Mda * 0.001f)) / (Constants::R * Constants::Lb));
-    #endif
 }
 
 
@@ -653,16 +580,9 @@ __host__ __device__ inline glm::vec3 getLCL(const float T0, const float P0, cons
     const float CPM = Cpm(T0, P0);
     const float RM = Rm(T0, P0);
     const float RHl = es(D0) / es(T0);
-    float a = 0.0f, b = 0.0f, g = 0.0f;
-#ifdef __CUDA_ARCH__
-    a = (CPM / RM) + ((Constants::Cvl - Constants::Cpvw) / Constants::Rsw);
-    b = -(Constants::E0v - (Constants::Cvv - Constants::Cvl) * Constants::Ttrip) / (Constants::Rsw * TKelvin);
-    g = Constants::g;
-#else
-    a = (CPM / RM) + ((Constants::Cvl - Constants::Cpvw) / Constants::Rsw);
-    b = -(Constants::E0v - (Constants::Cvv - Constants::Cvl) * Constants::Ttrip) / (Constants::Rsw * TKelvin);
-    g = Constants::g;
-#endif
+    float a = (CPM / RM) + ((Constants::Cvl - Constants::Cpvw) / Constants::Rsw);
+    float b = -(Constants::E0v - (Constants::Cvv - Constants::Cvl) * Constants::Ttrip) / (Constants::Rsw * TKelvin);
+    float g = Constants::g;
     const float c = b / a;
 
     const float Wmin1 = lambertWm1(powf(RHl, 1 / a) * c * expf(c));
