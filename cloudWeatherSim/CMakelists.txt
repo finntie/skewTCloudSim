@@ -1,0 +1,168 @@
+
+# Add 'd' suffix to the end of the debug configurations, so both libs can live in the same folder
+set(CMAKE_DEBUG_POSTFIX d)
+
+
+# Split up sources in GPU and CPU sources
+set(CPU_SOURCES
+    source/rendering/cloudFile_hub.cpp
+    source/rendering/colors.cpp
+    source/rendering/draw_image.cpp
+    source/rendering/helper_open_gl.cpp
+    source/rendering/render_hub.cpp
+    source/rendering/shapes_gl.cpp
+    source/simulating/dataClass.cpp
+    source/simulating/readTable.cpp
+    source/simulating/simulationEditor.cpp
+    source/simulating/simulation_hub.cpp
+    source/simulating/skewTer.cpp
+    source/simulating/skewTFile.cpp
+    source/simulating/skewTMaker.cpp
+    source/simulating/tracing.cpp
+    source/camera.cpp
+    source/cloud_hub.cpp
+    source/cloud_menu_hub.cpp
+    source/cloud_weather_sim.cpp
+    source/new_input.cpp
+# Shared
+    shared/config.cpp
+    shared/geometry.cpp
+)
+
+set(GPU_SOURCES
+    cloudWeatherSimCUDA/source/math/cudaMath.cu
+    cloudWeatherSimCUDA/source/rendering/cloudFile.cu
+    cloudWeatherSimCUDA/source/rendering/cuda_render.cu
+    cloudWeatherSimCUDA/source/rendering/cuda_render_gl.cpp
+    cloudWeatherSimCUDA/source/rendering/LUTS.cu
+    cloudWeatherSimCUDA/source/rendering/texture_noise.cu
+    cloudWeatherSimCUDA/source/simulating/environment.cu
+    cloudWeatherSimCUDA/source/simulating/kernelSky.cu
+    cloudWeatherSimCUDA/source/simulating/microPhysics.cu
+    cloudWeatherSimCUDA/source/utils.cu
+)
+
+# Create static library, including all source files
+add_library(cloudWeatherSim STATIC ${CPU_SOURCES} ${GPU_SOURCES})
+
+
+# NVIDIA or AMD backend
+# Usages of CPU and GPU sources so we can specify hip language for GPU sources if using hip:
+if (GPU_BACKEND STREQUAL "CUDA")
+    find_package(CUDAToolkit 12.9 EXACT REQUIRED) # needs version 12.9 for current HIP version
+
+    # Find the hip include path, not required
+    find_path(HIP_INCLUDE_DIR hip/nvidia_detail/nvidia_hip_runtime_api.h # Check for the nvidia api file
+        HINTS ENV HIP_PATH ENV ROCM_PATH /opt/rocm
+        PATH_SUFFIXES include)
+
+    # If not finding the hip path, we can try to download the headers instead.
+    if (NOT HIP_INCLUDE_DIR)
+        message(STATUS "Hip-Nvidia file path not found, downloading hip headers...")
+        # First the normal hip headers
+        FetchContent_Declare(hip_headers
+            GIT_REPOSITORY https://github.com/ROCm/hip.git
+            GIT_TAG rocm-7.2.0
+            GIT_SHALLOW TRUE
+            SOURCE_SUBDIR does_not_exist) # Only simple header download
+        # Now the NVIDIA hip headers
+        FetchContent_Declare(hip_others_headers
+            GIT_REPOSITORY https://github.com/ROCm/hipother.git
+            GIT_TAG rocm-7.2.0
+            GIT_SHALLOW TRUE
+            SOURCE_SUBDIR does_not_exist) # Only simple header download
+        # Finally the AMD hip headers
+        FetchContent_Declare(hip_clr_headers
+            GIT_REPOSITORY https://github.com/ROCm/clr.git
+            GIT_TAG rocm-7.2.0
+            GIT_SHALLOW TRUE
+            SOURCE_SUBDIR does_not_exist) # Only simple header download
+            FetchContent_MakeAvailable(hip_others_headers hip_headers hip_clr_headers)
+
+        # Set new hip include directory
+        set(HIP_INCLUDE_DIR 
+            ${hip_headers_SOURCE_DIR}/include
+            ${hip_others_headers_SOURCE_DIR}/hipnv/include
+            ${hip_clr_headers_SOURCE_DIR}/hipamd/include)
+
+        # Add normally generated version.h file
+        file(WRITE ${hip_headers_SOURCE_DIR}/include/hip/hip_version.h
+            "#ifndef HIP_VERSION_H
+            #define HIP_VERSION_H
+            #define HIP_VERSION_MAJOR 7
+            #define HIP_VERSION_MINOR 2
+            #define HIP_VERSION_PATCH 60201
+            #define HIP_VERSION_GITHASH \"38d754472\"
+            #define HIP_VERSION_BUILD_ID 0
+            #define HIP_VERSION_BUILD_NAME \"\"
+            #define HIP_VERSION    (HIP_VERSION_MAJOR * 10000000 + HIP_VERSION_MINOR * 100000 + HIP_VERSION_PATCH)
+            #define __HIP_HAS_GET_PCH 0
+            #endif")
+
+        message(STATUS "Downloaded hip headers")
+    endif()
+
+    target_link_libraries(cloudWeatherSim PRIVATE CUDA::cudart)
+    target_include_directories(cloudWeatherSim SYSTEM PRIVATE ${HIP_INCLUDE_DIR})
+    target_compile_definitions(cloudWeatherSim PRIVATE __HIP_PLATFORM_NVIDIA__)
+    target_compile_features(cloudWeatherSim PRIVATE cuda_std_17)
+
+elseif (GPU_BACKEND STREQUAL "AMD")
+    find_package(hip REQUIRED) # For AMD, we need HIP
+    
+    set_source_files_properties(${GPU_SOURCES} PROPERTIES LANGUAGE HIP)
+    target_link_libraries(cloudWeatherSim PRIVATE hip::host)
+    set_target_properties(cloudWeatherSim PROPERTIES HIP_STANDARD 17)
+    # Ignore Wno unused warnings, since they clutter up the log and are not important.
+    target_compile_options(cloudWeatherSim PRIVATE
+    $<$<COMPILE_LANGUAGE:HIP>:-Wno-unused-value>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wno-unused-value>)
+
+else() # error
+endif()
+
+
+# Now link the libraries, Private since developer does not need to have them accessing the public header
+# Does not work if called without the root cmake list
+target_link_libraries(cloudWeatherSim PRIVATE OpenGL::GL glfw)
+
+# C++ version, PRIVATE since only this lib needs it, consumers maybe not
+target_compile_features(cloudWeatherSim PRIVATE cxx_std_17)
+
+# Include directories from the /include path, but also from external paths
+# When installing, the path is likely to be different
+target_include_directories(cloudWeatherSim 
+    PUBLIC 
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/glad/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/external
+)
+
+# Create macro to gain assets directory
+target_compile_definitions(cloudWeatherSim PRIVATE
+    CLOUD_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets"
+)
+
+# Set public header
+target_sources(cloudWeatherSim PUBLIC 
+    FILE_SET HEADERS 
+    BASE_DIRS include cloudWeatherSimCUDA/include shared
+    FILES include/cloudWeatherSim/cloud_weather_sim.hpp
+)
+
+# add library output only when chosen to
+if (BUILD_TARGET STREQUAL "library" OR BUILD_TARGET STREQUAL "libexe")
+
+# Install glfw static lib and headers
+install(TARGETS cloudWeatherSim glfw
+    EXPORT cloudWeatherSimTargets 
+    ARCHIVE DESTINATION lib 
+    FILE_SET HEADERS
+)
+
+# Install the imgui assets, so the ImGui font can be used
+install(DIRECTORY assets/ImGui/ DESTINATION assets/ImGui)
+
+endif()

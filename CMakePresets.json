@@ -1,0 +1,87 @@
+{
+    "version": 10,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 23,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "$comment": [
+                "Configuration 1; Default NVIDIA Windows"
+            ],
+            "name": "NVIDIA",
+            "displayName": "Default NVIDIA",
+            "description": "Default NVIDIA build using visual studio 2022",
+            "generator": "Visual Studio 17 2022",
+            "toolset": "cuda=12.9",
+            "cacheVariables": { "GPU_BACKEND": "CUDA" },
+            "binaryDir": "${sourceDir}/build"
+
+        },
+
+        {
+            "$comment": [
+                "Configuration 2; Default AMD configuration"
+            ],
+            "name": "AMD",
+            "displayName": "Default AMD",
+            "description": "Default AMD build using ninja",
+            "generator": "Ninja",
+            "environment": { "ROCM_PATH": "$env{HIP_PATH}/" },
+            "cacheVariables": {
+                "GPU_BACKEND": "AMD",
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_C_COMPILER": "$env{HIP_PATH}/bin/clang.exe",
+                "CMAKE_CXX_COMPILER": "$env{HIP_PATH}/bin/clang++.exe",
+                "CMAKE_HIP_COMPILER": "$env{HIP_PATH}/bin/clang++.exe",
+                "CMAKE_PREFIX_PATH": "$env{HIP_PATH}"
+            },
+            "binaryDir": "${sourceDir}/build_AMD"
+        },
+
+        {
+            "$comment": [
+                "Configuration 3; Default AMD Linux configuration"
+            ],
+            "name": "AMD-Linux",
+            "displayName": "Default AMD-Linux",
+            "description": "Default AMD build for Linux using ninja",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "GPU_BACKEND": "AMD",
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_PREFIX_PATH": "/opt/rocm"
+            },
+            "binaryDir": "${sourceDir}/build_AMD_Linux"
+        },
+
+
+        {"$comment": ["Executable presets, to be combined with"], "name": "comment1"},
+
+
+        { "name": "TARGET-EXE", "hidden": true, "cacheVariables": { "BUILD_TARGET": "executable" }},
+        { "name": "TARGET-LIB", "hidden": true, "cacheVariables": { "BUILD_TARGET": "library" }},
+        { "name": "TARGET-BOTH", "hidden": true, "cacheVariables": { "BUILD_TARGET": "libexe" }},
+
+        { "name": "NVIDIA-EXE", "inherits": ["NVIDIA", "TARGET-EXE"], "binaryDir": "${sourceDir}/build_exe"},
+        { "name": "NVIDIA-LIB", "inherits": ["NVIDIA", "TARGET-LIB"], "binaryDir": "${sourceDir}/build_lib"},
+        { "name": "NVIDIA-BOTH", "inherits": ["NVIDIA", "TARGET-BOTH"], "binaryDir": "${sourceDir}/build"},
+        { "name": "AMD-EXE", "inherits": ["AMD", "TARGET-EXE"], "binaryDir": "${sourceDir}/build_AMD_exe"},
+        { "name": "AMD-LIB", "inherits": ["AMD", "TARGET-LIB"], "binaryDir": "${sourceDir}/build_AMD_lib"},
+        { "name": "AMD-BOTH", "inherits": ["AMD", "TARGET-BOTH"], "binaryDir": "${sourceDir}/build_AMD"}
+
+    ],
+    "buildPresets": [
+        { "name": "NVIDIA", "configurePreset": "NVIDIA", "configuration": "Release"},
+        { "name": "NVIDIA-Debug", "configurePreset": "NVIDIA", "configuration": "Debug"},
+        { "name": "NVIDIA-EXE", "configurePreset": "NVIDIA", "configuration": "Release", "targets": ["game"]},
+        { "name": "AMD", "configurePreset": "AMD"},
+        { "name": "AMD-Debug", "configurePreset": "AMD", "configuration": "Debug"},
+        { "name": "AMD-EXE", "configurePreset": "AMD", "configuration": "Release", "targets": ["game"]},
+
+        { "name": "AMD-Linux", "configurePreset": "AMD-Linux"}
+    ]
+
+
+}

@@ -1,0 +1,50 @@
+
+add_executable(game 
+    device.cpp
+    game.cpp
+    main.cpp
+
+# Game needs paths to the external sources
+    external/glad/src/glad.c
+
+# ImGui
+    external/imgui/imgui.cpp
+    external/imgui/imgui_draw.cpp
+    external/imgui/imgui_impl.cpp
+    external/imgui/imgui_impl_glfw.cpp
+    external/imgui/imgui_impl_opengl3.cpp
+    external/imgui/imgui_stdlib.cpp
+    external/imgui/imgui_tables.cpp
+    external/imgui/imgui_widgets.cpp
+    external/imgui/imGuizmo.cpp
+    external/imgui/implot.cpp
+    external/imgui/implot_items.cpp
+)
+
+target_link_libraries(game PRIVATE cloudWeatherSim)
+
+
+# Now link the libraries
+target_link_libraries(game PRIVATE OpenGL::GL glfw)
+
+# C++ version
+target_compile_features(game PRIVATE cxx_std_17)
+
+# Include directories from the main dir, but also from external paths
+# When installing, the path is likely to be different
+target_include_directories(game 
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/glad/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/external
+)
+
+
+# Create macro to gain assets directory
+target_compile_definitions(game PRIVATE
+    CLOUD_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets"
+)
+
+install(TARGETS game RUNTIME DESTINATION bin)
+
+# Install the imgui assets, so the ImGui font can be used
+install(DIRECTORY assets/ImGui/ DESTINATION bin/assets/ImGui)

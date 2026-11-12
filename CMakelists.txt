@@ -1,0 +1,65 @@
+# Root list, contain global settings and directs to the library and the game to create .lib and .exe
+cmake_minimum_required(VERSION "3.23")
+
+
+#set(BUILD_TARGET "executable" CACHE STRING "build target to be executable or library")
+set_property(CACHE BUILD_TARGET PROPERTY STRINGS executable library)
+
+# Set variable of GPU backend with only CUDA and HIP being valid values
+#set(GPU_BACKEND "CUDA" CACHE STRING "GPU backend: CUDA or AMD")
+set_property(CACHE GPU_BACKEND PROPERTY STRINGS CUDA AMD)
+
+# Depending on CUDA or AMD
+if (GPU_BACKEND STREQUAL "CUDA")
+    if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set(CMAKE_CUDA_ARCHITECTURES 75 86 89) # Set default architectures
+    endif()
+    project(cloudWeatherSim LANGUAGES C CXX CUDA) # Set project with CUDA as language
+
+elseif (GPU_BACKEND STREQUAL "AMD")
+
+    if (NOT DEFINED CMAKE_HIP_ARCHITECTURES)
+        set(CMAKE_HIP_ARCHITECTURES gfx1030 gfx1100) # Set default AMD architectures
+    endif()
+
+    # Fix rocm root path
+    if(DEFINED ENV{HIP_PATH})
+        file(TO_CMAKE_PATH "$ENV{HIP_PATH}" _rocm)
+        string(REGEX REPLACE "/+$" "" _rocm "${_rocm}") # strip trailing slash
+        set(CMAKE_HIP_COMPILER_ROCM_ROOT "${_rocm}")
+        set(ENV{ROCM_PATH} "${_rocm}")
+    endif()
+
+    project(cloudWeatherSim LANGUAGES C CXX HIP) # Set project with AMD as language
+endif()
+
+
+# GLFW
+include(FetchContent)
+# Build GLFW library from their github
+FetchContent_Declare(glfw 
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG 3.4
+)
+set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_SHARED_LIBS OFF CACHE BOOL "" FORCE) # Use static lib
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE) # No need for glfw install since we do it ourself
+FetchContent_MakeAvailable(glfw)
+
+# Find openGL mandatory
+find_package(OpenGL REQUIRED)
+
+
+# Create libraries
+add_subdirectory(cloudWeatherSim)
+
+
+if (BUILD_TARGET STREQUAL "executable" OR BUILD_TARGET STREQUAL "libexe")
+    # Create executables
+    add_subdirectory(game)
+    # Set startup project to be game
+    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT game)
+endif()
