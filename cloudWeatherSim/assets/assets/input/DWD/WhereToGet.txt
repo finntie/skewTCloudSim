@@ -1,2 +1,0 @@
-https://opendata.dwd.de/climate_environment/CDC/observations_germany/radiosondes/ 
-This site, current station used: 01303	
