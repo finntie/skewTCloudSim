@@ -10,7 +10,6 @@
 
 #include "msvc_defines.h"
 #include <hip/hip_runtime.h>
-#include <hiprand/hiprand_kernel.h>
 
 
 // view Matrix
@@ -429,9 +428,7 @@ __global__ void renderEnvironmentCUDAGPU(unsigned int* dOutput,
     // Make sure its valid and within
     if (x >= width || y >= height) return;
 
-    // Randomizer
-    hiprandState state;
-    hiprand_init(100, 0, 0, &state);
+    // Seed based on index
     unsigned int rSeed = x + y * width;
 
     // Calculation of fov and how this would effect the focalLength

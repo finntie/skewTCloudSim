@@ -4,7 +4,6 @@
 
 #include "msvc_defines.h"
 #include <hip/hip_runtime.h>
-#include <hiprand/hiprand_kernel.h>
 
 // Distance to a random position in a cell, used for Worley noise
 __device__ inline float getDistanceToCell(int3 pos,
@@ -13,19 +12,23 @@ __device__ inline float getDistanceToCell(int3 pos,
     int3 celloffset,
     int totalCells,
     float cellSize,
-    unsigned long long seed,
-    hiprandState* state)
+    unsigned int seed)
 {
-    // Addition of cellIdx so that every cell has a different seed, but we are able to get the same result by grabbing their
-    // cell idx
-    //const int cellIdx = cellPos.x + cellPos.y * totalCells + cellPos.z * totalCells * totalCells;
-    hiprand_init(seed + cellIdx, 0, 0, state);
+    // Addition of cellIdx so that every cell has a different seed, but we are able to get the same result by grabbing their cell idx
+    seed = randomHash(unsigned(pos.x), unsigned(pos.y), unsigned(pos.z), seed + cellIdx);
+    float uniformRand = (seed & 0xFFFF) / 65535.0f;
 
     // Get 3 random coordinates in this cell
     float3 randomPosInCell{};
-    randomPosInCell.x = hiprand_uniform(state) * cellSize;
-    randomPosInCell.y = hiprand_uniform(state) * cellSize;
-    randomPosInCell.z = hiprand_uniform(state) * cellSize;
+    randomPosInCell.x = uniformRand * cellSize;
+
+    seed = randomHash(unsigned(pos.x), unsigned(pos.y), unsigned(pos.z), seed + cellIdx);
+    uniformRand = (seed & 0xFFFF) / 65535.0f;
+    randomPosInCell.y = uniformRand * cellSize;
+
+    seed = randomHash(unsigned(pos.x), unsigned(pos.y), unsigned(pos.z), seed + cellIdx);
+    uniformRand = (seed & 0xFFFF) / 65535.0f;
+    randomPosInCell.z = uniformRand * cellSize;
 
     // Add correct offset in space
     randomPosInCell = randomPosInCell +
@@ -123,7 +126,7 @@ __global__ void generateWorley(float* output,
     int resolution,
     int samplePoints,
     const float contribution,
-    unsigned long long seed)
+    unsigned int seed)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -133,10 +136,6 @@ __global__ void generateWorley(float* output,
 
     const int idx = x + y * resolution + z * resolution * resolution;
     float worleyValue = 0.0f;
-
-    // Randomizer
-    hiprandState state;
-    hiprand_init(seed, 0, 0, &state);
 
     // ---------------------Worley noise---------------------
 
@@ -178,8 +177,7 @@ __global__ void generateWorley(float* output,
                         make_int3(xi, yi, zi),
                         samplePoints,
                         pointsPerCell,
-                        seed,
-                        &state));
+                        seed));
 
                 // if (idx == 0)
                 //      printf("x %i y %i z %i, cellIDx %i, idx %i output[idx] %f, closestdist %f\n",

@@ -11,7 +11,7 @@ __global__ void generateWorley(float* output,
     int resolution,
     int samplePoints,
     const float contribution = 1.0f,
-    unsigned long long seed = 1);
+    unsigned int seed = 1);
 
 __global__ void combineWithPerlin(float* output, const int resolution, const int seed);
 

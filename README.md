@@ -1,14 +1,23 @@
-# skewTCloudSim
-This project is a weather simulation created in C++.  
+# CloudWeatherSimulation
+This project is a weather simulation created in C++ with CUDA for the GPU.  
 It has been a project of mine for over a year, and I enjoy working on it.  
-A template was used for the rendering at the start, the simulation and the code around it is fully from scratch.  
+Most of the code was created from scratch, AI was only used for help with debugging errors and CMAKE. 
 
-### Extra Info
-How does it work?  
-The project is mainly a fluid simulation with extra rules applied to it.  
+
+**How does it work?**  
+The project is basically a fluid simulation with extra rules applied to it creating for the weather aspect.  
 Rules like when clouds should happen or rain should start to fall.  
+The information of all clouds and rain is later then passed to the renderer which ray marches through the grid. 
 
-The simulation code is done on the GPU, using CUDA (which is hipified to also support AMD GPUs).  
+The simulation and render code is done on the GPU, using CUDA (which is [hipified](https://rocm.docs.amd.com/projects/HIPIFY/en/latest/) to also support AMD GPUs).  
+
+**What can I do with it?**  
+This library can be used to simulate realistic weather scenarios and render it accordingly.  
+These simulation can be saved and later loaded during for example gameplay.  
+Besides only viewing the clouds, you can also look at the specifics that are going on during the simulation in real-time. This includes temperature, wind, all transitions from and to different states (cloud, rain, snow, etc). 
+
+**How do I use it?**  
+A broader section is [written below](#using-the-library)
 
 
 Feel free to reach out for further questions or remarks. 
@@ -21,6 +30,29 @@ The executable has another simple project compiled with the library which just c
 
 
 ## Install
+
+**Pre-build executables** can be found [on my website](https://finntie.github.io), this skips the need to compile the whole source code if you just want to check out the project and play with the simulation.
+
+To use this project as a **library** for your own program, there are many different options to choose from, this is to make sure the library is compiled correctly for your target hardware.  
+The next few steps are for installing the library or generating an executable.  
+Installing this library yourself means there are some specific programs needed to be installed in order for the code to compile:
+
+### Tools Necessary to Compile
+  
+
+**General**  
+- **[Visual Studio 2022](https://visualstudio.microsoft.com/vs/older-downloads/#visual-studio-2022-and-other-products)**, Version 2022 is needed for CUDA 12.9 to run.
+
+**NVIDIA Build**  
+- **[CUDA Toolkit 12.9](https://developer.nvidia.com/cuda-12-9-0-download-archive)** To compile for NVIDIA, the CUDA toolkit version 12.9 is needed for the CUDA code, this could take a bit longer to download.
+- **HIP headers**, These headers to redirect HIP functions to CUDA, will be installed automatically if it cannot find the HIP files in the ROCm path.
+
+**AMD Build**  
+- **[ROCm](https://rocm.docs.amd.com/en/latest/install/rocm.html?fam=all&w=compute&os=windows&i=pip&windows-ver=11)**, if building for **AMD** from **windows**, ROCm does need to be installed. Compiling from **AMD** can skip this step. 
+- **[HIP 7.2](https://rocm.docs.amd.com/projects/install-on-windows/en/latest/install/install.html)**, The full HIP SDK is needed to compile the HIP code. Version 7.2 is needed with plugins to Visual Studio 2022.
+
+**Intel**  
+Not supported (yet?).  
 
 ### Cloning
 
@@ -94,37 +126,29 @@ If it does not work, contact me with the issue, so I may (help) resolve it.
 
 **If using the .bat, you may skip step 3. and go to step 4 istead.**
 
-<br><br>
+<br>
 
-TODO: outdated?
-### Files to manually include
+### External Files and Libraries needed
 
-This library makes use of glfw, OpenGL, and ImGui. 
-Thus, the following files are expected to be compiled with your own project:  
-
-- [ImGui Github](https://github.com/ocornut/imgui)  
-imgui.cpp  
-imgui_draw.cpp  
-backend/imgui_impl_glfw.cpp  
-backend/imgui_impl_opengl3.cpp  
-imgui_tables.cpp  
-imgui_widgets.cpp  
-- [ImGuizmo Github](https://github.com/cedricguillemet/imguizmo)  
-src/ImGuizmo.cpp  
-- [ImPlot Github](https://github.com/epezent/implot)  
-implot.cpp  
-implot_items.cpp  
-- Glad (download from https://glad.dav1d.de)  
-external/glad/src/glad.c  
+This library makes use of glfw, OpenGL, and ImGui.  
+Thus, the following files are expected to be added and linked when using the library;
 
 
+- [ImGui](https://github.com/finntie/skewTCloudSim/tree/useLib/cloudWeatherSim/external/imgui), Specific ImGui (Implot and ImGuizmo) files I use for the library
+- [Glad](https://glad.dav1d.de)
+- [GLFW](https://www.glfw.org/download)
+- **cudart_static.lib**, CUDA toolkit library needed if building for NVIDIA. Find it using the '$(CUDA_PATH)' macro in additional library directories. 
+
+
+### Frequent Errors
+
+...
 
 ## Important
 
 **Assets**  
 Make sure the 'assets' folder next to the library is also copied over to the working directory.  
-This will be done automatically when compiling, but make sure it succeeded.
-These assets are used to save ImGui data and has a custom font which is possibly used.  
+These assets are used to save ImGui data and has a custom font which is used, else ImGui will use the default font and icons will not load.  
 
 **Depth Buffer**  
 The depth buffer has to be logarithmic (for now) to make sure that the far plane can be extended much further. 
@@ -136,3 +160,41 @@ This means that for your possible shaders, you will have to use some different c
 - As the clouds are post-processing, it is not possible to show the clouds in any reflective objects you draw.
 
 - The shadows from clouds do not take into account blocking of other geometry, making the underside of object also have shadows from clouds. 
+
+
+## Using the Library
+
+Inside the library, there are multiple options to choose from.  
+It is mainly split up in 2 catergories: **Simulating** and **Viewing**.
+
+### Simulating
+
+Simulating clouds requires a starting position; a blanc environment can mean many things, depending on the temperature, moist and wind speed, many different scenarios can unfold.  
+There are multiple options of how to decide your starting environment:  
+1. **Create your own from scratch**  
+    Use the Skew-T editor to decide the temperature and dew point for each height in the environment. Use the hodograph to set the wind speed.  
+    This requires knowledge on [Skew-T diagrams](https://www.weather.gov/source/zhu/ZHU_Training_Page/convective_parameters/skewt/skewtinfo.html) which could be difficult to start with.
+2. **Use observed soundings**  
+    Every day, countries will send out weather balloons up high to measure the environment. You may use this data to try and simulate the weather of that day.  
+    *(Note: weather will never be 1-to-1 of the observed day, due to so limitations and many factors uncounted for in the simulation)*.  
+3. **Load user-created soundings**  
+    Load environments that you made or someone else made.  
+    (**Coming soon:** default environments for easy and interesting pre-set scenarios).
+
+Now that an environment is loaded, you may start playing it by pressing the play button.  
+The simulation pace is based on real time, meaning it is pretty slow, put the simulation speed between 1 and 100 to see results way quicker.  
+
+Play around with all the features there are to be seen, for example the saving (recording), visualizing the environment using the debug viewer or edit the simulation with the editor.  
+
+### Rendering
+
+Visualize some of the simulations you or someone else has made.  
+When using the cloud viewer, you can look through the saved simulations, viewing them from the first until the last frame.  
+You can play with the render settings to change the look of the clouds.  
+
+
+### Code
+
+If wanting to use the library's code, you will mainly work with saved simulation that you want to render during the gameplay.  
+To start, take a look at the [game example](https://github.com/finntie/skewTCloudSim/tree/useLib/Game).  
+**More in depth code explainer will come soon**

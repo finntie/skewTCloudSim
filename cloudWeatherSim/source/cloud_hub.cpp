@@ -29,7 +29,7 @@ cloudHub::cloudHub()
     // We may already create input context
     m_inputObj = new newInput;
     m_cloudCameraObj = new cameraControl();
-    m_params = new simParams(simParams::create(128, 128, 128, 32.0f));
+    m_params = new simParams(simParams::create(128, 38, 128, 300.0f));
 }
 
 void cloudHub::initialize(bool customImGuiStyle)
